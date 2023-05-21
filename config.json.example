@@ -1,0 +1,23 @@
+{
+    "generator": {
+        "openai": {
+            "api_key": "<OPENAI API KEY>",
+            "model": "gpt-3.5-turbo",
+            "temperature": 0.9,
+            "frequency_penalty": 0.7,
+            "presence_penalty": 0.7,
+            "top_p": 1,
+            "max_tokens": 256
+        }
+    },
+    "character": {
+        "file": "characters/avgr.json",
+        "token": "<DISCORD BOT TOKEN>",
+        "nsfw_allowed": false
+    },
+    "channels": [
+        "<DISCORD CHANNEL ID>",
+        "<DISCORD CHANNEL ID>"
+    ],
+    "debug": true
+}
