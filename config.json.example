@@ -17,7 +17,8 @@
     },
     "channels": [
         "<DISCORD CHANNEL ID>",
-        "<DISCORD CHANNEL ID>"
+        "<DISCORD CHANNEL ID>",
+        "Or leave this array empty to target all channels"
     ],
     "debug": true
 }

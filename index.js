@@ -30,8 +30,12 @@ client.on("ready", () => {
 client.on("messageCreate", async (message) => {
   // Check that message is from the required channels
   // TODO: Might be good to have a wildcard mode for this to allow all channels
-  if (!config.channels.some((element) => message.channel.id.includes(element)))
-    return;
+  if (config.channels.length > 0) {
+    if (
+      !config.channels.some((element) => message.channel.id.includes(element))
+    )
+      return;
+  }
 
   // This ensures that the message either @mentions the bot, or is a reply to the bot
   if (
