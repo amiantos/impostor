@@ -11,7 +11,7 @@
         }
     },
     "character": {
-        "file": "characters/avgr.json",
+        "file": "characters/isaacgpt.json",
         "token": "<DISCORD BOT TOKEN>",
         "nsfw_allowed": false
     },
