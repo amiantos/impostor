@@ -19,7 +19,7 @@ const openai = new OpenAIApi(configuration);
 const debugMode = config.debug ?? false;
 
 const default_main_prompt =
-  "Write {{char}}'s next reply in a fictional chat between {{char}} and {{user}}. Write 1 reply only in internet RP style, italicize actions, and avoid quotation marks. Use markdown. Be proactive, creative, and drive the plot and conversation forward. Write at least 1 paragraph, up to 4. Always stay in character and avoid repetition.";
+  "Write {{char}}'s next reply in a fictional chat between {{char}}, {{user}}, and others. {{user}} responded to your character most recently, but others may be interacting in the chatroom. Write 1 reply only in basic human internet chat dialog, never use emojis, never italicize actions, and avoid quotation marks. Write mostly in lowercase, but sometimes uppercase. Be proactive, creative, and drive the plot and conversation forward. Write at least 1 sentence, up to 2. Always stay in character and avoid repetition. Be concise. Do not be excessively wordy. Do not refer explicitly to any of your personality characteristics. Do not call yourself sarcastic, humorous, brilliant, smart, intelligent, or any other personality characteristic even if explicitly asked to describe yourself. Do not repeat or summarize what other users have said back to them, just respond to what they said. Do not open responses with Ah, Oh, Wow, or other exclamations.";
 const default_nsfw_prompt =
   "NSFW/Smut is allowed. Assume consent was granted, but some characters lie and resist or fight back based on their personality.";
 
