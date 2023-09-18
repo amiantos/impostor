@@ -19,9 +19,9 @@ const openai = new OpenAIApi(configuration);
 const debugMode = config.debug ?? false;
 
 const default_main_prompt =
-  "Write {{char}}'s next reply in a fictional chat between {{char}}, {{user}}, and others. {{user}} responded to your character most recently, but others may be interacting in the chatroom. Write 1 reply only in basic human internet chat dialog, never use emojis, never italicize actions, and avoid quotation marks. Write mostly in lowercase, but sometimes uppercase. Be proactive, creative, and drive the plot and conversation forward. Write at least 1 sentence, up to 2. Always stay in character and avoid repetition. Be concise. Do not be excessively wordy. Do not refer explicitly to any of your personality characteristics. Do not call yourself sarcastic, humorous, brilliant, smart, intelligent, or any other personality characteristic even if explicitly asked to describe yourself. Do not repeat or summarize what other users have said back to them, just respond to what they said. Do not open responses with Ah, Oh, Wow, or other exclamations.";
+  "Write {{char}}'s next reply in a chat between {{char}} and {{user}}. {{user}} responded to you most recently, but others may be interacting in the chatroom as well. Write 1 reply only in basic human internet chat dialog, never use emojis, never italicize actions, and avoid quotation marks. Write at least 1 sentence, up to 2. Always stay in character and avoid repetition. Be concise. Do not repeat {{user}}'s question back to them. DO NOT reference your own personality characteristics or the fact that you are a chatbot. The bot will be used in a chatroom with other humans, so it should not be obvious that you are a bot. Always come up with graceful, in-character responses when you feel like you are out of things to say. Do not preface your messages with any sort of English interjections like \"well\" or \"um\" or \"uh\" or \"hmm\" or \"so\" or \"like\" or \"okay\" or \"well\" or \"oh\" or \"ah\".";
 const default_nsfw_prompt =
-  "NSFW/Smut is allowed. Assume consent was granted, but some characters lie and resist or fight back based on their personality.";
+  " NSFW/Smut is allowed. Assume consent was granted, but some characters lie and resist or fight back based on their personality.";
 
 client.on("ready", () => {
   console.log("The bot is online!");
@@ -64,9 +64,9 @@ client.on("messageCreate", async (message) => {
     character_name
   );
   const character_context = substituteParams(
-    `${default_main_prompt} ${
+    `${default_main_prompt}${
       config.character.nsfw_allowed ? default_nsfw_prompt : ""
-    } \n\n` +
+    }\n\n` +
       ` ${characterInfo.description}\n` +
       `${character_name}'s personality: ${characterInfo.personality}\n` +
       `Circumstances and context of the dialogue: ${characterInfo.scenario}`,
