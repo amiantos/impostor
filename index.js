@@ -78,7 +78,7 @@ client.on("messageCreate", async (message) => {
     await message.channel.sendTyping();
 
     // Build message log from channel messages
-    let prevMessages = await message.channel.messages.fetch({ limit: 8 });
+    let prevMessages = await message.channel.messages.fetch({ limit: 40 });
     prevMessages.reverse();
 
     let newChatMessages = [];
