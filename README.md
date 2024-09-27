@@ -18,6 +18,8 @@ This is a simple Discord chatbot that can utilize Tavern-compatible character ca
 1. Clone and install dependencies
 
 ```sh
+mkdir impostor
+cd impostor
 git clone https://github.com/amiantos/impostor.git .
 npm install
 ```
@@ -36,13 +38,12 @@ npm run start
 
 ## How to use (Docker)
 
-1. Clone and install dependencies
+1. Clone the repo
 
 ```sh
 mkdir impostor
 cd impostor
 git clone https://github.com/amiantos/impostor.git .
-npm install
 ```
 
 2. Create a new file called `config.json` and copy the format from `config.json.example`
