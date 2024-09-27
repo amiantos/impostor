@@ -128,7 +128,7 @@ client.on("messageCreate", async (message) => {
         frequency_penalty: config.generator.openai.frequency_penalty,
         presence_penalty: config.generator.openai.presence_penalty,
         top_p: config.generator.openai.top_p,
-        max_tokens: config.max_tokens,
+        max_tokens: config.generator.openai.max_tokens,
       })
       .catch((error) => {
         message.reply(
