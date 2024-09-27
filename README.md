@@ -26,7 +26,7 @@ npm install
 
 3. Update `config.json` with your own credentials and configuration options.
 
-  a. You may have to Google how to create a Discord bot if you don't already know how.
+   1. You may have to Google how to create a Discord bot if you don't already know how.
 
 5. Start your bot
 
@@ -49,15 +49,15 @@ npm install
 
 3. Update `config.json` with your own credentials and configuration options.
 
-  a. You may have to Google how to create a Discord bot if you don't already know how.
+   1. You may have to Google how to create a Discord bot if you don't already know how.
 
-4. Build your docker container
+5. Build your docker container
 
 ```sh
 docker build -t impostor .
 ```
 
-5. Run the container
+6. Run the container
 
 ```sh
 # Basic run
