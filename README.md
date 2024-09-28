@@ -27,7 +27,8 @@ cp conf/config.json.example conf/config.json
 nano conf/config.json
 # Start the bot
 ./start.sh
-# Stop the bot with...
+
+# Stop the bot
 ./stop.sh
 ```
 
