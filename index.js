@@ -15,7 +15,7 @@ const openai = new OpenAI({
   apiKey: config.generator.openai.api_key,
 });
 
-const logger = new Logger(config.debug ?? false);
+const logger = new Logger(false);
 
 const default_main_prompt =
   "Write {{char}}'s next reply in a chat between {{char}} and {{user}}. {{user}} responded to you most recently, but others may be interacting in the chatroom as well. Write 1 reply only in basic human internet chat dialog, never use emojis, never italicize actions, and avoid quotation marks. Write at least 1 sentence, up to 2. Always stay in character and avoid repetition. Be concise. Do not repeat {{user}}'s question back to them. DO NOT reference your own personality characteristics or the fact that you are a chatbot. The bot will be used in a chatroom with other humans, so it should not be obvious that you are a bot. Always come up with graceful, in-character responses when you feel like you are out of things to say. Do not preface your messages with any sort of English interjections like \"well\" or \"um\" or \"uh\" or \"hmm\" or \"so\" or \"like\" or \"okay\" or \"well\" or \"oh\" or \"ah\".";

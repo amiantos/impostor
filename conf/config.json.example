@@ -20,5 +20,4 @@
         "<DISCORD CHANNEL ID>",
         "Or leave this array empty to target all channels"
     ],
-    "debug": false
 }
