@@ -17,18 +17,39 @@ const openai = new OpenAI({
 
 const debugMode = config.debug ?? false;
 
+class Logger {
+  constructor() {
+    this.debugMode = false;
+  }
+
+  debug(message) {
+    if (this.debugMode) {
+      console.log(message);
+    }
+  }
+
+  info(message) {
+    console.log(message);
+  }
+
+  error(message) {
+    console.error(message);
+  }
+}
+
+const logger = new Logger();
+
 const default_main_prompt =
   "Write {{char}}'s next reply in a chat between {{char}} and {{user}}. {{user}} responded to you most recently, but others may be interacting in the chatroom as well. Write 1 reply only in basic human internet chat dialog, never use emojis, never italicize actions, and avoid quotation marks. Write at least 1 sentence, up to 2. Always stay in character and avoid repetition. Be concise. Do not repeat {{user}}'s question back to them. DO NOT reference your own personality characteristics or the fact that you are a chatbot. The bot will be used in a chatroom with other humans, so it should not be obvious that you are a bot. Always come up with graceful, in-character responses when you feel like you are out of things to say. Do not preface your messages with any sort of English interjections like \"well\" or \"um\" or \"uh\" or \"hmm\" or \"so\" or \"like\" or \"okay\" or \"well\" or \"oh\" or \"ah\".";
 const default_nsfw_prompt =
   " NSFW/Smut is allowed. Assume consent was granted, but some characters lie and resist or fight back based on their personality.";
 
 client.on("ready", () => {
-  console.log("The bot is online!");
+  logger.info("The bot is online!");
 });
 
 client.on("messageCreate", async (message) => {
   // Check that message is from the required channels
-  // TODO: Might be good to have a wildcard mode for this to allow all channels
   if (config.channels.length > 0) {
     if (
       !config.channels.some((element) => message.channel.id.includes(element))
@@ -46,8 +67,8 @@ client.on("messageCreate", async (message) => {
   )
     return;
 
-  console.log("Received new message...");
-  if (debugMode) console.log(message);
+  logger.info("Received new message...");
+  logger.debug(message);
 
   // get message author name and bot's name
   const user_name = message.author.username
@@ -115,8 +136,8 @@ client.on("messageCreate", async (message) => {
     conversationLog.push({ role: "system", content: "[Start a new chat]" });
     conversationLog.push(...newChatMessages);
 
-    console.log("Created prompt, awaiting response...");
-    if (debugMode) console.log(conversationLog);
+    logger.info("Created prompt, awaiting response...");
+    logger.debug(conversationLog);
 
     // send prompt request to generator
     const chatCompletion = await openai.chat.completions.create({
@@ -132,11 +153,12 @@ client.on("messageCreate", async (message) => {
         message.reply(
           "(OOC: Sorry, I appear to be having connectivity issues, please try your message again.)"
         );
-        console.log(`OPENAI ERR: ${error}`);
+        logger.error(`OPENAI ERR: ${error}`);
       });
 
-    console.log("Received response, sending to Discord.");
-    if (debugMode) console.log(chatCompletion);
+    logger.info("Received response, sending to Discord.");
+
+    logger.debug(chatCompletion);
 
     // Send the message
     let replyMessage = chatCompletion.choices[0].message.content;
@@ -145,7 +167,7 @@ client.on("messageCreate", async (message) => {
     }
     message.reply(replyMessage);
   } catch (error) {
-    console.log(`ERR: ${error}`);
+    logger.error(`ERR: ${error}`);
   }
 });
 
@@ -155,7 +177,7 @@ client.login(config.character.token);
 
 function substituteParams(content, _name1, _name2) {
   if (!content) {
-    console.warn("No content on substituteParams");
+    logger.error("No content on substituteParams");
     return "";
   }
 
