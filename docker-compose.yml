@@ -1,9 +1,8 @@
 services:
-  impostor:
+  bot:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: impostor
     restart: unless-stopped
     volumes:
       - .:/usr/src/app
