@@ -6,7 +6,7 @@ class Logger {
     formatMessage(level, message, obj) {
         const timestamp = new Date().toISOString();
         let formattedMessage = `[${timestamp}] [${level.toUpperCase()}] ${message}`;
-        if (obj !== null) {
+        if (obj !== null && this.debugMode) {
             formattedMessage += `\n${JSON.stringify(obj, null, 2)}`;
         }
         return formattedMessage;
