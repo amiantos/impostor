@@ -4,60 +4,31 @@ This is a simple Discord chatbot that can utilize Tavern-compatible character ca
 
 ## Features
 
-- [x] Use character files to power Discord chatbots
-  - [x] Supports generic character JSON files
-  - [ ] Supports Tavern character card PNGs
+- [x] Use Tavern-format characters to power Discord chatbots
 - [x] Chatbots respond to replies and @mentions on your Discord server
 - [x] Limit which channels chatbots will interact in
-- [x] Open AI API support (only)
-- [ ] Run multiple chatbots at once
-- [ ] Pre-populate chatbots with info about your users
+- [x] OpenAI API support (only)
 
-## How to use (Docker)
+## How to use
 
-1. Clone the repo
+1. Install Docker if you don't have it already.
+
+1. Open up Terminal
 
 ```sh
+# Make and navigate to to a new directory
 mkdir impostor
 cd impostor
+# Clone the repo
 git clone https://github.com/amiantos/impostor.git .
-```
-
-2. Create a new file called `conf/config.json` and copy the format from `conf/config.json.example`
-
-3. Update `conf/config.json` with your own credentials and configuration options.
-
-   1. You may have to Google how to create a Discord bot if you don't already know how.
-
-5. Run using the shell script
-
-```sh
+# Copy the example config to a new config file
+cp conf/config.json.example conf/config.json
+# Edit the new config file to insert your information
+nano conf/config.json
+# Start the bot
 ./start.sh
-# Stop it with
+# Stop the bot with...
 ./stop.sh
-```
-
-## How to use (Manually)
-
-1. Clone and install dependencies
-
-```sh
-mkdir impostor
-cd impostor
-git clone https://github.com/amiantos/impostor.git .
-npm install
-```
-
-2. Create a new file called `config.json` and copy the format from `config.json.example`
-
-3. Update `config.json` with your own credentials and configuration options.
-
-   1. You may have to Google how to create a Discord bot if you don't already know how.
-
-5. Start your bot
-
-```sh
-npm run start
 ```
 
 # Credits
