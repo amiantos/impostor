@@ -1,5 +1,5 @@
 const { Client, IntentsBitField } = require("discord.js");
-const { Configuration, OpenAIApi } = require("openai");
+const { OpenAI } = require('openai');
 const config = require("./conf/config.json");
 
 const client = new Client({
@@ -11,11 +11,9 @@ const client = new Client({
 });
 
 
-const configuration = new Configuration({
+const openai = new OpenAI({
   apiKey: config.generator.openai.api_key,
 });
-
-const openai = new OpenAIApi(configuration);
 
 const debugMode = config.debug ?? false;
 
@@ -121,8 +119,7 @@ client.on("messageCreate", async (message) => {
     if (debugMode) console.log(conversationLog);
 
     // send prompt request to generator
-    const result = await openai
-      .createChatCompletion({
+    const chatCompletion = await openai.chat.completions.create({
         model: config.generator.openai.model,
         messages: conversationLog,
         temperature: config.generator.openai.temperature,
@@ -139,10 +136,10 @@ client.on("messageCreate", async (message) => {
       });
 
     console.log("Received response, sending to Discord.");
-    if (debugMode) console.log(result.data);
+    if (debugMode) console.log(chatCompletion);
 
     // Send the message
-    let replyMessage = result.data.choices[0].message.content;
+    let replyMessage = chatCompletion.choices[0].message.content;
     if (replyMessage.length > 2000) {
       replyMessage = replyMessage.substring(0, 2000);
     }
