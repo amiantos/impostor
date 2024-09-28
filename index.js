@@ -24,6 +24,7 @@ const default_nsfw_prompt =
 
 client.on("ready", () => {
   logger.info("The bot is online!");
+  logger.debug(`Logged in as ${client.user.tag}`);
 });
 
 client.on("messageCreate", async (message) => {
@@ -45,8 +46,7 @@ client.on("messageCreate", async (message) => {
   )
     return;
 
-  logger.info("Received new message...");
-  logger.debug(message);
+  logger.info(`Received new message from @${message.author.username}.`, message);
 
   // get message author name and bot's name
   const user_name = message.author.username
@@ -114,8 +114,7 @@ client.on("messageCreate", async (message) => {
     conversationLog.push({ role: "system", content: "[Start a new chat]" });
     conversationLog.push(...newChatMessages);
 
-    logger.info("Created prompt, awaiting response...");
-    logger.debug(conversationLog);
+    logger.info("Created prompt, awaiting response.", conversationLog);
 
     // send prompt request to generator
     const chatCompletion = await openai.chat.completions.create({
@@ -134,9 +133,7 @@ client.on("messageCreate", async (message) => {
         logger.error(`OPENAI ERR: ${error}`);
       });
 
-    logger.info("Received response, sending to Discord.");
-
-    logger.debug(chatCompletion);
+    logger.info(`Received response (${chatCompletion.usage.total_tokens} tokens used), sending to Discord.`, chatCompletion);
 
     // Send the message
     let replyMessage = chatCompletion.choices[0].message.content;

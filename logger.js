@@ -3,19 +3,30 @@ class Logger {
         this.debugMode = debug;
     }
 
-    debug(message) {
+    formatMessage(level, message, obj) {
+        const timestamp = new Date().toISOString();
+        let formattedMessage = `[${timestamp}] [${level.toUpperCase()}] ${message}`;
+        if (obj !== null) {
+            formattedMessage += `\n${JSON.stringify(obj, null, 2)}`;
+        }
+        return formattedMessage;
+    }
+
+    debug(message, obj = null) {
         if (this.debugMode) {
-            console.log(`[DEBUG] ${new Date().toISOString()}: ${message}`);
+            console.log(this.formatMessage('debug', message, obj));
         }
     }
 
-    info(message) {
-        console.log(`[INFO] ${new Date().toISOString()}: ${message}`);
+    info(message, obj = null) {
+        console.log(this.formatMessage('info', message, obj));
     }
 
-    error(message) {
-        console.error(`[ERROR] ${new Date().toISOString()}: ${message}`);
+    error(message, obj = null) {
+        console.error(this.formatMessage('error', message, obj));
     }
 }
+
+module.exports = Logger;
 
 module.exports = Logger;
