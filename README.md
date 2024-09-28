@@ -19,12 +19,16 @@ This is a simple Discord chatbot that can utilize Tavern-compatible character ca
 # Make and navigate to to a new directory
 mkdir impostor
 cd impostor
+
 # Clone the repo
 git clone https://github.com/amiantos/impostor.git .
+
 # Copy the example config to a new config file
 cp conf/config.json.example conf/config.json
+
 # Edit the new config file to insert your information
 nano conf/config.json
+
 # Start the bot
 ./start.sh
 
