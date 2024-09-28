@@ -13,7 +13,31 @@ This is a simple Discord chatbot that can utilize Tavern-compatible character ca
 - [ ] Run multiple chatbots at once
 - [ ] Pre-populate chatbots with info about your users
 
-## How to use
+## How to use (Docker)
+
+1. Clone the repo
+
+```sh
+mkdir impostor
+cd impostor
+git clone https://github.com/amiantos/impostor.git .
+```
+
+2. Create a new file called `config.json` and copy the format from `config.json.example`
+
+3. Update `config.json` with your own credentials and configuration options.
+
+   1. You may have to Google how to create a Discord bot if you don't already know how.
+
+5. Run using the shell script
+
+```sh
+./start.sh
+# Stop it with
+./stop.sh
+```
+
+## How to use (Manually)
 
 1. Clone and install dependencies
 
@@ -34,37 +58,6 @@ npm install
 
 ```sh
 npm run start
-```
-
-## How to use (Docker)
-
-1. Clone the repo
-
-```sh
-mkdir impostor
-cd impostor
-git clone https://github.com/amiantos/impostor.git .
-```
-
-2. Create a new file called `config.json` and copy the format from `config.json.example`
-
-3. Update `config.json` with your own credentials and configuration options.
-
-   1. You may have to Google how to create a Discord bot if you don't already know how.
-
-5. Build your docker container
-
-```sh
-docker build -t impostor .
-```
-
-6. Run the container
-
-```sh
-# Basic run
-docker run -d --name impostor impostor
-# Run with automatic restarts (recommended)
-docker run -d --name impostor --restart unless-stopped impostor
 ```
 
 # Credits
