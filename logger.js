@@ -22,6 +22,10 @@ class Logger {
         console.log(this.formatMessage('info', message, obj));
     }
 
+    warn(message, obj = null) {
+        console.warn(this.formatMessage('warn', message, obj));
+    }
+
     error(message, obj = null) {
         console.error(this.formatMessage('error', message, obj));
     }

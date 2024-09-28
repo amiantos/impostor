@@ -133,14 +133,16 @@ client.on("messageCreate", async (message) => {
         logger.error(`OPENAI ERR: ${error}`);
       });
 
-    logger.info(`Received response (${chatCompletion.usage.total_tokens} tokens used), sending to Discord.`, chatCompletion);
+    logger.info(`Received response - ${chatCompletion.usage.total_tokens} total tokens - ${chatCompletion.usage.prompt_tokens} prompt / ${chatCompletion.usage.completion_tokens} completion.`, chatCompletion);
 
     // Send the message
     let replyMessage = chatCompletion.choices[0].message.content;
     if (replyMessage.length > 2000) {
+      logger.warn("Message too long, truncating.");
       replyMessage = replyMessage.substring(0, 2000);
     }
     message.reply(replyMessage);
+    logger.info("Message sent to Discord.");
   } catch (error) {
     logger.error(`ERR: ${error}`);
   }
