@@ -141,7 +141,11 @@ client.on("messageCreate", async (message) => {
     if (debugMode) console.log(result.data);
 
     // Send the message
-    message.reply(result.data.choices[0].message);
+    let replyMessage = result.data.choices[0].message.content;
+    if (replyMessage.length > 2000) {
+      replyMessage = replyMessage.substring(0, 2000);
+    }
+    message.reply(replyMessage);
   } catch (error) {
     console.log(`ERR: ${error}`);
   }
