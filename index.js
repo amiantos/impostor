@@ -1,6 +1,6 @@
 const { Client, IntentsBitField } = require("discord.js");
 const { Configuration, OpenAIApi } = require("openai");
-const config = require("./config.json");
+const config = require("./conf/config.json");
 
 const client = new Client({
   intents: [
@@ -9,6 +9,7 @@ const client = new Client({
     IntentsBitField.Flags.MessageContent,
   ],
 });
+
 
 const configuration = new Configuration({
   apiKey: config.generator.openai.api_key,

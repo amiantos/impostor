@@ -1,0 +1,15 @@
+services:
+  impostor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: impostor
+    restart: unless-stopped
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+    command: npm run dev

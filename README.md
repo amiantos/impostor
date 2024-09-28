@@ -23,9 +23,9 @@ cd impostor
 git clone https://github.com/amiantos/impostor.git .
 ```
 
-2. Create a new file called `config.json` and copy the format from `config.json.example`
+2. Create a new file called `conf/config.json` and copy the format from `conf/config.json.example`
 
-3. Update `config.json` with your own credentials and configuration options.
+3. Update `conf/config.json` with your own credentials and configuration options.
 
    1. You may have to Google how to create a Discord bot if you don't already know how.
 
