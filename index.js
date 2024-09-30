@@ -3,6 +3,8 @@ const { OpenAI } = require('openai');
 const config = require("./conf/config.json");
 const Logger = require("./classes/logger");
 const ContextUtils = require("./classes/context_utils");
+const { Tiktoken } = require("tiktoken/lite");
+const cl100k_base = require("tiktoken/encoders/cl100k_base.json");
 
 // Instantiate classes
 
@@ -21,6 +23,12 @@ const openai = new OpenAI({
 const logger = new Logger(false);
 
 const contextUtils = new ContextUtils(logger);
+
+const encoding = new Tiktoken(
+  cl100k_base.bpe_ranks,
+  cl100k_base.special_tokens,
+  cl100k_base.pat_str
+);
 
 // Setup Discord Client
 
@@ -77,11 +85,7 @@ client.on("messageCreate", async (message) => {
   try {
     await message.channel.sendTyping();
 
-    // Build message log from channel messages
-    let prevMessages = await message.channel.messages.fetch({ limit: 40 });
-    let currentChatMessages = contextUtils.buildChatMessages(prevMessages.reverse(), client.user.id, character_name);
-
-    // start building conversation log
+    // Start building conversation log
     let conversationLog = [
       {
         role: "system",
@@ -89,7 +93,20 @@ client.on("messageCreate", async (message) => {
       },
     ];
 
-    // TODO: Fancy token counting stuff to omit example messages automatically
+    let messages = await message.channel.messages.fetch({ limit: 40 });
+    let currentChatMessages = contextUtils.buildChatMessages(messages, client.user.id, character_name);
+
+    // use tiktoken to count tokens in messages
+    let tokenCount = 0;
+    for (const message of currentChatMessages) {
+      if (message.content) {
+        tokenCount += encoding.encode(message.content).length;
+      }
+    }
+    encoding.free();
+  
+    logger.info(`Current chat token count of messages: ${tokenCount}`);
+
     conversationLog.push(...exampleMessages);
 
     conversationLog.push({ role: "system", content: "[Start a new chat]" });
