@@ -14,7 +14,7 @@ class ContextUtils {
 
   buildChatMessages(prevMessages, client_user_id, character_name) {
     let newChatMessages = [];
-    prevMessages.forEach((msg) => {
+    prevMessages.reverse().forEach((msg) => {
       if (msg.content.startsWith("!")) return;
 
       const role = msg.author.id === client_user_id ? "assistant" : "user";
