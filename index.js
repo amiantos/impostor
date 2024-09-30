@@ -79,28 +79,7 @@ client.on("messageCreate", async (message) => {
 
     // Build message log from channel messages
     let prevMessages = await message.channel.messages.fetch({ limit: 40 });
-    prevMessages.reverse();
-
-    let newChatMessages = [];
-    prevMessages.forEach((msg) => {
-      if (msg.content.startsWith("!")) return;
-
-      const role = msg.author.id === client.user.id ? "assistant" : "user";
-      const name = msg.author.username
-        .replace(/\s+/g, "_")
-        .replace(/[^\w\s]/gi, "");
-
-      let messageFormatted = {
-        role: role,
-        content: msg.content.replace(
-          `<@${client.user.id}>`,
-          `${character_name}`
-        ),
-      };
-      if (role == "user") messageFormatted.name = name;
-
-      newChatMessages.push(messageFormatted);
-    });
+    let currentChatMessages = contextUtils.buildChatMessages(prevMessages.reverse(), client.user.id, character_name);
 
     // start building conversation log
     let conversationLog = [
@@ -114,7 +93,7 @@ client.on("messageCreate", async (message) => {
     conversationLog.push(...exampleMessages);
 
     conversationLog.push({ role: "system", content: "[Start a new chat]" });
-    conversationLog.push(...newChatMessages);
+    conversationLog.push(...currentChatMessages);
 
     logger.info("Created prompt, awaiting response.", conversationLog);
 
@@ -148,6 +127,7 @@ client.on("messageCreate", async (message) => {
   } catch (error) {
     logger.error(`ERR: ${error}`);
   }
+
 });
 
 // Login to Discord

@@ -12,6 +12,30 @@ class ContextUtils {
     this.logger = logger;
   }
 
+  buildChatMessages(prevMessages, client_user_id, character_name) {
+    let newChatMessages = [];
+    prevMessages.forEach((msg) => {
+      if (msg.content.startsWith("!")) return;
+
+      const role = msg.author.id === client_user_id ? "assistant" : "user";
+      const name = msg.author.username
+        .replace(/\s+/g, "_")
+        .replace(/[^\w\s]/gi, "");
+
+      let messageFormatted = {
+        role: role,
+        content: msg.content.replace(
+          `<@${client_user_id}>`,
+          `${character_name}`
+        ),
+      };
+      if (role == "user") messageFormatted.name = name;
+
+      newChatMessages.push(messageFormatted);
+    });
+    return newChatMessages;
+  }
+
   substituteParams(content, _name1, _name2) {
     if (!content) {
       this.logger.error("No content on substituteParams");
