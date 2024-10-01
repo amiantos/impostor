@@ -97,6 +97,7 @@ class ImpostorClient {
       })
       .catch((error) => {
         this.sendErrorResponse(message, error);
+        return;
       });
     this.logger.info(
       `Received response - ${chatCompletion.usage.total_tokens} total tokens - ${chatCompletion.usage.prompt_tokens} prompt / ${chatCompletion.usage.completion_tokens} completion.`,
@@ -115,10 +116,10 @@ class ImpostorClient {
       await message.reply(replyMessage);
     } catch (error) {
       this.sendErrorResponse(message, error);
+      return;
     }
   }
 
-  // method for sending error response as reply to current message
   async sendErrorResponse(message, error) {
     try {
       await message.reply(
