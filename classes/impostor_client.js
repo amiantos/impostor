@@ -122,10 +122,10 @@ class ImpostorClient {
 
   async sendErrorResponse(message, error) {
     try {
+      this.logger.error(error);
       await message.reply(
         "(OOC: Sorry, I appear to be having connectivity issues, please try your message again.)"
       );
-      this.logger.error(error);
     } catch (error) {
       this.logger.error("Failed to send error response: ", error);
     }
