@@ -1,6 +1,6 @@
 const { Client, IntentsBitField } = require("discord.js");
 const ContextUtils = require("./context_utils");
-const { OpenAI } = require('openai');
+const { OpenAI } = require("openai");
 
 class ImpostorClient {
   constructor(logger, config) {
@@ -74,58 +74,34 @@ class ImpostorClient {
 
     // Build context
     const characterInfo = require(`../${[this.config.character.file]}`);
-
-    const character_context = this.contextUtils.substituteParams(
-      `${this.contextUtils.default_main_prompt}${
-        this.config.character.nsfw_allowed
-          ? this.contextUtils.default_nsfw_prompt
-          : ""
-      }\n\n` +
-        ` ${characterInfo.description}\n` +
-        `${character_name}'s personality: ${characterInfo.personality}\n` +
-        `Circumstances and context of the dialogue: ${characterInfo.scenario}`,
-      user_name,
-      character_name
-    );
-
-    let conversationLog = [
-      {
-        role: "system",
-        content: character_context,
-      },
-    ];
-
-    let currentChatMessages = this.contextUtils.buildChatMessages(
-      messages,
+    const conversationLog = this.contextUtils.buildConversationLog(
+      characterInfo,
       this.client.user.id,
-      character_name
-    );
-
-    const exampleMessages = this.contextUtils.craftExampleMessages(
-      characterInfo.example_dialogue,
+      messages,
       user_name,
-      character_name
+      character_name,
+      this.config.character.nsfw_allowed
     );
-    conversationLog.push(...exampleMessages);
-    conversationLog.push({ role: "system", content: "[Start a new chat]" });
-    conversationLog.push(...currentChatMessages);
-
     this.logger.info("Created prompt, awaiting response.", conversationLog);
-  
+
     // Generate response with OpenAI API
-    const chatCompletion = await this.openai.chat.completions.create({
-      model: this.config.generator.openai.model,
-      messages: conversationLog,
-      temperature: this.config.generator.openai.temperature,
-      frequency_penalty: this.config.generator.openai.frequency_penalty,
-      presence_penalty: this.config.generator.openai.presence_penalty,
-      top_p: this.config.generator.openai.top_p,
-      max_tokens: this.config.generator.openai.max_tokens,
-    })
-    .catch((error) => {
-      this.sendErrorResponse(message, error);
-    });
-    this.logger.info(`Received response - ${chatCompletion.usage.total_tokens} total tokens - ${chatCompletion.usage.prompt_tokens} prompt / ${chatCompletion.usage.completion_tokens} completion.`, chatCompletion);
+    const chatCompletion = await this.openai.chat.completions
+      .create({
+        model: this.config.generator.openai.model,
+        messages: conversationLog,
+        temperature: this.config.generator.openai.temperature,
+        frequency_penalty: this.config.generator.openai.frequency_penalty,
+        presence_penalty: this.config.generator.openai.presence_penalty,
+        top_p: this.config.generator.openai.top_p,
+        max_tokens: this.config.generator.openai.max_tokens,
+      })
+      .catch((error) => {
+        this.sendErrorResponse(message, error);
+      });
+    this.logger.info(
+      `Received response - ${chatCompletion.usage.total_tokens} total tokens - ${chatCompletion.usage.prompt_tokens} prompt / ${chatCompletion.usage.completion_tokens} completion.`,
+      chatCompletion
+    );
 
     // Validate response
     let replyMessage = chatCompletion.choices[0].message.content;
