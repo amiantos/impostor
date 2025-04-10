@@ -2,7 +2,7 @@
     "generator": {
         "openai": {
             "api_key": "<OPENAI API KEY>",
-            "model": "gpt-4o",
+            "model": "gpt-4o-mini",
             "temperature": 0.9,
             "frequency_penalty": 0.7,
             "presence_penalty": 0.7,
@@ -20,8 +20,4 @@
         "<DISCORD CHANNEL ID>",
         "Or leave this array empty to target all channels"
     ],
-    "web_search": {
-        "enabled": true,
-        "bing_search_key": "<BING SEARCH API KEY>"
-    }
 }
