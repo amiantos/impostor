@@ -8,6 +8,7 @@ This is a simple Discord chatbot that can utilize Tavern-compatible character ca
 - [x] Chatbots respond to replies and @mentions on your Discord server
 - [x] Limit which channels chatbots will interact in
 - [x] OpenAI API support (only)
+- [x] Web search capability using OpenAI Responses API
 
 ## How to use
 
@@ -35,6 +36,28 @@ nano conf/config.json
 # Stop the bot
 ./stop.sh
 ```
+
+## Web Search Capability
+
+The bot now supports web search functionality through the OpenAI Responses API. To enable this feature:
+
+1. Make sure you're using a model that supports the Responses API (like gpt-4o or other newer models)
+2. Set `use_web_search` to `true` in your config.json:
+
+```json
+"openai": {
+    "api_key": "<OPENAI API KEY>",
+    "model": "gpt-4o",
+    "temperature": 0.9,
+    "frequency_penalty": 0.7,
+    "presence_penalty": 0.7,
+    "top_p": 1,
+    "max_tokens": 256,
+    "use_web_search": true
+}
+```
+
+When web search is enabled, the bot will be able to search the internet to provide more up-to-date and accurate responses.
 
 # Credits
 
