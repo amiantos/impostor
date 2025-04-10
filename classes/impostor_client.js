@@ -84,40 +84,74 @@ class ImpostorClient {
     );
     this.logger.info("Created prompt, awaiting response.", conversationLog);
 
-    // Generate response with OpenAI API
-    const chatCompletion = await this.openai.chat.completions
-      .create({
+    // Convert conversation log to Responses API format
+    const responsesMessages = this.convertToResponsesFormat(conversationLog);
+    this.logger.info("Converted messages to Responses format", responsesMessages);
+
+    // Generate response with OpenAI Responses API
+    try {
+      const response = await this.openai.beta.responses.create({
         model: this.config.generator.openai.model,
-        messages: conversationLog,
+        messages: responsesMessages,
         temperature: this.config.generator.openai.temperature,
         frequency_penalty: this.config.generator.openai.frequency_penalty,
         presence_penalty: this.config.generator.openai.presence_penalty,
         top_p: this.config.generator.openai.top_p,
         max_tokens: this.config.generator.openai.max_tokens,
-      })
-      .catch((error) => {
-        this.sendErrorResponse(message, error);
-        return;
+        tools: this.config.web_search?.enabled ? [
+          {
+            type: "web_search",
+            web_search: {
+              enable_snippets: true,
+              key: this.config.web_search?.bing_search_key || undefined
+            }
+          },
+        ] : undefined,
       });
-    this.logger.info(
-      `Received response - ${chatCompletion.usage.total_tokens} total tokens - ${chatCompletion.usage.prompt_tokens} prompt / ${chatCompletion.usage.completion_tokens} completion.`,
-      chatCompletion
-    );
+      
+      this.logger.info(
+        `Received response from Responses API - ${response.usage?.total_tokens || 'unknown'} tokens.`,
+        response
+      );
 
-    // Validate response
-    let replyMessage = chatCompletion.choices[0].message.content;
-    if (replyMessage.length > 2000) {
-      this.logger.warn("Message too long, truncating.");
-      replyMessage = replyMessage.substring(0, 2000);
-    }
+      // Extract the assistant's response
+      let replyMessage = response.choices[0].message.content;
+      if (replyMessage.length > 2000) {
+        this.logger.warn("Message too long, truncating.");
+        replyMessage = replyMessage.substring(0, 2000);
+      }
 
-    // Send response
-    try {
+      // Send response
       await message.reply(replyMessage);
     } catch (error) {
       this.sendErrorResponse(message, error);
       return;
     }
+  }
+
+  convertToResponsesFormat(conversationLog) {
+    // Map conversation log to Responses API format
+    return conversationLog.map(msg => {
+      // For system messages that are not conversation examples, keep as system messages
+      if (msg.role === "system" && 
+          (!msg.name || (msg.name !== "example_user" && msg.name !== "example_assistant"))) {
+        return {
+          role: "system",
+          content: msg.content
+        };
+      }
+      // For example messages or regular messages, keep their role
+      else {
+        return {
+          role: msg.role === "system" ? 
+                (msg.name === "example_user" ? "user" : "assistant") : 
+                msg.role,
+          content: msg.content,
+          name: msg.name && msg.name !== "example_user" && msg.name !== "example_assistant" ? 
+                msg.name : undefined
+        };
+      }
+    });
   }
 
   async sendErrorResponse(message, error) {
