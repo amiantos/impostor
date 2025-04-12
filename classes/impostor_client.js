@@ -72,33 +72,43 @@ class ImpostorClient {
       return;
     }
 
+    try {
+      const response = await this.generateResponse({
+        messages,
+        userName: user_name,
+        characterName: character_name,
+        botUserId: this.client.user.id
+      });
+      await message.reply(response);
+    } catch (error) {
+      this.sendErrorResponse(message, error);
+    }
+  }
+
+  async generateResponse({ messages, userName, characterName, botUserId }) {
     // Build context
     const characterInfo = require(`../${[this.config.character.file]}`);
     const conversationLog = this.contextUtils.buildConversationLog(
       characterInfo,
-      this.client.user.id,
+      botUserId,
       messages,
-      user_name,
-      character_name,
+      userName,
+      characterName,
       this.config.character.nsfw_allowed
     );
     this.logger.info("Created prompt, awaiting response.", conversationLog);
 
     // Generate response with OpenAI API
-    const chatCompletion = await this.openai.chat.completions
-      .create({
-        model: this.config.generator.openai.model,
-        messages: conversationLog,
-        temperature: this.config.generator.openai.temperature,
-        frequency_penalty: this.config.generator.openai.frequency_penalty,
-        presence_penalty: this.config.generator.openai.presence_penalty,
-        top_p: this.config.generator.openai.top_p,
-        max_tokens: this.config.generator.openai.max_tokens,
-      })
-      .catch((error) => {
-        this.sendErrorResponse(message, error);
-        return;
-      });
+    const chatCompletion = await this.openai.chat.completions.create({
+      model: this.config.generator.openai.model,
+      messages: conversationLog,
+      temperature: this.config.generator.openai.temperature,
+      frequency_penalty: this.config.generator.openai.frequency_penalty,
+      presence_penalty: this.config.generator.openai.presence_penalty,
+      top_p: this.config.generator.openai.top_p,
+      max_tokens: this.config.generator.openai.max_tokens,
+    });
+
     this.logger.info(
       `Received response - ${chatCompletion.usage.total_tokens} total tokens - ${chatCompletion.usage.prompt_tokens} prompt / ${chatCompletion.usage.completion_tokens} completion.`,
       chatCompletion
@@ -111,13 +121,7 @@ class ImpostorClient {
       replyMessage = replyMessage.substring(0, 2000);
     }
 
-    // Send response
-    try {
-      await message.reply(replyMessage);
-    } catch (error) {
-      this.sendErrorResponse(message, error);
-      return;
-    }
+    return replyMessage;
   }
 
   async sendErrorResponse(message, error) {
