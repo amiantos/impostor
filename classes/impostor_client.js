@@ -84,30 +84,21 @@ class ImpostorClient {
     );
     this.logger.info("Created prompt, awaiting response.", conversationLog);
 
-    try {
-      // Use the Responses API instead of Chat Completions
-      if (this.config.generator.openai.use_web_search) {
-        await this.generateResponseWithWebSearch(message, conversationLog);
-      } else {
-        await this.generateStandardResponse(message, conversationLog);
-      }
-    } catch (error) {
-      this.sendErrorResponse(message, error);
-    }
-  }
-
-  async generateStandardResponse(message, conversationLog) {
-    // Generate response with OpenAI API using the standard Chat Completions
-    const chatCompletion = await this.openai.chat.completions.create({
-      model: this.config.generator.openai.model,
-      messages: conversationLog,
-      temperature: this.config.generator.openai.temperature,
-      frequency_penalty: this.config.generator.openai.frequency_penalty,
-      presence_penalty: this.config.generator.openai.presence_penalty,
-      top_p: this.config.generator.openai.top_p,
-      max_tokens: this.config.generator.openai.max_tokens,
-    });
-
+    // Generate response with OpenAI API
+    const chatCompletion = await this.openai.chat.completions
+      .create({
+        model: this.config.generator.openai.model,
+        messages: conversationLog,
+        temperature: this.config.generator.openai.temperature,
+        frequency_penalty: this.config.generator.openai.frequency_penalty,
+        presence_penalty: this.config.generator.openai.presence_penalty,
+        top_p: this.config.generator.openai.top_p,
+        max_tokens: this.config.generator.openai.max_tokens,
+      })
+      .catch((error) => {
+        this.sendErrorResponse(message, error);
+        return;
+      });
     this.logger.info(
       `Received response - ${chatCompletion.usage.total_tokens} total tokens - ${chatCompletion.usage.prompt_tokens} prompt / ${chatCompletion.usage.completion_tokens} completion.`,
       chatCompletion
@@ -121,37 +112,12 @@ class ImpostorClient {
     }
 
     // Send response
-    await message.reply(replyMessage);
-  }
-
-  async generateResponseWithWebSearch(message, conversationLog) {
-    // Create a response using the Responses API with web search enabled
-    const response = await this.openai.responses.create({
-      model: this.config.generator.openai.model,
-      input: {
-        messages: conversationLog
-      },
-      tools: [
-        {
-          type: "web_search",
-        },
-      ],
-    });
-
-    this.logger.info(
-      `Received response with web search - ${response.usage?.total_tokens || 'unknown'} total tokens`,
-      response
-    );
-
-    // Extract response text
-    let replyMessage = response.text;
-    if (replyMessage.length > 2000) {
-      this.logger.warn("Message too long, truncating.");
-      replyMessage = replyMessage.substring(0, 2000);
+    try {
+      await message.reply(replyMessage);
+    } catch (error) {
+      this.sendErrorResponse(message, error);
+      return;
     }
-
-    // Send response
-    await message.reply(replyMessage);
   }
 
   async sendErrorResponse(message, error) {

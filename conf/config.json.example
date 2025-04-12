@@ -7,8 +7,7 @@
             "frequency_penalty": 0.7,
             "presence_penalty": 0.7,
             "top_p": 1,
-            "max_tokens": 256,
-            "use_web_search": false
+            "max_tokens": 256
         }
     },
     "character": {
