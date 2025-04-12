@@ -19,8 +19,8 @@ class ContextUtils {
     allow_nsfw = false
   ) {
     const character_context = this.substituteParams(
-      `${this.default_main_prompt}${
-        allow_nsfw ? this.default_nsfw_prompt : ""
+      `${ContextUtils.default_main_prompt}${
+        allow_nsfw ? ContextUtils.default_nsfw_prompt : ""
       }\n\n` +
         ` ${characterInfo.description}\n` +
         `${character_name}'s personality: ${characterInfo.personality}\n` +
