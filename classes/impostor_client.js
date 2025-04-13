@@ -111,9 +111,11 @@ class ImpostorClient {
     this.logger.debug("Generated Messages...", inputMessages);
 
     const response = await this.openai.responses.create({
-      model: "gpt-4o-mini",
+      model: "gpt-4o",
+      tools: [ { type: "web_search_preview" } ],
       instructions: instructions,
       input: inputMessages,
+      store: false,
     });
 
     this.logger.info("Received response - ", response);
