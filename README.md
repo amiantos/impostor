@@ -1,13 +1,13 @@
 # Impostor for Discord
 
-This is a simple Discord chatbot that can utilize Tavern-compatible character cards to influence the personalities of GPT-powered chatbots on your server.
+This is a simple Discord chatbot that can utilize Tavern-compatible character cards to influence the personalities of OpenAI-powered chatbots on your server.
 
 ## Features
 
 - [x] Use Tavern-format characters to power Discord chatbots
 - [x] Chatbots respond to replies and @mentions on your Discord server
 - [x] Limit which channels chatbots will interact in
-- [x] OpenAI API support (only)
+- [x] Built for OpenAI [Responses API](https://platform.openai.com/docs/api-reference/responses) with web search support
 
 ## How to use
 

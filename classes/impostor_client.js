@@ -72,33 +72,96 @@ class ImpostorClient {
       return;
     }
 
+    try {
+      const response = await this.generateResponseWithResponsesAPI({
+        messages,
+        userName: user_name,
+        characterName: character_name,
+        botUserId: this.client.user.id,
+      });
+      await message.reply(response);
+      return;
+    } catch (error) {
+      this.sendErrorResponse(message, error);
+      return;
+    }
+  }
+
+  async generateResponseWithResponsesAPI({
+    messages,
+    userName,
+    characterName,
+    botUserId,
+  }) {
+    const characterInfo = require(`../${[this.config.character.file]}`);
+    const instructions = this.contextUtils.buildInstructions(
+      characterInfo,
+      userName,
+      characterName,
+      this.config.character.nsfw_allowed
+    );
+    this.logger.debug("Generated Instructions...", instructions);
+
+    let inputMessages = this.contextUtils.buildChatMessagesForResponsesAPI(
+      messages,
+      botUserId,
+      characterName
+    );
+
+    this.logger.debug("Generated Messages...", inputMessages);
+
+    const response = await this.openai.responses.create({
+      model: "gpt-4o",
+      tools: [ { type: "web_search_preview" } ],
+      instructions: instructions,
+      input: inputMessages,
+      store: false,
+      max_output_tokens: this.config.generator.openai.max_tokens,
+      temperature: this.config.generator.openai.temperature,
+      top_p: this.config.generator.openai.top_p,
+    });
+
+    this.logger.info("Received response - ", response);
+
+    let replyMessage =  response.output_text;
+
+    if (replyMessage.length > 2000) {
+      this.logger.warn("Message too long, truncating.");
+      replyMessage = replyMessage.substring(0, 2000);
+    }
+
+    return replyMessage;
+  }
+
+  async generateResponseWithChatCompletions({
+    messages,
+    userName,
+    characterName,
+    botUserId,
+  }) {
     // Build context
     const characterInfo = require(`../${[this.config.character.file]}`);
     const conversationLog = this.contextUtils.buildConversationLog(
       characterInfo,
-      this.client.user.id,
+      botUserId,
       messages,
-      user_name,
-      character_name,
+      userName,
+      characterName,
       this.config.character.nsfw_allowed
     );
     this.logger.info("Created prompt, awaiting response.", conversationLog);
 
     // Generate response with OpenAI API
-    const chatCompletion = await this.openai.chat.completions
-      .create({
-        model: this.config.generator.openai.model,
-        messages: conversationLog,
-        temperature: this.config.generator.openai.temperature,
-        frequency_penalty: this.config.generator.openai.frequency_penalty,
-        presence_penalty: this.config.generator.openai.presence_penalty,
-        top_p: this.config.generator.openai.top_p,
-        max_tokens: this.config.generator.openai.max_tokens,
-      })
-      .catch((error) => {
-        this.sendErrorResponse(message, error);
-        return;
-      });
+    const chatCompletion = await this.openai.chat.completions.create({
+      model: this.config.generator.openai.model,
+      messages: conversationLog,
+      temperature: this.config.generator.openai.temperature,
+      frequency_penalty: this.config.generator.openai.frequency_penalty,
+      presence_penalty: this.config.generator.openai.presence_penalty,
+      top_p: this.config.generator.openai.top_p,
+      max_tokens: this.config.generator.openai.max_tokens,
+    });
+
     this.logger.info(
       `Received response - ${chatCompletion.usage.total_tokens} total tokens - ${chatCompletion.usage.prompt_tokens} prompt / ${chatCompletion.usage.completion_tokens} completion.`,
       chatCompletion
@@ -111,13 +174,7 @@ class ImpostorClient {
       replyMessage = replyMessage.substring(0, 2000);
     }
 
-    // Send response
-    try {
-      await message.reply(replyMessage);
-    } catch (error) {
-      this.sendErrorResponse(message, error);
-      return;
-    }
+    return replyMessage;
   }
 
   async sendErrorResponse(message, error) {
