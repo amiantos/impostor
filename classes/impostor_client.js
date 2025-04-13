@@ -73,19 +73,60 @@ class ImpostorClient {
     }
 
     try {
-      const response = await this.generateResponse({
+      const response = await this.generateResponseWithResponsesAPI({
         messages,
         userName: user_name,
         characterName: character_name,
-        botUserId: this.client.user.id
+        botUserId: this.client.user.id,
       });
       await message.reply(response);
+      return;
     } catch (error) {
       this.sendErrorResponse(message, error);
+      return;
     }
   }
 
-  async generateResponse({ messages, userName, characterName, botUserId }) {
+  async generateResponseWithResponsesAPI({
+    messages,
+    userName,
+    characterName,
+    botUserId,
+  }) {
+    const characterInfo = require(`../${[this.config.character.file]}`);
+    const instructions = this.contextUtils.buildInstructions(
+      characterInfo,
+      userName,
+      characterName,
+      this.config.character.nsfw_allowed
+    );
+    this.logger.debug("Generated Instructions...", instructions);
+
+    let inputMessages = this.contextUtils.buildChatMessagesForResponsesAPI(
+      messages,
+      botUserId,
+      characterName
+    );
+
+    this.logger.debug("Generated Messages...", inputMessages);
+
+    const response = await this.openai.responses.create({
+      model: "gpt-4o-mini",
+      instructions: instructions,
+      input: inputMessages,
+    });
+
+    this.logger.info("Received response - ", response);
+
+    return response.output_text;
+  }
+
+  async generateResponseWithChatCompletions({
+    messages,
+    userName,
+    characterName,
+    botUserId,
+  }) {
     // Build context
     const characterInfo = require(`../${[this.config.character.file]}`);
     const conversationLog = this.contextUtils.buildConversationLog(

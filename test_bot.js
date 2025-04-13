@@ -3,7 +3,7 @@ const config = require('./conf/config.json');
 const Logger = require('./classes/logger');
 
 // Initialize proper logger with debug mode off
-const logger = new Logger(false);
+const logger = new Logger(true);
 
 // Mock Discord.js Collection-like structure
 class MockCollection extends Array {
@@ -19,7 +19,7 @@ const TEST_SCENARIOS = {
     {
       content: 'Hey there! How are you doing today?',
       author: {
-        username: 'TestUser',
+        username: 'amiantos',
         id: '123'
       },
       id: '1'
@@ -29,7 +29,7 @@ const TEST_SCENARIOS = {
     {
       content: 'What is your favorite book and why do you like it so much?',
       author: {
-        username: 'TestUser',
+        username: 'amiantos',
         id: '123'
       },
       id: '2'
@@ -39,7 +39,7 @@ const TEST_SCENARIOS = {
     {
       content: 'What do you think about the current state of AI and its impact on society?',
       author: {
-        username: 'TestUser',
+        username: 'amiantos',
         id: '123'
       },
       id: '3'
@@ -54,9 +54,9 @@ async function runTest(scenarioName, client) {
   const mockMessages = new MockCollection(TEST_SCENARIOS[scenarioName]);
   
   try {
-    const response = await client.generateResponse({
+    const response = await client.generateResponseWithResponsesAPI({
       messages: mockMessages,
-      userName: 'TestUser',
+      userName: 'amiantos',
       characterName: config.character.name || 'Bot',
       botUserId: '456'
     });

@@ -10,6 +10,67 @@ class ContextUtils {
     this.logger = logger;
   }
 
+  buildInstructions(
+    characterInfo,
+    user_name,
+    character_name,
+    allow_nsfw = false
+  ) {
+    let character_context = this.substituteParams(
+      `${ContextUtils.default_main_prompt}${
+        allow_nsfw ? ContextUtils.default_nsfw_prompt : ""
+      }\n\n` +
+        ` ${characterInfo.description}\n` +
+        `${character_name}'s personality: ${characterInfo.personality}\n` +
+        `Circumstances and context of the dialogue: ${characterInfo.scenario}`,
+      user_name,
+      character_name
+    );
+    
+    const exampleMessages = this.craftExampleMessages(
+      characterInfo.example_dialogue,
+      user_name,
+      character_name
+    );
+
+    // Create array of every message marked "example_asssitant"
+    let example_assistant_msgs = exampleMessages.filter(
+      (msg) => msg.role === "system" && msg.name === "example_assistant"
+    );
+
+    character_context += "\n\nExample Dialogue:\n\n"
+    for (let item of example_assistant_msgs) {
+      character_context += item.content + "\n\n";
+    }
+
+    return character_context;
+  }
+
+
+  buildChatMessagesForResponsesAPI(prevMessages, client_user_id, character_name) {
+    let newChatMessages = [];
+    prevMessages.reverse().forEach((msg) => {
+      if (msg.content.startsWith("!")) return;
+
+      const role = msg.author.id === client_user_id ? "assistant" : "user";
+      const name = msg.author.username
+        .replace(/\s+/g, "_")
+        .replace(/[^\w\s]/gi, "");
+
+      let messageFormatted = {
+        role: role,
+        content: msg.content.replace(
+          `<@${client_user_id}>`,
+          `${character_name}`
+        ),
+      };
+      // if (role == "user") messageFormatted.name = name;
+
+      newChatMessages.push(messageFormatted);
+    });
+    return newChatMessages;
+  }
+
   buildConversationLog(
     characterInfo,
     client_id,
