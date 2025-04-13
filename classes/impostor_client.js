@@ -116,11 +116,21 @@ class ImpostorClient {
       instructions: instructions,
       input: inputMessages,
       store: false,
+      max_output_tokens: this.config.generator.openai.max_tokens,
+      temperature: this.config.generator.openai.temperature,
+      top_p: this.config.generator.openai.top_p,
     });
 
     this.logger.info("Received response - ", response);
 
-    return response.output_text;
+    let replyMessage =  response.output_text;
+
+    if (replyMessage.length > 2000) {
+      this.logger.warn("Message too long, truncating.");
+      replyMessage = replyMessage.substring(0, 2000);
+    }
+
+    return replyMessage;
   }
 
   async generateResponseWithChatCompletions({
