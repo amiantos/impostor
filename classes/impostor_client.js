@@ -115,7 +115,6 @@ class ImpostorClient {
       tools: [ { type: "web_search_preview" } ],
       instructions: instructions,
       input: inputMessages,
-      store: false,
       max_output_tokens: this.config.generator.openai.max_tokens,
       temperature: this.config.generator.openai.temperature,
       top_p: this.config.generator.openai.top_p,
