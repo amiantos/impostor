@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Impostor is a Discord chatbot that uses Tavern-compatible character cards to create personality-driven chatbots powered by OpenAI. The bot responds to @mentions and replies in Discord channels, using character definitions to maintain consistent personalities.
+Impostor is a Discord chatbot powered by OpenAI with a built-in IsaacGPT personality (depressive, sarcastic, cynical robot). The bot responds to @mentions and replies in Discord channels.
 
 ## Development Commands
 
@@ -26,40 +26,32 @@ npm start
 
 - **index.js**: Entry point that initializes logger and ImpostorClient
 - **ImpostorClient** (`classes/impostor_client.js`): Main Discord client handling message events and OpenAI integration
-- **ContextUtils** (`classes/context_utils.js`): Builds conversation context from character cards and chat history
+- **ContextUtils** (`classes/context_utils.js`): Simple context builder with hardcoded system prompt for IsaacGPT personality
 - **Logger** (`classes/logger.js`): Simple logging utility
 
 ### Key Features
 
-- **Dual API Support**: Uses OpenAI Responses API (primary) with web search support, fallback to Chat Completions API
-- **Character System**: Tavern-format JSON character cards with personality, description, and example dialogue
+- **OpenAI Responses API**: Uses OpenAI Responses API with web search support
+- **Hardcoded System Prompt**: Simple implementation with IsaacGPT personality built-in (depressive, sarcastic robot)
 - **Channel Filtering**: Configurable channel restrictions via `config.channels` array
 - **Message Processing**: Handles @mentions and replies, truncates messages over 2000 characters
 
 ### Configuration
 
 Configuration is managed through `conf/config.json`:
-- OpenAI API settings (key, model, temperature, etc.)
-- Discord bot token and character file reference
-- Channel ID whitelist (empty array = all channels)
-- NSFW content toggle
+- OpenAI API settings (key, model, temperature, etc.) in `generator.openai`
+- Discord bot token in `bot.token` field
+- Channel ID whitelist in `channels` array (empty array = all channels)
 
-### Character Cards
+### System Prompt
 
-Character definitions use Tavern format in JSON files (`characters/` directory):
-- `name`: Character name
-- `description`: Physical and behavioral description
-- `personality`: Personality traits
-- `scenario`: Context and circumstances
-- `example_dialogue`: Sample conversations using `<START>` delimiters
-
-The system substitutes `{{char}}` and `{{user}}` placeholders with actual names during context building.
+The bot uses a hardcoded system prompt in `ContextUtils.system_prompt` that defines IsaacGPT as a depressive, sarcastic, cynical robot. The prompt includes personality traits, behavioral guidelines, and response formatting rules.
 
 ### Message Flow
 
 1. Discord message triggers `handleMessageCreate`
 2. Channel and mention validation
 3. Fetch recent messages (40 limit)
-4. Build character context using ContextUtils
-5. Generate response via OpenAI Responses API (with web search) or Chat Completions
+4. Build simple message context using ContextUtils
+5. Generate response via OpenAI Responses API with hardcoded instructions
 6. Reply with truncated response if needed

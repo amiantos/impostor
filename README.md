@@ -1,12 +1,12 @@
 # Impostor for Discord
 
-This is a simple Discord chatbot that can utilize Tavern-compatible character cards to influence the personalities of OpenAI-powered chatbots on your server.
+This is a simple Discord chatbot powered by OpenAI with a built-in IsaacGPT personality (a depressive, sarcastic, cynical robot).
 
 ## Features
 
-- [x] Use Tavern-format characters to power Discord chatbots
-- [x] Chatbots respond to replies and @mentions on your Discord server
-- [x] Limit which channels chatbots will interact in
+- [x] IsaacGPT personality: depressive, sarcastic, and cynical robot character
+- [x] Responds to replies and @mentions on your Discord server
+- [x] Limit which channels the bot will interact in
 - [x] Built for OpenAI [Responses API](https://platform.openai.com/docs/api-reference/responses) with web search support
 
 ## How to use
@@ -38,5 +38,4 @@ nano conf/config.json
 
 # Credits
 
-- This repo contains code pilfered directly from and inspired by [SillyTavern](https://github.com/Cohee1207/SillyTavern)
-- This repo was direclty inspired by [notunderctrl/gpt-3.5-chat-bot](https://github.com/notunderctrl/gpt-3.5-chat-bot).
+- This repo was directly inspired by [notunderctrl/gpt-3.5-chat-bot](https://github.com/notunderctrl/gpt-3.5-chat-bot).

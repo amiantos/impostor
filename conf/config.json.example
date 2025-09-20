@@ -2,7 +2,7 @@
     "generator": {
         "openai": {
             "api_key": "<OPENAI API KEY>",
-            "model": "gpt-4o-mini",
+            "model": "gpt-4o",
             "temperature": 0.9,
             "frequency_penalty": 0.7,
             "presence_penalty": 0.7,
@@ -10,14 +10,12 @@
             "max_tokens": 256
         }
     },
-    "character": {
-        "file": "characters/isaacgpt.json",
-        "token": "<DISCORD BOT TOKEN>",
-        "nsfw_allowed": false
+    "bot": {
+        "token": "<DISCORD BOT TOKEN>"
     },
     "channels": [
         "<DISCORD CHANNEL ID>",
         "<DISCORD CHANNEL ID>",
         "Or leave this array empty to target all channels"
-    ],
+    ]
 }

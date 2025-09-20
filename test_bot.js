@@ -69,7 +69,7 @@ async function runTest(scenarioName, client) {
     const response = await client.generateResponseWithResponsesAPI({
       messages: mockMessages,
       userName: "amiantos",
-      characterName: config.character.name || "Bot",
+      characterName: "IsaacGPT",
       botUserId: "456",
     });
 

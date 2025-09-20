@@ -28,7 +28,7 @@ class ImpostorClient {
   }
 
   async login() {
-    await this.client.login(this.config.character.token);
+    await this.client.login(this.config.bot.token);
   }
 
   async handleMessageCreate(message) {
@@ -93,19 +93,12 @@ class ImpostorClient {
     characterName,
     botUserId,
   }) {
-    const characterInfo = require(`../${[this.config.character.file]}`);
-    const instructions = this.contextUtils.buildInstructions(
-      characterInfo,
-      userName,
-      characterName,
-      this.config.character.nsfw_allowed
-    );
+    const instructions = this.contextUtils.buildInstructions();
     this.logger.debug("Generated Instructions...", instructions);
 
     let inputMessages = this.contextUtils.buildChatMessagesForResponsesAPI(
       messages,
-      botUserId,
-      characterName
+      botUserId
     );
 
     this.logger.debug("Generated Messages...", inputMessages);
@@ -132,49 +125,6 @@ class ImpostorClient {
     return replyMessage;
   }
 
-  async generateResponseWithChatCompletions({
-    messages,
-    userName,
-    characterName,
-    botUserId,
-  }) {
-    // Build context
-    const characterInfo = require(`../${[this.config.character.file]}`);
-    const conversationLog = this.contextUtils.buildConversationLog(
-      characterInfo,
-      botUserId,
-      messages,
-      userName,
-      characterName,
-      this.config.character.nsfw_allowed
-    );
-    this.logger.info("Created prompt, awaiting response.", conversationLog);
-
-    // Generate response with OpenAI API
-    const chatCompletion = await this.openai.chat.completions.create({
-      model: this.config.generator.openai.model,
-      messages: conversationLog,
-      temperature: this.config.generator.openai.temperature,
-      frequency_penalty: this.config.generator.openai.frequency_penalty,
-      presence_penalty: this.config.generator.openai.presence_penalty,
-      top_p: this.config.generator.openai.top_p,
-      max_tokens: this.config.generator.openai.max_tokens,
-    });
-
-    this.logger.info(
-      `Received response - ${chatCompletion.usage.total_tokens} total tokens - ${chatCompletion.usage.prompt_tokens} prompt / ${chatCompletion.usage.completion_tokens} completion.`,
-      chatCompletion
-    );
-
-    // Validate response
-    let replyMessage = chatCompletion.choices[0].message.content;
-    if (replyMessage.length > 2000) {
-      this.logger.warn("Message too long, truncating.");
-      replyMessage = replyMessage.substring(0, 2000);
-    }
-
-    return replyMessage;
-  }
 
   async sendErrorResponse(message, error) {
     try {
