@@ -18,6 +18,10 @@ class ImpostorClient {
       apiKey: config.generator.openai.api_key,
     });
 
+    // Message queue system
+    this.messageQueue = [];
+    this.isProcessing = false;
+
     this.client.on("ready", () => {
       this.logger.info(`The bot is online as ${this.client.user.tag}!`);
     });
@@ -53,10 +57,50 @@ class ImpostorClient {
       return;
 
     this.logger.info(
-      `Received new message from @${message.author.username}.`,
+      `Queuing message from @${message.author.username}.`,
       message
     );
 
+    // Add message to queue
+    this.messageQueue.push(message);
+
+    // Start processing queue if not already processing
+    if (!this.isProcessing) {
+      this.processMessageQueue();
+    }
+  }
+
+  async processMessageQueue() {
+    if (this.isProcessing) return;
+
+    this.isProcessing = true;
+
+    while (this.messageQueue.length > 0) {
+      const message = this.messageQueue.shift();
+
+      try {
+        this.logger.info(
+          `Processing message from @${message.author.username}. Queue length: ${this.messageQueue.length}`,
+          message
+        );
+
+        await this.processMessage(message);
+
+        // Add a small delay between messages to appear more natural
+        if (this.messageQueue.length > 0) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+
+      } catch (error) {
+        this.logger.error("Error processing queued message:", error);
+        await this.sendErrorResponse(message, error);
+      }
+    }
+
+    this.isProcessing = false;
+  }
+
+  async processMessage(message) {
     const user_name = message.author.username
       .replace(/\s+/g, "_")
       .replace(/[^\w\s]/gi, "");
@@ -68,23 +112,17 @@ class ImpostorClient {
     try {
       messages = await message.channel.messages.fetch({ limit: 40 });
     } catch (error) {
-      this.sendErrorResponse(message, error);
-      return;
+      throw error;
     }
 
-    try {
-      const response = await this.generateResponseWithResponsesAPI({
-        messages,
-        userName: user_name,
-        characterName: character_name,
-        botUserId: this.client.user.id,
-      });
-      await message.reply(response);
-      return;
-    } catch (error) {
-      this.sendErrorResponse(message, error);
-      return;
-    }
+    const response = await this.generateResponseWithResponsesAPI({
+      messages,
+      userName: user_name,
+      characterName: character_name,
+      botUserId: this.client.user.id,
+    });
+
+    await message.reply(response);
   }
 
   async generateResponseWithResponsesAPI({
