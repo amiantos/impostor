@@ -160,7 +160,7 @@ class ImpostorClient {
     let structuredResponse = await this.parseStructuredResponse(response);
 
     let iterationCount = 0;
-    const maxIterations = 5; // Prevent infinite loops
+    const maxIterations = 10; // Prevent infinite loops
     let allToolResults = [];
 
     // Tool execution loop - can iterate multiple times
