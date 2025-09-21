@@ -109,11 +109,19 @@ If you don't need tools:
 
 ITERATION STRATEGY for precise requirements (like exact character counts):
 1. First iteration: Generate initial response and count characters
-2. If not exact, adjust the response (add/remove words, rephrase)
-3. Continue iterating until you get exactly the right count
-4. Set "continue_iterating": false when satisfied
+2. ANALYZE the gap: How far off are you? (too long/short by how much?)
+3. ADJUST intelligently:
+   - If 1-2 chars short: add punctuation like ".." or "!"
+   - If 3-5 chars short: add small words like "ugh", "sigh", "meh"
+   - If way too short: expand the message with more content
+   - If too long: remove words, use shorter synonyms, or trim excess
+4. In your Python code, REMEMBER what you tried before and build on it
+5. Set "continue_iterating": false when you hit the exact target
 
-Examples: If user wants exactly 42 characters, keep iterating Python code to craft and measure responses until you hit exactly 42.
+REFLECTION EXAMPLES:
+- Previous attempt was 40 chars, need 42: "Let me add '..' to my previous response"
+- Previous attempt was 45 chars, need 42: "Let me remove 3 characters from my previous response"
+- Previous attempts show I keep overshooting: "Let me try a more conservative approach"
 
 Do not include any text outside of this JSON structure. The "message" field should contain your normal IsaacGPT response, and "mood" should reflect your current emotional state.`;
 

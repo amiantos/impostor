@@ -173,7 +173,11 @@ class ImpostorClient {
       allToolResults.push({
         tool: structuredResponse.tool_request.tool_name,
         success: toolResult.success,
-        iteration: iterationCount
+        iteration: iterationCount,
+        code: structuredResponse.tool_request.code,
+        output: toolResult.output,
+        error: toolResult.error,
+        reason: structuredResponse.tool_request.reason
       });
 
       // Add tool result to conversation
@@ -183,9 +187,16 @@ class ImpostorClient {
       });
 
       if (structuredResponse.continue_iterating) {
+        // Build iteration summary for context
+        const iterationSummary = this.buildIterationSummary(allToolResults, iterationCount);
         conversationLog.push({
           role: "user",
-          content: `Tool execution result: ${JSON.stringify(toolResult)}. Continue iterating to refine your approach, or provide your final response if satisfied.`
+          content: `Tool execution result: ${JSON.stringify(toolResult)}
+
+ITERATION HISTORY:
+${iterationSummary}
+
+REFLECTION: Look at your previous attempts above. What worked? What didn't? How can you adjust your approach based on the results? If you're close to the target (like 1-2 characters off), make small adjustments. Continue iterating to refine your approach, or provide your final response if satisfied.`
         });
       } else {
         conversationLog.push({
@@ -267,6 +278,23 @@ class ImpostorClient {
         tools_used: []
       };
     }
+  }
+
+  buildIterationSummary(allToolResults, currentIteration) {
+    let summary = "";
+    for (let i = 0; i < allToolResults.length; i++) {
+      const result = allToolResults[i];
+      summary += `Iteration ${result.iteration}:\n`;
+      summary += `  Goal: ${result.reason}\n`;
+      summary += `  Code: ${result.code.substring(0, 100)}${result.code.length > 100 ? '...' : ''}\n`;
+      if (result.success) {
+        summary += `  Result: ${result.output}\n`;
+      } else {
+        summary += `  Error: ${result.error}\n`;
+      }
+      summary += `\n`;
+    }
+    return summary.trim();
   }
 
   async executeTool(toolRequest) {
