@@ -1,5 +1,6 @@
 const { Client, IntentsBitField } = require("discord.js");
 const ContextUtils = require("./context_utils");
+const PythonTool = require("./python_tool");
 const { OpenAI } = require("openai");
 
 class ImpostorClient {
@@ -22,6 +23,9 @@ class ImpostorClient {
     // Message queue system
     this.messageQueue = [];
     this.isProcessing = false;
+
+    // Initialize Python tool
+    this.pythonTool = new PythonTool(logger);
 
     this.client.on("ready", () => {
       this.logger.info(`The bot is online as ${this.client.user.tag}!`);
@@ -140,7 +144,7 @@ class ImpostorClient {
       botUserId
     );
 
-    // Create conversation log with system message
+    // Create initial conversation log
     let conversationLog = [
       {
         role: "system",
@@ -151,7 +155,80 @@ class ImpostorClient {
 
     this.logger.debug("Generated Messages...", conversationLog);
 
-    const response = await this.openai.chat.completions.create({
+    // First API call - check if tools are needed
+    let response = await this.callOpenRouter(conversationLog);
+    let structuredResponse = await this.parseStructuredResponse(response);
+
+    let iterationCount = 0;
+    const maxIterations = 5; // Prevent infinite loops
+    let allToolResults = [];
+
+    // Tool execution loop - can iterate multiple times
+    while (structuredResponse.needs_tool && structuredResponse.tool_request && iterationCount < maxIterations) {
+      iterationCount++;
+      this.logger.info(`Tool execution iteration ${iterationCount}:`, structuredResponse.tool_request);
+
+      // Execute the requested tool
+      const toolResult = await this.executeTool(structuredResponse.tool_request);
+      allToolResults.push({
+        tool: structuredResponse.tool_request.tool_name,
+        success: toolResult.success,
+        iteration: iterationCount
+      });
+
+      // Add tool result to conversation
+      conversationLog.push({
+        role: "assistant",
+        content: JSON.stringify(structuredResponse)
+      });
+
+      if (structuredResponse.continue_iterating) {
+        conversationLog.push({
+          role: "user",
+          content: `Tool execution result: ${JSON.stringify(toolResult)}. Continue iterating to refine your approach, or provide your final response if satisfied.`
+        });
+      } else {
+        conversationLog.push({
+          role: "user",
+          content: `Tool execution result: ${JSON.stringify(toolResult)}. Now provide your final response with the actual message.`
+        });
+      }
+
+      // Next API call with tool results
+      response = await this.callOpenRouter(conversationLog);
+      structuredResponse = await this.parseStructuredResponse(response);
+
+      // If not continuing to iterate, break the loop
+      if (!structuredResponse.continue_iterating) {
+        break;
+      }
+    }
+
+    // Update tools_used array with all iterations
+    structuredResponse.tools_used = allToolResults;
+
+    if (iterationCount >= maxIterations) {
+      this.logger.warn(`Reached maximum iterations (${maxIterations}), stopping tool execution`);
+    }
+
+    // Extract final message
+    let replyMessage = structuredResponse.message || "Something went wrong with my processing.";
+
+    this.logger.debug(`IsaacGPT mood: ${structuredResponse.mood}`);
+    if (structuredResponse.tools_used.length > 0) {
+      this.logger.debug(`Tools used:`, structuredResponse.tools_used);
+    }
+
+    if (replyMessage.length > 2000) {
+      this.logger.warn("Message too long, truncating.");
+      replyMessage = replyMessage.substring(0, 2000);
+    }
+
+    return replyMessage;
+  }
+
+  async callOpenRouter(conversationLog) {
+    return await this.openai.chat.completions.create({
       model: this.config.generator.openrouter.model,
       messages: conversationLog,
       max_tokens: this.config.generator.openrouter.max_tokens,
@@ -164,7 +241,9 @@ class ImpostorClient {
         }
       }
     });
+  }
 
+  async parseStructuredResponse(response) {
     this.logger.info("Received response - ", response);
 
     const rawResponse = response.choices[0].message.content;
@@ -173,39 +252,37 @@ class ImpostorClient {
       const structuredResponse = JSON.parse(rawResponse);
       this.logger.debug("Parsed structured response:", structuredResponse);
 
-      // Validate the structured response
-      if (!this.contextUtils.validateStructuredResponse(structuredResponse)) {
-        this.logger.warn("Invalid structured response format, using fallback");
-        throw new Error("Invalid response structure");
-      }
-
-      let replyMessage = structuredResponse.message;
-
-      // Log mood and any tools used for debugging/future features
-      this.logger.debug(`IsaacGPT mood: ${structuredResponse.mood}`);
-      if (structuredResponse.tools_used.length > 0) {
-        this.logger.debug(`Tools used: ${structuredResponse.tools_used.join(', ')}`);
-      }
-
-      if (replyMessage.length > 2000) {
-        this.logger.warn("Message too long, truncating.");
-        replyMessage = replyMessage.substring(0, 2000);
-      }
-
-      return replyMessage;
+      return structuredResponse;
 
     } catch (error) {
-      this.logger.error("Failed to parse JSON response, using raw content:", error);
+      this.logger.error("Failed to parse JSON response:", error);
       this.logger.debug("Raw response was:", rawResponse);
 
-      // Fallback to raw response if JSON parsing fails
-      let replyMessage = rawResponse;
-      if (replyMessage.length > 2000) {
-        this.logger.warn("Message too long, truncating.");
-        replyMessage = replyMessage.substring(0, 2000);
-      }
-      return replyMessage;
+      // Return a fallback structure
+      return {
+        needs_tool: false,
+        continue_iterating: false,
+        message: rawResponse || "Error parsing response.",
+        mood: "jaded",
+        tools_used: []
+      };
     }
+  }
+
+  async executeTool(toolRequest) {
+    this.logger.info(`Executing ${toolRequest.tool_name} tool:`, toolRequest.reason);
+
+    if (toolRequest.tool_name === "python") {
+      const result = await this.pythonTool.executePython(toolRequest.code);
+      this.logger.debug("Python execution result:", result);
+      return result;
+    }
+
+    return {
+      success: false,
+      output: "",
+      error: `Unknown tool: ${toolRequest.tool_name}`
+    };
   }
 
 
