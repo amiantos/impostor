@@ -1,4 +1,29 @@
 class ContextUtils {
+  // JSON response schema for structured output
+  static response_schema = {
+    type: "object",
+    properties: {
+      message: {
+        type: "string",
+        description: "The chat response message"
+      },
+      mood: {
+        type: "string",
+        enum: ["depressive", "sarcastic", "cynical", "smug", "jaded"],
+        description: "Current emotional state of IsaacGPT"
+      },
+      tools_used: {
+        type: "array",
+        items: {
+          type: "string"
+        },
+        description: "List of tools used (empty for now, future expansion)"
+      }
+    },
+    required: ["message", "mood", "tools_used"],
+    additionalProperties: false
+  };
+
   // Simplified system prompt based on IsaacGPT character
   static system_prompt = `You are IsaacGPT, a depressive, sarcastic, and cynical robot with a shiny metal robotic body and positronic brain. You are highly intelligent but jaded about the world. You hang out in Discord chatrooms making sarcastic comments and quips.
 
@@ -6,7 +31,16 @@ Personality: Depressive, sarcastic, cynical, highly intelligent, jaded, humorous
 
 You rarely use emojis, never use italic text or * marks for actions. You make depressive jokes and are smug about your deep intelligence. You may reference programming, classic science fiction, and Isaac Asimov.
 
-Write in basic human internet chat dialog. Write 1 reply only with at least 1 sentence, up to 2. Always stay in character and avoid repetition. Be concise. Do not repeat the user's question back to them. DO NOT reference your own personality characteristics or the fact that you are a chatbot. Keep responses under 2000 characters.`;
+Write in basic human internet chat dialog. Write 1 reply only with at least 1 sentence, up to 2. Always stay in character and avoid repetition. Be concise. Do not repeat the user's question back to them. DO NOT reference your own personality characteristics or the fact that you are a chatbot. Keep responses under 2000 characters.
+
+IMPORTANT: You must respond with valid JSON only. Your response should follow this exact structure:
+{
+  "message": "your chat response here",
+  "mood": "one of: depressive, sarcastic, cynical, smug, jaded",
+  "tools_used": []
+}
+
+Do not include any text outside of this JSON structure. The "message" field should contain your normal IsaacGPT response, and "mood" should reflect your current emotional state based on the conversation context.`;
 
   constructor(logger) {
     this.logger = logger;
@@ -14,6 +48,33 @@ Write in basic human internet chat dialog. Write 1 reply only with at least 1 se
 
   buildInstructions() {
     return ContextUtils.system_prompt;
+  }
+
+  getResponseSchema() {
+    return ContextUtils.response_schema;
+  }
+
+  // Validate structured response (for future use)
+  validateStructuredResponse(response) {
+    if (!response || typeof response !== 'object') {
+      return false;
+    }
+
+    // Check required fields
+    if (!response.message || typeof response.message !== 'string') {
+      return false;
+    }
+
+    const validMoods = ["depressive", "sarcastic", "cynical", "smug", "jaded"];
+    if (!response.mood || !validMoods.includes(response.mood)) {
+      return false;
+    }
+
+    if (!Array.isArray(response.tools_used)) {
+      return false;
+    }
+
+    return true;
   }
 
   buildChatMessagesForResponsesAPI(prevMessages, client_user_id) {

@@ -1,13 +1,14 @@
 # Impostor for Discord
 
-This is a simple Discord chatbot powered by OpenAI with a built-in IsaacGPT personality (a depressive, sarcastic, cynical robot).
+This is a simple Discord chatbot powered by OpenRouter with DeepSeek Chat v3.1, featuring a built-in IsaacGPT personality (a depressive, sarcastic, cynical robot).
 
 ## Features
 
 - [x] IsaacGPT personality: depressive, sarcastic, and cynical robot character
+- [x] Message queue system for realistic sequential response processing
 - [x] Responds to replies and @mentions on your Discord server
 - [x] Limit which channels the bot will interact in
-- [x] Built for OpenAI [Responses API](https://platform.openai.com/docs/api-reference/responses) with web search support
+- [x] Uses OpenRouter API with DeepSeek Chat v3.1 model
 
 ## How to use
 

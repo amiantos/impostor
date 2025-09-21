@@ -15,7 +15,8 @@ class ImpostorClient {
       ],
     });
     this.openai = new OpenAI({
-      apiKey: config.generator.openai.api_key,
+      apiKey: config.generator.openrouter.api_key,
+      baseURL: config.generator.openrouter.base_url,
     });
 
     // Message queue system
@@ -115,7 +116,7 @@ class ImpostorClient {
       throw error;
     }
 
-    const response = await this.generateResponseWithResponsesAPI({
+    const response = await this.generateResponseWithChatCompletions({
       messages,
       userName: user_name,
       characterName: character_name,
@@ -125,42 +126,86 @@ class ImpostorClient {
     await message.reply(response);
   }
 
-  async generateResponseWithResponsesAPI({
+  async generateResponseWithChatCompletions({
     messages,
     userName,
     characterName,
     botUserId,
   }) {
-    const instructions = this.contextUtils.buildInstructions();
-    this.logger.debug("Generated Instructions...", instructions);
+    const systemPrompt = this.contextUtils.buildInstructions();
+    this.logger.debug("Generated System Prompt...", systemPrompt);
 
     let inputMessages = this.contextUtils.buildChatMessagesForResponsesAPI(
       messages,
       botUserId
     );
 
-    this.logger.debug("Generated Messages...", inputMessages);
+    // Create conversation log with system message
+    let conversationLog = [
+      {
+        role: "system",
+        content: systemPrompt,
+      },
+      ...inputMessages
+    ];
 
-    const response = await this.openai.responses.create({
-      model: "gpt-4o",
-      tools: [ { type: "web_search_preview" } ],
-      instructions: instructions,
-      input: inputMessages,
-      max_output_tokens: this.config.generator.openai.max_tokens,
-      temperature: this.config.generator.openai.temperature,
-      top_p: this.config.generator.openai.top_p,
+    this.logger.debug("Generated Messages...", conversationLog);
+
+    const response = await this.openai.chat.completions.create({
+      model: this.config.generator.openrouter.model,
+      messages: conversationLog,
+      max_tokens: this.config.generator.openrouter.max_tokens,
+      temperature: this.config.generator.openrouter.temperature,
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "isaacgpt_response",
+          schema: this.contextUtils.constructor.response_schema
+        }
+      }
     });
 
     this.logger.info("Received response - ", response);
 
-    let replyMessage =  response.output_text;
+    const rawResponse = response.choices[0].message.content;
 
-    if (replyMessage.length > 2000) {
-      this.logger.warn("Message too long, truncating.");
-      replyMessage = replyMessage.substring(0, 2000);
+    try {
+      const structuredResponse = JSON.parse(rawResponse);
+      this.logger.debug("Parsed structured response:", structuredResponse);
+
+      // Validate the structured response
+      if (!this.contextUtils.validateStructuredResponse(structuredResponse)) {
+        this.logger.warn("Invalid structured response format, using fallback");
+        throw new Error("Invalid response structure");
+      }
+
+      let replyMessage = structuredResponse.message;
+
+      // Log mood and any tools used for debugging/future features
+      this.logger.debug(`IsaacGPT mood: ${structuredResponse.mood}`);
+      if (structuredResponse.tools_used.length > 0) {
+        this.logger.debug(`Tools used: ${structuredResponse.tools_used.join(', ')}`);
+      }
+
+      if (replyMessage.length > 2000) {
+        this.logger.warn("Message too long, truncating.");
+        replyMessage = replyMessage.substring(0, 2000);
+      }
+
+      return replyMessage;
+
+    } catch (error) {
+      this.logger.error("Failed to parse JSON response, using raw content:", error);
+      this.logger.debug("Raw response was:", rawResponse);
+
+      // Fallback to raw response if JSON parsing fails
+      let replyMessage = rawResponse;
+      if (replyMessage.length > 2000) {
+        this.logger.warn("Message too long, truncating.");
+        replyMessage = replyMessage.substring(0, 2000);
+      }
+      return replyMessage;
     }
-
-    return replyMessage;
   }
 
 
