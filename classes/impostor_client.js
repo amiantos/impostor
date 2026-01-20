@@ -232,23 +232,50 @@ class ImpostorClient {
 
   /**
    * Get messages for evaluation context, including bot's last response with surrounding context
+   * Applies time-based filtering to exclude old/irrelevant messages
    * @param {Array} messages - Parsed messages from database (newest first)
    * @param {number} contextBefore - Number of messages to include before bot's last response (default 5)
+   * @param {number} maxAgeMinutes - Maximum age of messages to include (default 30)
+   * @param {number} maxGapMinutes - Maximum gap between messages before treating as new conversation (default 30)
    * @returns {Array} Messages with context (oldest first)
    */
-  getMessagesForEvaluation(messages, contextBefore = 5) {
+  getMessagesForEvaluation(messages, contextBefore = 5, maxAgeMinutes = null, maxGapMinutes = null) {
+    // Use config values if not specified
+    maxAgeMinutes = maxAgeMinutes ?? this.config.autonomous?.max_context_age_minutes ?? 30;
+    maxGapMinutes = maxGapMinutes ?? this.config.autonomous?.max_conversation_gap_minutes ?? 30;
+
+    // Step 1: Filter messages to recent time window
+    const cutoffTime = Date.now() - maxAgeMinutes * 60 * 1000;
+    const recentMessages = messages.filter(m => {
+      const msgTime = new Date(m.created_at).getTime();
+      return msgTime >= cutoffTime;
+    });
+
+    if (recentMessages.length === 0) {
+      this.logger.debug(`No messages within ${maxAgeMinutes} minute window`);
+      return [];
+    }
+
+    // Step 2: Filter out messages from before conversation gaps
+    const filteredMessages = this.filterByConversationGaps(recentMessages, maxGapMinutes);
+
+    if (filteredMessages.length === 0) {
+      return [];
+    }
+
+    // Step 3: Apply existing logic to find bot's last message and build context
     // Messages come in newest-first order, find the last bot message
     let lastBotIndex = -1;
-    for (let i = 0; i < messages.length; i++) {
-      if (messages[i].is_bot_message) {
+    for (let i = 0; i < filteredMessages.length; i++) {
+      if (filteredMessages[i].is_bot_message) {
         lastBotIndex = i;
         break;
       }
     }
 
     if (lastBotIndex === -1) {
-      // No bot messages, return all messages (reversed to oldest first)
-      return [...messages].reverse();
+      // No bot messages, return all filtered messages (reversed to oldest first)
+      return [...filteredMessages].reverse();
     }
 
     // Build context: messages before bot + bot message + messages after bot
@@ -257,15 +284,45 @@ class ImpostorClient {
     //   - messages[lastBotIndex] = bot's message
     //   - messages.slice(lastBotIndex + 1, ...) = messages BEFORE bot spoke (chronologically)
 
-    const messagesAfterBot = messages.slice(0, lastBotIndex);
-    const botMessage = messages[lastBotIndex];
-    const messagesBeforeBot = messages.slice(
+    const messagesAfterBot = filteredMessages.slice(0, lastBotIndex);
+    const botMessage = filteredMessages[lastBotIndex];
+    const messagesBeforeBot = filteredMessages.slice(
       lastBotIndex + 1,
       lastBotIndex + 1 + contextBefore
     );
 
     // Combine in chronological order (oldest first)
     return [...messagesBeforeBot.reverse(), botMessage, ...messagesAfterBot.reverse()];
+  }
+
+  /**
+   * Filter messages by conversation gaps - removes messages from before large time gaps
+   * This handles cases where a new conversation starts after a long pause
+   * @param {Array} messages - Messages in newest-first order
+   * @param {number} maxGapMinutes - Maximum allowed gap between messages
+   * @returns {Array} Filtered messages (newest-first order)
+   */
+  filterByConversationGaps(messages, maxGapMinutes) {
+    if (messages.length <= 1) {
+      return messages;
+    }
+
+    const maxGapMs = maxGapMinutes * 60 * 1000;
+
+    // Walk through newest-to-oldest and find the first large gap
+    for (let i = 0; i < messages.length - 1; i++) {
+      const currentTime = new Date(messages[i].created_at).getTime();
+      const nextTime = new Date(messages[i + 1].created_at).getTime();
+      const gap = currentTime - nextTime;
+
+      if (gap > maxGapMs) {
+        // Found a large gap, only keep messages after this point (newer messages)
+        this.logger.debug(`Found ${Math.round(gap / 60000)} minute conversation gap, excluding ${messages.length - i - 1} older messages`);
+        return messages.slice(0, i + 1);
+      }
+    }
+
+    return messages; // No large gaps found
   }
 
   async processMessageQueue() {

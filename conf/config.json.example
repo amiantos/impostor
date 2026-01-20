@@ -17,7 +17,9 @@
     ],
     "autonomous": {
         "enabled": true,
-        "debounce_seconds": 15
+        "debounce_seconds": 15,
+        "max_context_age_minutes": 30,
+        "max_conversation_gap_minutes": 30
     },
     "vision": {
         "enabled": true,
