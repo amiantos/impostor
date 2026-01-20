@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:api-docs.deepseek.com)",
+      "Bash(docker logs:*)",
+      "Bash(./stop.sh:*)",
+      "Bash(./start.sh)",
+      "Bash(git add:*)"
+    ]
+  }
+}
