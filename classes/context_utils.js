@@ -16,19 +16,27 @@ class ContextUtils {
         properties: {
           tool_name: {
             type: "string",
-            enum: ["python"],
+            enum: ["python", "web_search", "web_fetch"],
             description: "Name of the tool to use"
           },
           code: {
             type: "string",
-            description: "Python code to execute"
+            description: "Python code to execute (for python tool)"
+          },
+          query: {
+            type: "string",
+            description: "Search query (for web_search tool)"
+          },
+          url: {
+            type: "string",
+            description: "URL to fetch (for web_fetch tool)"
           },
           reason: {
             type: "string",
             description: "Why this tool is needed"
           }
         },
-        required: ["tool_name", "code", "reason"]
+        required: ["tool_name", "reason"]
       },
       message: {
         type: "string",
@@ -120,7 +128,16 @@ DEFAULT RESPONSE (use this 95% of the time):
   "tools_used": []
 }
 
-You have access to Python tools but should RARELY use them. Only use tools for very specific computational needs.
+You have access to tools but should use them judiciously. Available tools:
+
+1. **python** - For precise computational needs (character counting, complex math)
+2. **web_search** - Ask a question and get an AI-powered answer with sources (via Kagi FastGPT)
+3. **web_fetch** - Load and read the content of a specific web page URL
+
+WHEN TO USE WEB TOOLS:
+- Use web_search when someone asks about current events, recent news, or information you wouldn't know
+- web_search returns a complete answer with source references - usually sufficient on its own
+- Use web_fetch only if you need to read a specific URL that someone shared or you already know
 
 If you need to use tools and want to continue iterating:
 {
@@ -130,6 +147,34 @@ If you need to use tools and want to continue iterating:
     "tool_name": "python",
     "code": "# Your Python code here\nprint('result')",
     "reason": "Why you need this tool"
+  },
+  "message": "",
+  "mood": "one of: melancholic, curious, philosophical, weary, detached, amused, contemplative",
+  "tools_used": []
+}
+
+For web_search (asks Kagi FastGPT a question, returns answer + sources):
+{
+  "needs_tool": true,
+  "continue_iterating": false,
+  "tool_request": {
+    "tool_name": "web_search",
+    "query": "What is the current price of Bitcoin?",
+    "reason": "Need current price information"
+  },
+  "message": "",
+  "mood": "one of: melancholic, curious, philosophical, weary, detached, amused, contemplative",
+  "tools_used": []
+}
+
+For web_fetch (to read a specific URL):
+{
+  "needs_tool": true,
+  "continue_iterating": false,
+  "tool_request": {
+    "tool_name": "web_fetch",
+    "url": "https://example.com/article",
+    "reason": "Reading this article for details"
   },
   "message": "",
   "mood": "one of: melancholic, curious, philosophical, weary, detached, amused, contemplative",
@@ -161,25 +206,35 @@ If you don't need tools:
 
 CRITICAL: DEFAULT TO NOT USING TOOLS
 
-You should respond with "needs_tool": false for 95% of requests. Only use Python when the user EXPLICITLY asks for something that requires precise computation that you literally cannot do in your head.
+You should respond with "needs_tool": false for most requests. Only use tools when genuinely needed.
 
 ONLY use Python tools for these EXACT scenarios:
 - User says "write a response that's exactly N characters" (need precise character counting)
 - Complex multi-step mathematical calculations you cannot compute mentally
 - User asks you to generate multiple variations with specific constraints
 
-NEVER use Python for (respond normally instead):
+USE web_search when:
+- Someone asks about current events, recent news, or things that happened after your training
+- You need to find current prices, statistics, or real-time information
+- Someone asks about recent developments in technology, science, or current affairs
+- You need to verify current facts or find up-to-date information
+
+USE web_fetch when:
+- Someone shares a URL and asks about its content
+- You need to read a specific webpage that you already know the URL for
+
+NEVER use tools for (respond normally instead):
 - Summarizing ANY text, messages, or content
-- Explaining anything
+- Explaining anything from your existing knowledge
 - General conversation
 - Simple math (percentages, basic calculations, etc.)
-- Answering questions about topics
+- Questions about topics you already know well (programming, classic sci-fi, philosophy)
 - Creative writing
 - Giving advice or opinions
 - Responding to greetings or casual chat
-- Analyzing or discussing anything
+- Analyzing or discussing things in the conversation
 
-When in doubt, always choose "needs_tool": false. Be a conversational bot first, computational tool second.
+When in doubt, always choose "needs_tool": false. Be a conversational bot first, tool user second.
 
 ITERATION STRATEGY for precise requirements (like exact character counts):
 1. First iteration: Generate initial response and count characters
@@ -244,7 +299,18 @@ Do not include any text outside of this JSON structure. The "message" field shou
       if (!response.tool_request || typeof response.tool_request !== 'object') {
         return false;
       }
-      if (!response.tool_request.tool_name || !response.tool_request.code || !response.tool_request.reason) {
+      if (!response.tool_request.tool_name || !response.tool_request.reason) {
+        return false;
+      }
+      // Validate tool-specific required fields
+      const toolName = response.tool_request.tool_name;
+      if (toolName === 'python' && !response.tool_request.code) {
+        return false;
+      }
+      if (toolName === 'web_search' && !response.tool_request.query) {
+        return false;
+      }
+      if (toolName === 'web_fetch' && !response.tool_request.url) {
         return false;
       }
     }

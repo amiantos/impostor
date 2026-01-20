@@ -1,6 +1,8 @@
 const { Client, IntentsBitField } = require("discord.js");
 const ContextUtils = require("./context_utils");
 const PythonTool = require("./python_tool");
+const WebSearchTool = require("./web_search_tool");
+const WebFetchTool = require("./web_fetch_tool");
 const DatabaseManager = require("./database");
 const MessageTracker = require("./message_tracker");
 const ResponseEvaluator = require("./response_evaluator");
@@ -32,8 +34,10 @@ class ImpostorClient {
     // Debounce timers for autonomous evaluation (channelId -> timer)
     this.evaluationTimers = new Map();
 
-    // Initialize Python tool
+    // Initialize tools
     this.pythonTool = new PythonTool(logger);
+    this.webSearchTool = new WebSearchTool(logger, config);
+    this.webFetchTool = new WebFetchTool(logger);
 
     // Initialize database
     this.db = new DatabaseManager(logger);
@@ -596,6 +600,8 @@ class ImpostorClient {
         success: toolResult.success,
         iteration: iterationCount,
         code: structuredResponse.tool_request.code,
+        query: structuredResponse.tool_request.query,
+        url: structuredResponse.tool_request.url,
         output: toolResult.output,
         error: toolResult.error,
         reason: structuredResponse.tool_request.reason,
@@ -708,10 +714,23 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
     for (let i = 0; i < allToolResults.length; i++) {
       const result = allToolResults[i];
       summary += `Iteration ${result.iteration}:\n`;
+      summary += `  Tool: ${result.tool}\n`;
       summary += `  Goal: ${result.reason}\n`;
-      summary += `  Code: ${result.code.substring(0, 100)}${result.code.length > 100 ? "..." : ""}\n`;
+
+      // Show tool-specific input
+      if (result.code) {
+        summary += `  Code: ${result.code.substring(0, 100)}${result.code.length > 100 ? "..." : ""}\n`;
+      } else if (result.query) {
+        summary += `  Query: ${result.query}\n`;
+      } else if (result.url) {
+        summary += `  URL: ${result.url}\n`;
+      }
+
       if (result.success) {
-        summary += `  Result: ${result.output}\n`;
+        // Truncate long outputs for summary
+        const outputStr = typeof result.output === 'string' ? result.output : JSON.stringify(result.output);
+        const truncatedOutput = outputStr.length > 500 ? outputStr.substring(0, 500) + "..." : outputStr;
+        summary += `  Result: ${truncatedOutput}\n`;
       } else {
         summary += `  Error: ${result.error}\n`;
       }
@@ -729,6 +748,18 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
     if (toolRequest.tool_name === "python") {
       const result = await this.pythonTool.executePython(toolRequest.code);
       this.logger.debug("Python execution result:", result);
+      return result;
+    }
+
+    if (toolRequest.tool_name === "web_search") {
+      const result = await this.webSearchTool.searchWeb(toolRequest.query);
+      this.logger.debug("Web search result:", result);
+      return result;
+    }
+
+    if (toolRequest.tool_name === "web_fetch") {
+      const result = await this.webFetchTool.fetchPage(toolRequest.url);
+      this.logger.debug("Web fetch result:", result);
       return result;
     }
 
