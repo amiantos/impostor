@@ -1,6 +1,9 @@
 const { Client, IntentsBitField } = require("discord.js");
 const ContextUtils = require("./context_utils");
 const PythonTool = require("./python_tool");
+const DatabaseManager = require("./database");
+const MessageTracker = require("./message_tracker");
+const ResponseEvaluator = require("./response_evaluator");
 const { OpenAI } = require("openai");
 
 class ImpostorClient {
@@ -27,6 +30,18 @@ class ImpostorClient {
     // Initialize Python tool
     this.pythonTool = new PythonTool(logger);
 
+    // Initialize database and autonomous response components
+    this.db = new DatabaseManager(logger);
+    this.db.initialize();
+
+    this.messageTracker = new MessageTracker(logger, this.db, config);
+    this.evaluator = new ResponseEvaluator(logger, config, this.db);
+
+    // Set up periodic maintenance
+    this.maintenanceInterval = setInterval(() => {
+      this.messageTracker.runMaintenance();
+    }, 60 * 60 * 1000); // Run every hour
+
     this.client.on("ready", () => {
       this.logger.info(`The bot is online as ${this.client.user.tag}!`);
     });
@@ -40,38 +55,112 @@ class ImpostorClient {
     await this.client.login(this.config.bot.token);
   }
 
-  async handleMessageCreate(message) {
-    // Check that message is from the required channels
-    if (this.config.channels.length > 0) {
-      if (
-        !this.config.channels.some((element) =>
-          message.channel.id.includes(element)
-        )
-      )
-        return;
+  /**
+   * Check if a channel is in the allowed list
+   * @param {Message} message - Discord message
+   * @returns {boolean} True if channel is allowed
+   */
+  isAllowedChannel(message) {
+    if (this.config.channels.length === 0) return true;
+    return this.config.channels.some((element) =>
+      message.channel.id.includes(element)
+    );
+  }
+
+  /**
+   * Check if a message is a direct trigger (mention or reply to bot)
+   * @param {Message} message - Discord message
+   * @returns {boolean} True if message directly triggers the bot
+   */
+  isDirectTrigger(message) {
+    // Check if message mentions the bot
+    if (message.content.includes(this.client.user.id)) return true;
+
+    // Check if message is a reply to the bot
+    if (
+      message.mentions.repliedUser &&
+      message.mentions.repliedUser.id === this.client.user.id
+    ) {
+      return true;
     }
 
-    // This ensures that the message either @mentions the bot, or is a reply to the bot
-    if (
-      !message.content.includes(this.client.user.id) &&
-      !(
-        message.mentions.repliedUser &&
-        message.mentions.repliedUser.id == this.client.user.id
-      )
-    )
-      return;
+    return false;
+  }
 
-    this.logger.info(
-      `Queuing message from @${message.author.username}.`,
-      message
+  async handleMessageCreate(message) {
+    // Ignore bot messages (including our own)
+    if (message.author.bot) return;
+
+    // Check channel filtering
+    if (!this.isAllowedChannel(message)) return;
+
+    // Always track the message (for autonomous responses)
+    const isBotMessage = message.author.id === this.client.user.id;
+    this.messageTracker.addMessage(message, isBotMessage);
+
+    // Direct trigger (existing behavior) - @mention or reply to bot
+    if (this.isDirectTrigger(message)) {
+      this.logger.info(
+        `Queuing direct message from @${message.author.username}.`,
+        message
+      );
+
+      this.messageQueue.push({ message, type: "direct" });
+
+      if (!this.isProcessing) {
+        this.processMessageQueue();
+      }
+      return;
+    }
+
+    // Autonomous response evaluation
+    if (this.config.autonomous?.enabled) {
+      await this.evaluateAutonomousResponse(message.channel);
+    }
+  }
+
+  /**
+   * Evaluate whether to send an autonomous response
+   * @param {Channel} channel - Discord channel
+   */
+  async evaluateAutonomousResponse(channel) {
+    // Check if we should evaluate
+    if (!this.messageTracker.shouldEvaluate(channel.id)) {
+      return;
+    }
+
+    // Mark as evaluated to prevent duplicate evaluations
+    this.messageTracker.markEvaluated(channel.id);
+
+    // Get messages since last bot response for context
+    const recentMessages = this.messageTracker.getMessagesSinceLastResponse(channel.id);
+
+    if (recentMessages.length === 0) {
+      this.logger.debug("No messages to evaluate for autonomous response");
+      return;
+    }
+
+    // Ask AI if we should respond
+    const decision = await this.evaluator.shouldRespond(
+      recentMessages,
+      this.client.user.id,
+      channel.id
     );
 
-    // Add message to queue
-    this.messageQueue.push(message);
+    if (decision.should_respond) {
+      this.logger.info(
+        `Queueing autonomous response for channel ${channel.id}: ${decision.reason}`
+      );
 
-    // Start processing queue if not already processing
-    if (!this.isProcessing) {
-      this.processMessageQueue();
+      this.messageQueue.push({
+        channel,
+        type: "autonomous",
+        replyToId: decision.reply_to_message_id,
+      });
+
+      if (!this.isProcessing) {
+        this.processMessageQueue();
+      }
     }
   }
 
@@ -81,31 +170,41 @@ class ImpostorClient {
     this.isProcessing = true;
 
     while (this.messageQueue.length > 0) {
-      const message = this.messageQueue.shift();
+      const queueItem = this.messageQueue.shift();
 
       try {
-        this.logger.info(
-          `Processing message from @${message.author.username}. Queue length: ${this.messageQueue.length}`,
-          message
-        );
-
-        await this.processMessage(message);
+        if (queueItem.type === "direct") {
+          this.logger.info(
+            `Processing direct message from @${queueItem.message.author.username}. Queue length: ${this.messageQueue.length}`
+          );
+          await this.processDirectMessage(queueItem.message);
+        } else if (queueItem.type === "autonomous") {
+          this.logger.info(
+            `Processing autonomous response for channel ${queueItem.channel.id}. Queue length: ${this.messageQueue.length}`
+          );
+          await this.processAutonomousMessage(queueItem.channel, queueItem.replyToId);
+        }
 
         // Add a small delay between messages to appear more natural
         if (this.messageQueue.length > 0) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          await new Promise((resolve) => setTimeout(resolve, 1000));
         }
-
       } catch (error) {
         this.logger.error("Error processing queued message:", error);
-        await this.sendErrorResponse(message, error);
+        if (queueItem.type === "direct" && queueItem.message) {
+          await this.sendErrorResponse(queueItem.message, error);
+        }
       }
     }
 
     this.isProcessing = false;
   }
 
-  async processMessage(message) {
+  /**
+   * Process a direct message (existing behavior)
+   * @param {Message} message - Discord message that triggered the bot
+   */
+  async processDirectMessage(message) {
     const user_name = message.author.username
       .replace(/\s+/g, "_")
       .replace(/[^\w\s]/gi, "");
@@ -127,7 +226,60 @@ class ImpostorClient {
       botUserId: this.client.user.id,
     });
 
-    await message.reply(response);
+    const sentMessage = await message.reply(response);
+
+    // Log the response
+    this.db.logResponse(message.channel.id, sentMessage.id, "direct", response);
+
+    // Track the bot's own message
+    this.messageTracker.addMessage(sentMessage, true);
+    this.messageTracker.markResponded(message.channel.id);
+  }
+
+  /**
+   * Process an autonomous message
+   * @param {Channel} channel - Discord channel to respond in
+   * @param {string|null} replyToId - Optional message ID to reply to
+   */
+  async processAutonomousMessage(channel, replyToId) {
+    await channel.sendTyping();
+
+    // Fetch recent messages for context
+    let messages;
+    try {
+      messages = await channel.messages.fetch({ limit: 40 });
+    } catch (error) {
+      throw error;
+    }
+
+    const response = await this.generateResponseWithChatCompletions({
+      messages,
+      userName: "various",
+      characterName: this.client.user.username,
+      botUserId: this.client.user.id,
+    });
+
+    let sentMessage;
+    if (replyToId) {
+      // Reply to a specific message
+      try {
+        const targetMessage = await channel.messages.fetch(replyToId);
+        sentMessage = await targetMessage.reply(response);
+      } catch (error) {
+        this.logger.warn(`Could not reply to message ${replyToId}, sending standalone`);
+        sentMessage = await channel.send(response);
+      }
+    } else {
+      // Send standalone message
+      sentMessage = await channel.send(response);
+    }
+
+    // Log the response
+    this.db.logResponse(channel.id, sentMessage.id, "autonomous", response);
+
+    // Track the bot's own message
+    this.messageTracker.addMessage(sentMessage, true);
+    this.messageTracker.markResponded(channel.id);
   }
 
   async generateResponseWithChatCompletions({
@@ -150,7 +302,7 @@ class ImpostorClient {
         role: "system",
         content: systemPrompt,
       },
-      ...inputMessages
+      ...inputMessages,
     ];
 
     this.logger.debug("Generated Messages...", conversationLog);
@@ -164,9 +316,16 @@ class ImpostorClient {
     let allToolResults = [];
 
     // Tool execution loop - can iterate multiple times
-    while (structuredResponse.needs_tool && structuredResponse.tool_request && iterationCount < maxIterations) {
+    while (
+      structuredResponse.needs_tool &&
+      structuredResponse.tool_request &&
+      iterationCount < maxIterations
+    ) {
       iterationCount++;
-      this.logger.info(`Tool execution iteration ${iterationCount}:`, structuredResponse.tool_request);
+      this.logger.info(
+        `Tool execution iteration ${iterationCount}:`,
+        structuredResponse.tool_request
+      );
 
       // Execute the requested tool
       const toolResult = await this.executeTool(structuredResponse.tool_request);
@@ -177,18 +336,21 @@ class ImpostorClient {
         code: structuredResponse.tool_request.code,
         output: toolResult.output,
         error: toolResult.error,
-        reason: structuredResponse.tool_request.reason
+        reason: structuredResponse.tool_request.reason,
       });
 
       // Add tool result to conversation
       conversationLog.push({
         role: "assistant",
-        content: JSON.stringify(structuredResponse)
+        content: JSON.stringify(structuredResponse),
       });
 
       if (structuredResponse.continue_iterating) {
         // Build iteration summary for context
-        const iterationSummary = this.buildIterationSummary(allToolResults, iterationCount);
+        const iterationSummary = this.buildIterationSummary(
+          allToolResults,
+          iterationCount
+        );
         conversationLog.push({
           role: "user",
           content: `Tool execution result: ${JSON.stringify(toolResult)}
@@ -196,12 +358,12 @@ class ImpostorClient {
 ITERATION HISTORY:
 ${iterationSummary}
 
-REFLECTION: Look at your previous attempts above. What worked? What didn't? How can you adjust your approach based on the results? If you're close to the target (like 1-2 characters off), make small adjustments. Continue iterating to refine your approach, or provide your final response if satisfied.`
+REFLECTION: Look at your previous attempts above. What worked? What didn't? How can you adjust your approach based on the results? If you're close to the target (like 1-2 characters off), make small adjustments. Continue iterating to refine your approach, or provide your final response if satisfied.`,
         });
       } else {
         conversationLog.push({
           role: "user",
-          content: `Tool execution result: ${JSON.stringify(toolResult)}. Now provide your final response with the actual message.`
+          content: `Tool execution result: ${JSON.stringify(toolResult)}. Now provide your final response with the actual message.`,
         });
       }
 
@@ -219,11 +381,14 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
     structuredResponse.tools_used = allToolResults;
 
     if (iterationCount >= maxIterations) {
-      this.logger.warn(`Reached maximum iterations (${maxIterations}), stopping tool execution`);
+      this.logger.warn(
+        `Reached maximum iterations (${maxIterations}), stopping tool execution`
+      );
     }
 
     // Extract final message
-    let replyMessage = structuredResponse.message || "Something went wrong with my processing.";
+    let replyMessage =
+      structuredResponse.message || "Something went wrong with my processing.";
 
     this.logger.debug(`IsaacGPT mood: ${structuredResponse.mood}`);
     if (structuredResponse.tools_used.length > 0) {
@@ -244,7 +409,7 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
       messages: conversationLog,
       max_tokens: this.config.generator.deepseek.max_tokens,
       temperature: this.config.generator.deepseek.temperature,
-      response_format: { type: "json_object" }
+      response_format: { type: "json_object" },
     });
   }
 
@@ -258,7 +423,6 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
       this.logger.debug("Parsed structured response:", structuredResponse);
 
       return structuredResponse;
-
     } catch (error) {
       this.logger.error("Failed to parse JSON response:", error);
       this.logger.debug("Raw response was:", rawResponse);
@@ -269,7 +433,7 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
         continue_iterating: false,
         message: rawResponse || "Error parsing response.",
         mood: "jaded",
-        tools_used: []
+        tools_used: [],
       };
     }
   }
@@ -280,7 +444,7 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
       const result = allToolResults[i];
       summary += `Iteration ${result.iteration}:\n`;
       summary += `  Goal: ${result.reason}\n`;
-      summary += `  Code: ${result.code.substring(0, 100)}${result.code.length > 100 ? '...' : ''}\n`;
+      summary += `  Code: ${result.code.substring(0, 100)}${result.code.length > 100 ? "..." : ""}\n`;
       if (result.success) {
         summary += `  Result: ${result.output}\n`;
       } else {
@@ -292,7 +456,10 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
   }
 
   async executeTool(toolRequest) {
-    this.logger.info(`Executing ${toolRequest.tool_name} tool:`, toolRequest.reason);
+    this.logger.info(
+      `Executing ${toolRequest.tool_name} tool:`,
+      toolRequest.reason
+    );
 
     if (toolRequest.tool_name === "python") {
       const result = await this.pythonTool.executePython(toolRequest.code);
@@ -303,10 +470,9 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
     return {
       success: false,
       output: "",
-      error: `Unknown tool: ${toolRequest.tool_name}`
+      error: `Unknown tool: ${toolRequest.tool_name}`,
     };
   }
-
 
   async sendErrorResponse(message, error) {
     try {
@@ -317,6 +483,27 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
     } catch (error) {
       this.logger.error("Failed to send error response: ", error);
     }
+  }
+
+  /**
+   * Get database instance for web dashboard
+   * @returns {DatabaseManager} Database manager instance
+   */
+  getDatabase() {
+    return this.db;
+  }
+
+  /**
+   * Cleanup resources on shutdown
+   */
+  shutdown() {
+    if (this.maintenanceInterval) {
+      clearInterval(this.maintenanceInterval);
+    }
+    if (this.db) {
+      this.db.close();
+    }
+    this.logger.info("ImpostorClient shutdown complete");
   }
 }
 

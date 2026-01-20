@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IsaacGPT Dashboard</title>
+  <style>
+    :root {
+      --bg-primary: #1a1a2e;
+      --bg-secondary: #16213e;
+      --bg-card: #0f3460;
+      --text-primary: #eaeaea;
+      --text-secondary: #a0a0a0;
+      --accent-green: #4ecca3;
+      --accent-red: #e94560;
+      --accent-blue: #3282b8;
+      --accent-yellow: #f9ed69;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    header {
+      background: var(--bg-secondary);
+      padding: 20px;
+      margin-bottom: 20px;
+      border-radius: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    header h1 {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .status-indicator {
+      width: 12px;
+      height: 12px;
+      background: var(--accent-green);
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+
+    .stat-card {
+      background: var(--bg-card);
+      padding: 20px;
+      border-radius: 8px;
+      text-align: center;
+    }
+
+    .stat-card h3 {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      margin-bottom: 8px;
+    }
+
+    .stat-card .value {
+      font-size: 2rem;
+      font-weight: bold;
+      color: var(--accent-blue);
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    @media (max-width: 900px) {
+      .main-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .panel {
+      background: var(--bg-secondary);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      background: var(--bg-card);
+      padding: 15px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .panel-header h2 {
+      font-size: 1.1rem;
+    }
+
+    .panel-content {
+      padding: 15px;
+      max-height: 500px;
+      overflow-y: auto;
+    }
+
+    .channel-select {
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      border: 1px solid var(--bg-card);
+      padding: 5px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .message-item {
+      padding: 10px;
+      margin-bottom: 10px;
+      background: var(--bg-primary);
+      border-radius: 6px;
+      border-left: 3px solid var(--accent-blue);
+    }
+
+    .message-item.bot {
+      border-left-color: var(--accent-green);
+    }
+
+    .message-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 5px;
+      font-size: 0.85rem;
+    }
+
+    .message-author {
+      color: var(--accent-blue);
+      font-weight: bold;
+    }
+
+    .message-item.bot .message-author {
+      color: var(--accent-green);
+    }
+
+    .message-time {
+      color: var(--text-secondary);
+    }
+
+    .message-content {
+      font-size: 0.95rem;
+      line-height: 1.4;
+      word-wrap: break-word;
+    }
+
+    .decision-item {
+      padding: 12px;
+      margin-bottom: 10px;
+      background: var(--bg-primary);
+      border-radius: 6px;
+      border-left: 3px solid var(--accent-red);
+    }
+
+    .decision-item.responded {
+      border-left-color: var(--accent-green);
+    }
+
+    .decision-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-size: 0.85rem;
+    }
+
+    .decision-badge {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: bold;
+    }
+
+    .decision-badge.yes {
+      background: var(--accent-green);
+      color: var(--bg-primary);
+    }
+
+    .decision-badge.no {
+      background: var(--accent-red);
+      color: white;
+    }
+
+    .decision-reason {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      font-style: italic;
+    }
+
+    .decision-meta {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-top: 5px;
+    }
+
+    .response-item {
+      padding: 12px;
+      margin-bottom: 10px;
+      background: var(--bg-primary);
+      border-radius: 6px;
+    }
+
+    .response-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-size: 0.85rem;
+    }
+
+    .response-type {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: bold;
+    }
+
+    .response-type.direct {
+      background: var(--accent-blue);
+      color: white;
+    }
+
+    .response-type.autonomous {
+      background: var(--accent-yellow);
+      color: var(--bg-primary);
+    }
+
+    .response-content {
+      font-size: 0.9rem;
+      line-height: 1.4;
+      color: var(--text-primary);
+    }
+
+    .refresh-btn {
+      background: var(--accent-blue);
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: opacity 0.2s;
+    }
+
+    .refresh-btn:hover {
+      opacity: 0.8;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--text-secondary);
+    }
+
+    .loading {
+      text-align: center;
+      padding: 20px;
+      color: var(--text-secondary);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>
+        <span class="status-indicator"></span>
+        IsaacGPT Dashboard
+      </h1>
+      <button class="refresh-btn" onclick="refreshAll()">Refresh All</button>
+    </header>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <h3>Total Messages</h3>
+        <div class="value" id="stat-messages">-</div>
+      </div>
+      <div class="stat-card">
+        <h3>Decisions Made</h3>
+        <div class="value" id="stat-decisions">-</div>
+      </div>
+      <div class="stat-card">
+        <h3>Total Responses</h3>
+        <div class="value" id="stat-responses">-</div>
+      </div>
+      <div class="stat-card">
+        <h3>Autonomous Responses</h3>
+        <div class="value" id="stat-autonomous">-</div>
+      </div>
+      <div class="stat-card">
+        <h3>Direct Responses</h3>
+        <div class="value" id="stat-direct">-</div>
+      </div>
+    </div>
+
+    <div class="main-grid">
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Recent Messages</h2>
+          <select class="channel-select" id="messages-channel" onchange="loadMessages()">
+            <option value="">All Channels</option>
+          </select>
+        </div>
+        <div class="panel-content" id="messages-list">
+          <div class="loading">Loading...</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Decision Log</h2>
+          <select class="channel-select" id="decisions-channel" onchange="loadDecisions()">
+            <option value="">All Channels</option>
+          </select>
+        </div>
+        <div class="panel-content" id="decisions-list">
+          <div class="loading">Loading...</div>
+        </div>
+      </div>
+
+      <div class="panel" style="grid-column: span 2;">
+        <div class="panel-header">
+          <h2>Response History</h2>
+        </div>
+        <div class="panel-content" id="responses-list">
+          <div class="loading">Loading...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = '/api';
+    let channels = [];
+
+    async function fetchJson(url) {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.json();
+    }
+
+    function formatTime(isoString) {
+      const date = new Date(isoString);
+      return date.toLocaleString();
+    }
+
+    function truncate(str, maxLen = 200) {
+      if (str.length <= maxLen) return str;
+      return str.substring(0, maxLen) + '...';
+    }
+
+    async function loadStats() {
+      try {
+        const stats = await fetchJson(`${API_BASE}/stats`);
+        document.getElementById('stat-messages').textContent = stats.totalMessages.toLocaleString();
+        document.getElementById('stat-decisions').textContent = stats.totalDecisions.toLocaleString();
+        document.getElementById('stat-responses').textContent = stats.totalResponses.toLocaleString();
+        document.getElementById('stat-autonomous').textContent = stats.autonomousResponses.toLocaleString();
+        document.getElementById('stat-direct').textContent = stats.directResponses.toLocaleString();
+      } catch (error) {
+        console.error('Failed to load stats:', error);
+      }
+    }
+
+    async function loadChannels() {
+      try {
+        channels = await fetchJson(`${API_BASE}/channels`);
+        const selects = ['messages-channel', 'decisions-channel'];
+
+        selects.forEach(selectId => {
+          const select = document.getElementById(selectId);
+          // Clear existing options except the first one
+          while (select.options.length > 1) {
+            select.remove(1);
+          }
+
+          channels.forEach(ch => {
+            const option = document.createElement('option');
+            option.value = ch.channel_id;
+            option.textContent = `Channel ${ch.channel_id.slice(-6)} (${ch.message_count} msgs)`;
+            select.appendChild(option);
+          });
+        });
+      } catch (error) {
+        console.error('Failed to load channels:', error);
+      }
+    }
+
+    async function loadMessages() {
+      const container = document.getElementById('messages-list');
+      const channelId = document.getElementById('messages-channel').value;
+
+      container.innerHTML = '<div class="loading">Loading...</div>';
+
+      try {
+        let url = `${API_BASE}/channels/${channelId}/messages?limit=30`;
+        if (!channelId) {
+          // Load from first available channel or show empty state
+          if (channels.length > 0) {
+            url = `${API_BASE}/channels/${channels[0].channel_id}/messages?limit=30`;
+          } else {
+            container.innerHTML = '<div class="empty-state">No messages yet</div>';
+            return;
+          }
+        }
+
+        const messages = await fetchJson(url);
+
+        if (messages.length === 0) {
+          container.innerHTML = '<div class="empty-state">No messages in this channel</div>';
+          return;
+        }
+
+        // Reverse to show oldest first (for reading)
+        const reversed = [...messages].reverse();
+
+        container.innerHTML = reversed.map(msg => `
+          <div class="message-item ${msg.is_bot_message ? 'bot' : ''}">
+            <div class="message-header">
+              <span class="message-author">${msg.author_name}${msg.is_bot_message ? ' (Bot)' : ''}</span>
+              <span class="message-time">${formatTime(msg.created_at)}</span>
+            </div>
+            <div class="message-content">${truncate(msg.content)}</div>
+          </div>
+        `).join('');
+      } catch (error) {
+        console.error('Failed to load messages:', error);
+        container.innerHTML = '<div class="empty-state">Failed to load messages</div>';
+      }
+    }
+
+    async function loadDecisions() {
+      const container = document.getElementById('decisions-list');
+      const channelId = document.getElementById('decisions-channel').value;
+
+      container.innerHTML = '<div class="loading">Loading...</div>';
+
+      try {
+        let url = channelId
+          ? `${API_BASE}/channels/${channelId}/decisions?limit=30`
+          : `${API_BASE}/decisions?limit=30`;
+
+        const decisions = await fetchJson(url);
+
+        if (decisions.length === 0) {
+          container.innerHTML = '<div class="empty-state">No decisions logged yet</div>';
+          return;
+        }
+
+        container.innerHTML = decisions.map(d => `
+          <div class="decision-item ${d.should_respond ? 'responded' : ''}">
+            <div class="decision-header">
+              <span class="decision-badge ${d.should_respond ? 'yes' : 'no'}">
+                ${d.should_respond ? 'RESPONDED' : 'PASSED'}
+              </span>
+              <span class="message-time">${formatTime(d.evaluated_at)}</span>
+            </div>
+            <div class="decision-reason">"${d.reason}"</div>
+            <div class="decision-meta">
+              Evaluated ${d.messages_evaluated} messages
+              ${d.reply_to_message_id ? ' | Replying to specific message' : ''}
+            </div>
+          </div>
+        `).join('');
+      } catch (error) {
+        console.error('Failed to load decisions:', error);
+        container.innerHTML = '<div class="empty-state">Failed to load decisions</div>';
+      }
+    }
+
+    async function loadResponses() {
+      const container = document.getElementById('responses-list');
+      container.innerHTML = '<div class="loading">Loading...</div>';
+
+      try {
+        const responses = await fetchJson(`${API_BASE}/responses?limit=20`);
+
+        if (responses.length === 0) {
+          container.innerHTML = '<div class="empty-state">No responses yet</div>';
+          return;
+        }
+
+        container.innerHTML = responses.map(r => `
+          <div class="response-item">
+            <div class="response-header">
+              <span class="response-type ${r.response_type}">${r.response_type.toUpperCase()}</span>
+              <span class="message-time">${formatTime(r.created_at)}</span>
+            </div>
+            <div class="response-content">${truncate(r.content, 300)}</div>
+          </div>
+        `).join('');
+      } catch (error) {
+        console.error('Failed to load responses:', error);
+        container.innerHTML = '<div class="empty-state">Failed to load responses</div>';
+      }
+    }
+
+    async function refreshAll() {
+      await loadStats();
+      await loadChannels();
+      await loadMessages();
+      await loadDecisions();
+      await loadResponses();
+    }
+
+    // Initial load
+    refreshAll();
+
+    // Auto-refresh every 30 seconds
+    setInterval(refreshAll, 30000);
+  </script>
+</body>
+</html>
