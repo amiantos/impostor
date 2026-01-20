@@ -193,7 +193,6 @@ class ImpostorClient {
       this.messageQueue.push({
         channel,
         type: "autonomous",
-        replyToId: decision.reply_to_message_id,
         decisionId: decision.decisionId,
       });
 
@@ -245,7 +244,7 @@ class ImpostorClient {
           this.logger.info(
             `Processing autonomous response for channel ${queueItem.channel.id}. Queue length: ${this.messageQueue.length}`
           );
-          await this.processAutonomousMessage(queueItem.channel, queueItem.replyToId, queueItem.decisionId);
+          await this.processAutonomousMessage(queueItem.channel, queueItem.decisionId);
         }
 
         // Add a small delay between messages to appear more natural
@@ -306,7 +305,8 @@ class ImpostorClient {
       useDbContext: true,
     });
 
-    const sentMessage = await message.reply(response);
+    // Send to channel (not as a reply) - the bot knows who it's talking to from context
+    const sentMessage = await message.channel.send(response);
 
     // Log the response with trigger message ID
     const responseId = this.db.logResponse(
@@ -350,10 +350,9 @@ class ImpostorClient {
   /**
    * Process an autonomous message
    * @param {Channel} channel - Discord channel to respond in
-   * @param {string|null} replyToId - Optional message ID to reply to
    * @param {number|null} decisionId - Optional decision ID that triggered this response
    */
-  async processAutonomousMessage(channel, replyToId, decisionId = null) {
+  async processAutonomousMessage(channel, decisionId = null) {
     await channel.sendTyping();
 
     // Build context from database (with cached vision)
@@ -368,28 +367,16 @@ class ImpostorClient {
       useDbContext: true,
     });
 
-    let sentMessage;
-    if (replyToId) {
-      // Reply to a specific message
-      try {
-        const targetMessage = await channel.messages.fetch(replyToId);
-        sentMessage = await targetMessage.reply(response);
-      } catch (error) {
-        this.logger.warn(`Could not reply to message ${replyToId}, sending standalone`);
-        sentMessage = await channel.send(response);
-      }
-    } else {
-      // Send standalone message
-      sentMessage = await channel.send(response);
-    }
+    // Send to channel (not as a reply) - the bot addresses users naturally in its response
+    const sentMessage = await channel.send(response);
 
-    // Log the response with trigger message ID
+    // Log the response
     const responseId = this.db.logResponse(
       channel.id,
       sentMessage.id,
       "autonomous",
       response,
-      replyToId
+      null  // No specific trigger message for autonomous responses
     );
 
     // Store the full prompt for debugging
