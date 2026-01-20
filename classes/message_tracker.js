@@ -5,10 +5,11 @@
  * evaluations should be triggered based on message count and time thresholds.
  */
 class MessageTracker {
-  constructor(logger, database, config) {
+  constructor(logger, database, config, visionService = null) {
     this.logger = logger;
     this.db = database;
     this.config = config.autonomous || {};
+    this.visionService = visionService;
 
     // In-memory tracking for evaluation timing (not persisted)
     this.lastEvaluation = new Map(); // channelId → timestamp
@@ -16,13 +17,58 @@ class MessageTracker {
   }
 
   /**
-   * Track a new message
-   * @param {Message} message - Discord message object
-   * @param {boolean} isBotMessage - Whether this message is from the bot
+   * Set vision service reference (for late initialization)
+   * @param {VisionService} visionService - Vision service instance
    */
-  addMessage(message, isBotMessage = false) {
-    // Store in database
-    this.db.insertMessage(message, isBotMessage);
+  setVisionService(visionService) {
+    this.visionService = visionService;
+  }
+
+  /**
+   * Track a new message with enhanced data
+   * @param {Message} message - Discord message object
+   * @param {Object} options - Options for tracking
+   * @param {boolean} options.isBotMessage - Whether this message is from the bot
+   * @param {boolean} options.processVision - Whether to process vision immediately (default true)
+   * @returns {Promise<Object>} The stored message data
+   */
+  async addMessage(message, options = {}) {
+    const { isBotMessage = false, processVision = true } = typeof options === 'boolean'
+      ? { isBotMessage: options }
+      : options;
+
+    // Serialize attachments
+    const attachments = this.visionService
+      ? this.visionService.serializeAttachments(message)
+      : null;
+
+    // Get reply_to_message_id from message reference
+    const replyToMessageId = message.reference?.messageId || null;
+
+    // Process vision immediately if enabled and message has images
+    let visionDescriptions = null;
+    if (processVision && this.visionService && attachments) {
+      const hasImages = attachments.some(a => a.isImage);
+      if (hasImages) {
+        this.logger.debug(`Processing vision for message ${message.id}`);
+        visionDescriptions = await this.visionService.processMessageImmediate(message);
+      }
+    }
+
+    // Store enhanced message in database
+    this.db.insertMessageEnhanced({
+      id: message.id,
+      channelId: message.channel.id,
+      authorId: message.author.id,
+      authorName: message.author.username || message.author.displayName || "Unknown",
+      content: message.content,
+      createdAt: message.createdAt,
+      isBotMessage,
+      attachments,
+      visionDescriptions,
+      replyToMessageId,
+      isBackfilled: false
+    });
 
     // Update in-memory counter
     const channelId = message.channel.id;
@@ -30,6 +76,27 @@ class MessageTracker {
     this.messageCountSinceEval.set(channelId, currentCount + 1);
 
     this.logger.debug(`Tracked message in channel ${channelId}. Count since eval: ${currentCount + 1}`);
+
+    return {
+      id: message.id,
+      visionDescriptions
+    };
+  }
+
+  /**
+   * Track a message using the old simple method (backward compatible)
+   * @param {Message} message - Discord message object
+   * @param {boolean} isBotMessage - Whether this message is from the bot
+   * @deprecated Use addMessage with options object instead
+   */
+  addMessageSimple(message, isBotMessage = false) {
+    this.db.insertMessage(message, isBotMessage);
+
+    const channelId = message.channel.id;
+    const currentCount = this.messageCountSinceEval.get(channelId) || 0;
+    this.messageCountSinceEval.set(channelId, currentCount + 1);
+
+    this.logger.debug(`Tracked message (simple) in channel ${channelId}. Count since eval: ${currentCount + 1}`);
   }
 
   /**

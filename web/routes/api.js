@@ -24,15 +24,120 @@ router.get("/channels", (req, res) => {
 });
 
 // Get messages for a specific channel
+// Supports ?includeRelations=true to include parsed JSON fields
 router.get("/channels/:channelId/messages", (req, res) => {
   try {
     const { channelId } = req.params;
     const limit = parseInt(req.query.limit) || 50;
-    const messages = req.db.getRecentMessages(channelId, limit);
+    const includeRelations = req.query.includeRelations === "true";
+
+    const messages = req.db.getRecentMessages(channelId, limit, includeRelations);
     res.json(messages);
   } catch (error) {
     req.logger.error("Error fetching channel messages:", error);
     res.status(500).json({ error: "Failed to fetch messages" });
+  }
+});
+
+// Get a single message by ID with full details
+router.get("/messages/:messageId", (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const message = req.db.getMessage(messageId);
+
+    if (!message) {
+      return res.status(404).json({ error: "Message not found" });
+    }
+
+    res.json(message);
+  } catch (error) {
+    req.logger.error("Error fetching message:", error);
+    res.status(500).json({ error: "Failed to fetch message" });
+  }
+});
+
+// Get a message with all related data (decision, response, prompt)
+router.get("/messages/:messageId/relations", (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const result = req.db.getMessageWithRelations(messageId);
+
+    if (!result) {
+      return res.status(404).json({ error: "Message not found" });
+    }
+
+    res.json(result);
+  } catch (error) {
+    req.logger.error("Error fetching message relations:", error);
+    res.status(500).json({ error: "Failed to fetch message relations" });
+  }
+});
+
+// Get stored prompt by response ID
+router.get("/responses/:responseId/prompt", (req, res) => {
+  try {
+    const responseId = parseInt(req.params.responseId);
+    const prompt = req.db.getPromptByResponse(responseId);
+
+    if (!prompt) {
+      return res.status(404).json({ error: "Prompt not found" });
+    }
+
+    res.json(prompt);
+  } catch (error) {
+    req.logger.error("Error fetching prompt:", error);
+    res.status(500).json({ error: "Failed to fetch prompt" });
+  }
+});
+
+// Get stored prompt by decision ID
+router.get("/decisions/:decisionId/prompt", (req, res) => {
+  try {
+    const decisionId = parseInt(req.params.decisionId);
+    const prompt = req.db.getPromptByDecision(decisionId);
+
+    if (!prompt) {
+      return res.status(404).json({ error: "Prompt not found" });
+    }
+
+    res.json(prompt);
+  } catch (error) {
+    req.logger.error("Error fetching prompt:", error);
+    res.status(500).json({ error: "Failed to fetch prompt" });
+  }
+});
+
+// Get a single response by ID
+router.get("/responses/:responseId", (req, res) => {
+  try {
+    const responseId = parseInt(req.params.responseId);
+    const response = req.db.getResponse(responseId);
+
+    if (!response) {
+      return res.status(404).json({ error: "Response not found" });
+    }
+
+    res.json(response);
+  } catch (error) {
+    req.logger.error("Error fetching response:", error);
+    res.status(500).json({ error: "Failed to fetch response" });
+  }
+});
+
+// Get a single decision by ID
+router.get("/decisions/:decisionId", (req, res) => {
+  try {
+    const decisionId = parseInt(req.params.decisionId);
+    const decision = req.db.getDecision(decisionId);
+
+    if (!decision) {
+      return res.status(404).json({ error: "Decision not found" });
+    }
+
+    res.json(decision);
+  } catch (error) {
+    req.logger.error("Error fetching decision:", error);
+    res.status(500).json({ error: "Failed to fetch decision" });
   }
 });
 

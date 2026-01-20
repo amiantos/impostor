@@ -255,6 +255,69 @@ Do not include any text outside of this JSON structure. The "message" field shou
     });
     return newChatMessages;
   }
+
+  /**
+   * Build chat messages from database records instead of Discord.js Message objects
+   * @param {Array} dbMessages - Array of message records from database (newest first)
+   * @param {string} clientUserId - Bot's user ID
+   * @param {Map} imageDescriptions - Map of message ID to image descriptions
+   * @returns {Array} Formatted messages for the API
+   */
+  buildChatMessagesFromDBRecords(dbMessages, clientUserId, imageDescriptions = null) {
+    let newChatMessages = [];
+
+    // Reverse to get oldest first
+    const messages = [...dbMessages].reverse();
+
+    messages.forEach((msg) => {
+      if (msg.content.startsWith("!")) return;
+
+      const role = msg.author_id === clientUserId || msg.is_bot_message ? "assistant" : "user";
+      let content = msg.content.replace(`<@${clientUserId}>`, "@IsaacGPT");
+
+      // Add username to the beginning of user messages so bot knows who's talking
+      if (role === "user") {
+        const username = msg.author_name || "Unknown";
+        content = `${username}: ${content}`;
+
+        // Append image descriptions if available for this message
+        if (imageDescriptions && imageDescriptions.has(msg.id)) {
+          const descriptions = imageDescriptions.get(msg.id);
+          for (const desc of descriptions) {
+            content += ` [Image: ${desc}]`;
+          }
+        }
+
+        // Also check for cached vision_descriptions in the message record itself
+        if (msg.vision_descriptions && msg.vision_descriptions.length > 0) {
+          // Only add if not already added from imageDescriptions map
+          if (!imageDescriptions || !imageDescriptions.has(msg.id)) {
+            for (const desc of msg.vision_descriptions) {
+              content += ` [Image: ${desc}]`;
+            }
+          }
+        }
+      } else {
+        // Wrap assistant messages in JSON format so the model sees consistent formatting
+        content = JSON.stringify({
+          needs_tool: false,
+          continue_iterating: false,
+          message: content,
+          mood: "jaded",
+          tools_used: []
+        });
+      }
+
+      let messageFormatted = {
+        role: role,
+        content: content,
+      };
+
+      newChatMessages.push(messageFormatted);
+    });
+
+    return newChatMessages;
+  }
 }
 
 module.exports = ContextUtils;

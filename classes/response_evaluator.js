@@ -7,10 +7,11 @@ const { OpenAI } = require("openai");
  * a conversation and how it should respond.
  */
 class ResponseEvaluator {
-  constructor(logger, config, database) {
+  constructor(logger, config, database, visionService = null) {
     this.logger = logger;
     this.config = config;
     this.db = database;
+    this.visionService = visionService;
 
     this.openai = new OpenAI({
       apiKey: config.generator.deepseek.api_key,
@@ -63,57 +64,79 @@ Send a standalone message when:
 
   /**
    * Format messages from database for the AI evaluation
-   * @param {Array} messages - Array of message objects from database
+   * Includes vision descriptions when available
+   * @param {Array} messages - Array of message objects from database (with parsed JSON)
    * @param {string} botUserId - The bot's Discord user ID
    * @returns {Array} Formatted messages for the API
    */
   formatMessagesForEvaluation(messages, botUserId) {
     return messages.map((msg) => {
       const isBot = msg.author_id === botUserId || msg.is_bot_message;
+
+      // Build content string with vision descriptions if available
+      let content = msg.content;
+
+      // Add image descriptions to content
+      if (msg.vision_descriptions && msg.vision_descriptions.length > 0) {
+        const imageText = msg.vision_descriptions.map(desc => `[Image: ${desc}]`).join(" ");
+        content = content + " " + imageText;
+      }
+
       return {
         id: msg.id,
         author: msg.author_name,
-        content: msg.content,
+        content: content.trim(),
         is_bot: isBot,
         timestamp: msg.created_at,
+        has_images: !!(msg.vision_descriptions && msg.vision_descriptions.length > 0),
       };
     });
   }
 
   /**
    * Evaluate whether the bot should respond to the conversation
-   * @param {Array} messages - Array of message objects from database
+   * @param {Array} messages - Array of message objects from database (with parsed JSON)
    * @param {string} botUserId - The bot's Discord user ID
    * @param {string} channelId - The channel ID
-   * @returns {Object} Decision object { should_respond, reply_to_message_id, reason }
+   * @returns {Object} Decision object { should_respond, reply_to_message_id, reason, decisionId }
    */
   async shouldRespond(messages, botUserId, channelId) {
     if (!messages || messages.length === 0) {
       this.logger.debug("No messages to evaluate");
-      return { should_respond: false, reply_to_message_id: null, reason: "No messages to evaluate" };
+      return { should_respond: false, reply_to_message_id: null, reason: "No messages to evaluate", decisionId: null };
     }
 
     const formattedMessages = this.formatMessagesForEvaluation(messages, botUserId);
 
+    // Extract message IDs for tracking
+    const evaluatedMessageIds = messages.map(m => m.id);
+
     const conversationContext = formattedMessages
-      .map((msg) => `[${msg.id}] ${msg.author}${msg.is_bot ? " (IsaacGPT)" : ""}: ${msg.content}`)
+      .map((msg) => {
+        let line = `[${msg.id}] ${msg.author}${msg.is_bot ? " (IsaacGPT)" : ""}: ${msg.content}`;
+        return line;
+      })
       .join("\n");
 
-    const prompt = `Here is the recent conversation (message IDs in brackets):
+    const systemPrompt = this.buildDecisionPrompt();
+    const userPrompt = `Here is the recent conversation (message IDs in brackets):
 
 ${conversationContext}
 
 Should IsaacGPT respond to this conversation? Remember to respond with valid JSON only.`;
+
+    // Build the full messages array for storage
+    const promptMessages = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ];
 
     try {
       this.logger.debug("Evaluating conversation for autonomous response...");
 
       const response = await this.openai.chat.completions.create({
         model: this.config.generator.deepseek.model,
-        messages: [
-          { role: "system", content: this.buildDecisionPrompt() },
-          { role: "user", content: prompt },
-        ],
+        messages: promptMessages,
         max_tokens: 200,
         temperature: 0.7,
         response_format: { type: "json_object" },
@@ -136,30 +159,52 @@ Should IsaacGPT respond to this conversation? Remember to respond with valid JSO
         reason: decision.reason || "No reason provided",
       };
 
-      // Log the decision to database
-      this.db.logDecision(
+      // Log the decision to database with evaluated message IDs
+      const decisionId = this.db.logDecision(
         channelId,
         messages.length,
         normalizedDecision.should_respond,
         normalizedDecision.reply_to_message_id,
-        normalizedDecision.reason
+        normalizedDecision.reason,
+        evaluatedMessageIds
       );
+
+      // Store the full prompt for debugging
+      this.db.storePrompt({
+        decisionId,
+        promptType: "evaluation",
+        systemPrompt,
+        messagesJson: promptMessages,
+        model: this.config.generator.deepseek.model,
+        temperature: 0.7
+      });
 
       this.logger.info(
         `Autonomous evaluation: ${normalizedDecision.should_respond ? "WILL RESPOND" : "WILL NOT RESPOND"} - ${normalizedDecision.reason}`
       );
 
-      return normalizedDecision;
+      return {
+        ...normalizedDecision,
+        decisionId
+      };
     } catch (error) {
       this.logger.error("Error evaluating conversation:", error);
 
       // Log failed evaluation
-      this.db.logDecision(channelId, messages.length, false, null, `Error: ${error.message}`);
+      const decisionId = this.db.logDecision(
+        channelId,
+        messages.length,
+        false,
+        null,
+        `Error: ${error.message}`,
+        evaluatedMessageIds
+      );
 
       return {
         should_respond: false,
         reply_to_message_id: null,
         reason: `Evaluation error: ${error.message}`,
+        decisionId
       };
     }
   }

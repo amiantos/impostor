@@ -5,6 +5,7 @@ const DatabaseManager = require("./database");
 const MessageTracker = require("./message_tracker");
 const ResponseEvaluator = require("./response_evaluator");
 const VisionService = require("./vision_service");
+const BackfillService = require("./backfill_service");
 const { OpenAI } = require("openai");
 
 class ImpostorClient {
@@ -28,26 +29,39 @@ class ImpostorClient {
     this.messageQueue = [];
     this.isProcessing = false;
 
+    // Debounce timers for autonomous evaluation (channelId -> timer)
+    this.evaluationTimers = new Map();
+
     // Initialize Python tool
     this.pythonTool = new PythonTool(logger);
 
-    // Initialize vision service for image understanding
-    this.visionService = new VisionService(logger, config);
-
-    // Initialize database and autonomous response components
+    // Initialize database
     this.db = new DatabaseManager(logger);
     this.db.initialize();
 
-    this.messageTracker = new MessageTracker(logger, this.db, config);
-    this.evaluator = new ResponseEvaluator(logger, config, this.db);
+    // Initialize vision service with database for caching
+    this.visionService = new VisionService(logger, config, this.db);
+
+    // Initialize message tracker with vision service
+    this.messageTracker = new MessageTracker(logger, this.db, config, this.visionService);
+    this.evaluator = new ResponseEvaluator(logger, config, this.db, this.visionService);
+
+    // Initialize backfill service
+    this.backfillService = new BackfillService(logger, this.db, this.visionService, config);
 
     // Set up periodic maintenance
     this.maintenanceInterval = setInterval(() => {
       this.messageTracker.runMaintenance();
     }, 60 * 60 * 1000); // Run every hour
 
-    this.client.on("ready", () => {
+    this.client.on("ready", async () => {
       this.logger.info(`The bot is online as ${this.client.user.tag}!`);
+
+      // Run backfill on startup for configured channels
+      if (config.backfill?.enabled ?? true) {
+        const channelIds = config.channels || [];
+        await this.backfillService.backfillAllChannels(this.client, channelIds);
+      }
     });
 
     this.client.on("messageCreate", async (message) => {
@@ -98,9 +112,9 @@ class ImpostorClient {
     // Check channel filtering
     if (!this.isAllowedChannel(message)) return;
 
-    // Always track the message (for autonomous responses)
+    // Always track the message with vision processing (for autonomous responses)
     const isBotMessage = message.author.id === this.client.user.id;
-    this.messageTracker.addMessage(message, isBotMessage);
+    await this.messageTracker.addMessage(message, { isBotMessage, processVision: true });
 
     // Direct trigger (existing behavior) - @mention or reply to bot
     if (this.isDirectTrigger(message)) {
@@ -117,36 +131,56 @@ class ImpostorClient {
       return;
     }
 
-    // Autonomous response evaluation
+    // Autonomous response evaluation (debounced)
     if (this.config.autonomous?.enabled) {
-      await this.evaluateAutonomousResponse(message.channel);
+      this.scheduleAutonomousEvaluation(message.channel);
     }
   }
 
   /**
+   * Schedule an autonomous evaluation with debouncing
+   * Waits for conversation to settle before evaluating
+   * @param {Channel} channel - Discord channel
+   */
+  scheduleAutonomousEvaluation(channel) {
+    const channelId = channel.id;
+    const debounceMs = (this.config.autonomous?.debounce_seconds || 30) * 1000;
+
+    // Clear any existing timer for this channel
+    if (this.evaluationTimers.has(channelId)) {
+      clearTimeout(this.evaluationTimers.get(channelId));
+      this.logger.debug(`Reset evaluation timer for channel ${channelId}`);
+    }
+
+    // Set new timer
+    const timer = setTimeout(async () => {
+      this.evaluationTimers.delete(channelId);
+      this.logger.debug(`Evaluation timer fired for channel ${channelId}`);
+      await this.evaluateAutonomousResponse(channel);
+    }, debounceMs);
+
+    this.evaluationTimers.set(channelId, timer);
+    this.logger.debug(`Scheduled evaluation for channel ${channelId} in ${debounceMs / 1000}s`);
+  }
+
+  /**
    * Evaluate whether to send an autonomous response
+   * Called after debounce timer fires
    * @param {Channel} channel - Discord channel
    */
   async evaluateAutonomousResponse(channel) {
-    // Check if we should evaluate
-    if (!this.messageTracker.shouldEvaluate(channel.id)) {
-      return;
-    }
+    // Get messages since last bot response for context (with parsed JSON)
+    const recentMessages = this.db.getRecentMessages(channel.id, 50, true);
+    const messagesSinceResponse = this.getMessagesSinceLastBotResponseFromParsed(recentMessages);
 
-    // Mark as evaluated to prevent duplicate evaluations
-    this.messageTracker.markEvaluated(channel.id);
-
-    // Get messages since last bot response for context
-    const recentMessages = this.messageTracker.getMessagesSinceLastResponse(channel.id);
-
-    if (recentMessages.length === 0) {
+    if (messagesSinceResponse.length === 0) {
       this.logger.debug("No messages to evaluate for autonomous response");
       return;
     }
 
     // Ask AI if we should respond
     const decision = await this.evaluator.shouldRespond(
-      recentMessages,
+      messagesSinceResponse,
       this.client.user.id,
       channel.id
     );
@@ -160,12 +194,37 @@ class ImpostorClient {
         channel,
         type: "autonomous",
         replyToId: decision.reply_to_message_id,
+        decisionId: decision.decisionId,
       });
 
       if (!this.isProcessing) {
         this.processMessageQueue();
       }
     }
+  }
+
+  /**
+   * Get messages since last bot response from parsed DB messages
+   * @param {Array} messages - Parsed messages from database (newest first)
+   * @returns {Array} Messages since last bot response (oldest first)
+   */
+  getMessagesSinceLastBotResponseFromParsed(messages) {
+    // Messages come in newest-first order, find the last bot message
+    let lastBotIndex = -1;
+    for (let i = 0; i < messages.length; i++) {
+      if (messages[i].is_bot_message) {
+        lastBotIndex = i;
+        break;
+      }
+    }
+
+    if (lastBotIndex === -1) {
+      // No bot messages, return all messages (reversed to oldest first)
+      return [...messages].reverse();
+    }
+
+    // Return messages before the last bot message (reversed to oldest first)
+    return messages.slice(0, lastBotIndex).reverse();
   }
 
   async processMessageQueue() {
@@ -186,7 +245,7 @@ class ImpostorClient {
           this.logger.info(
             `Processing autonomous response for channel ${queueItem.channel.id}. Queue length: ${this.messageQueue.length}`
           );
-          await this.processAutonomousMessage(queueItem.channel, queueItem.replyToId);
+          await this.processAutonomousMessage(queueItem.channel, queueItem.replyToId, queueItem.decisionId);
         }
 
         // Add a small delay between messages to appear more natural
@@ -205,6 +264,25 @@ class ImpostorClient {
   }
 
   /**
+   * Build context from database instead of fetching from Discord
+   * @param {string} channelId - Discord channel ID
+   * @param {number} limit - Maximum messages to fetch
+   * @returns {Object} Context object with messages and imageDescriptions
+   */
+  buildContextFromDatabase(channelId, limit = 40) {
+    // Get recent messages from database (parsed JSON)
+    const dbMessages = this.db.getRecentMessages(channelId, limit, true);
+
+    // Build image descriptions map from cached vision data
+    const imageDescriptions = this.visionService.buildImageDescriptionsFromDB(dbMessages);
+
+    return {
+      dbMessages,
+      imageDescriptions
+    };
+  }
+
+  /**
    * Process a direct message (existing behavior)
    * @param {Message} message - Discord message that triggered the bot
    */
@@ -216,59 +294,78 @@ class ImpostorClient {
 
     await message.channel.sendTyping();
 
-    let messages;
-    try {
-      messages = await message.channel.messages.fetch({ limit: 40 });
-    } catch (error) {
-      throw error;
-    }
+    // Build context from database (with cached vision)
+    const { dbMessages, imageDescriptions } = this.buildContextFromDatabase(message.channel.id, 40);
 
-    // Process images in messages for vision understanding
-    const imageDescriptions = await this.visionService.processMessagesImages(messages);
-
-    const response = await this.generateResponseWithChatCompletions({
-      messages,
+    const { response, conversationLog } = await this.generateResponseWithChatCompletions({
+      dbMessages,
       userName: user_name,
       characterName: character_name,
       botUserId: this.client.user.id,
       imageDescriptions,
+      useDbContext: true,
     });
 
     const sentMessage = await message.reply(response);
 
-    // Log the response
-    this.db.logResponse(message.channel.id, sentMessage.id, "direct", response);
+    // Log the response with trigger message ID
+    const responseId = this.db.logResponse(
+      message.channel.id,
+      sentMessage.id,
+      "direct",
+      response,
+      message.id
+    );
+
+    // Store the full prompt for debugging
+    this.db.storePrompt({
+      responseId,
+      promptType: "response",
+      systemPrompt: this.contextUtils.buildInstructions(),
+      messagesJson: conversationLog,
+      model: this.config.generator.deepseek.model,
+      temperature: this.config.generator.deepseek.temperature
+    });
 
     // Track the bot's own message
-    this.messageTracker.addMessage(sentMessage, true);
+    await this.messageTracker.addMessage(sentMessage, { isBotMessage: true, processVision: false });
     this.messageTracker.markResponded(message.channel.id);
+
+    // Cancel any pending evaluation for this channel
+    this.cancelEvaluationTimer(message.channel.id);
+  }
+
+  /**
+   * Cancel a pending evaluation timer for a channel
+   * @param {string} channelId - Discord channel ID
+   */
+  cancelEvaluationTimer(channelId) {
+    if (this.evaluationTimers.has(channelId)) {
+      clearTimeout(this.evaluationTimers.get(channelId));
+      this.evaluationTimers.delete(channelId);
+      this.logger.debug(`Cancelled evaluation timer for channel ${channelId}`);
+    }
   }
 
   /**
    * Process an autonomous message
    * @param {Channel} channel - Discord channel to respond in
    * @param {string|null} replyToId - Optional message ID to reply to
+   * @param {number|null} decisionId - Optional decision ID that triggered this response
    */
-  async processAutonomousMessage(channel, replyToId) {
+  async processAutonomousMessage(channel, replyToId, decisionId = null) {
     await channel.sendTyping();
 
-    // Fetch recent messages for context
-    let messages;
-    try {
-      messages = await channel.messages.fetch({ limit: 40 });
-    } catch (error) {
-      throw error;
-    }
+    // Build context from database (with cached vision)
+    const { dbMessages, imageDescriptions } = this.buildContextFromDatabase(channel.id, 40);
 
-    // Process images in messages for vision understanding
-    const imageDescriptions = await this.visionService.processMessagesImages(messages);
-
-    const response = await this.generateResponseWithChatCompletions({
-      messages,
+    const { response, conversationLog } = await this.generateResponseWithChatCompletions({
+      dbMessages,
       userName: "various",
       characterName: this.client.user.username,
       botUserId: this.client.user.id,
       imageDescriptions,
+      useDbContext: true,
     });
 
     let sentMessage;
@@ -286,29 +383,68 @@ class ImpostorClient {
       sentMessage = await channel.send(response);
     }
 
-    // Log the response
-    this.db.logResponse(channel.id, sentMessage.id, "autonomous", response);
+    // Log the response with trigger message ID
+    const responseId = this.db.logResponse(
+      channel.id,
+      sentMessage.id,
+      "autonomous",
+      response,
+      replyToId
+    );
+
+    // Store the full prompt for debugging
+    this.db.storePrompt({
+      responseId,
+      promptType: "response",
+      systemPrompt: this.contextUtils.buildInstructions(),
+      messagesJson: conversationLog,
+      model: this.config.generator.deepseek.model,
+      temperature: this.config.generator.deepseek.temperature
+    });
+
+    // Mark the decision as having sent a response
+    if (decisionId) {
+      this.db.markDecisionResponseSent(decisionId);
+    }
 
     // Track the bot's own message
-    this.messageTracker.addMessage(sentMessage, true);
+    await this.messageTracker.addMessage(sentMessage, { isBotMessage: true, processVision: false });
     this.messageTracker.markResponded(channel.id);
+
+    // Cancel any pending evaluation for this channel (we just responded)
+    this.cancelEvaluationTimer(channel.id);
   }
 
   async generateResponseWithChatCompletions({
-    messages,
+    messages = null,
+    dbMessages = null,
     userName,
     characterName,
     botUserId,
     imageDescriptions = null,
+    useDbContext = false,
   }) {
     const systemPrompt = this.contextUtils.buildInstructions();
     this.logger.debug("Generated System Prompt...", systemPrompt);
 
-    let inputMessages = this.contextUtils.buildChatMessagesForResponsesAPI(
-      messages,
-      botUserId,
-      imageDescriptions
-    );
+    let inputMessages;
+    if (useDbContext && dbMessages) {
+      // Use database records for context
+      inputMessages = this.contextUtils.buildChatMessagesFromDBRecords(
+        dbMessages,
+        botUserId,
+        imageDescriptions
+      );
+    } else if (messages) {
+      // Fallback to Discord messages
+      inputMessages = this.contextUtils.buildChatMessagesForResponsesAPI(
+        messages,
+        botUserId,
+        imageDescriptions
+      );
+    } else {
+      throw new Error("Either messages or dbMessages must be provided");
+    }
 
     // Create initial conversation log
     let conversationLog = [
@@ -414,7 +550,10 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
       replyMessage = replyMessage.substring(0, 2000);
     }
 
-    return replyMessage;
+    return {
+      response: replyMessage,
+      conversationLog
+    };
   }
 
   async callDeepSeek(conversationLog) {
@@ -514,6 +653,12 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
     if (this.maintenanceInterval) {
       clearInterval(this.maintenanceInterval);
     }
+    // Clear all evaluation timers
+    for (const timer of this.evaluationTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.evaluationTimers.clear();
+
     if (this.db) {
       this.db.close();
     }

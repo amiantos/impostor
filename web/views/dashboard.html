@@ -150,9 +150,10 @@
 
     .message-header {
       display: flex;
-      justify-content: space-between;
+      align-items: center;
       margin-bottom: 5px;
       font-size: 0.85rem;
+      gap: 8px;
     }
 
     .message-author {
@@ -166,6 +167,31 @@
 
     .message-time {
       color: var(--text-secondary);
+    }
+
+    .message-badges {
+      display: flex;
+      gap: 4px;
+      margin-left: auto;
+      margin-right: 8px;
+    }
+
+    .msg-badge {
+      font-size: 0.7rem;
+      padding: 1px 5px;
+      border-radius: 3px;
+      background: var(--bg-card);
+      color: var(--text-secondary);
+    }
+
+    .msg-badge.img-badge {
+      background: var(--accent-yellow);
+      color: var(--bg-primary);
+    }
+
+    .msg-badge.file-badge {
+      background: var(--accent-blue);
+      color: white;
     }
 
     .message-content {
@@ -285,6 +311,241 @@
       padding: 20px;
       color: var(--text-secondary);
     }
+
+    /* Modal styles */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      z-index: 1000;
+      overflow-y: auto;
+      padding: 20px;
+    }
+
+    .modal-overlay.active {
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+    }
+
+    .modal-content {
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      max-width: 900px;
+      width: 100%;
+      margin: 20px auto;
+      position: relative;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px;
+      border-bottom: 1px solid var(--bg-card);
+    }
+
+    .modal-header h2 {
+      margin: 0;
+      font-size: 1.2rem;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 1.5rem;
+      cursor: pointer;
+      padding: 5px;
+    }
+
+    .modal-close:hover {
+      color: var(--text-primary);
+    }
+
+    .modal-body {
+      padding: 20px;
+    }
+
+    .modal-section {
+      margin-bottom: 20px;
+      background: var(--bg-primary);
+      border-radius: 8px;
+      padding: 15px;
+    }
+
+    .modal-section h3 {
+      color: var(--accent-blue);
+      font-size: 0.9rem;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .modal-section.has-content h3 {
+      cursor: pointer;
+    }
+
+    .modal-section.has-content h3:hover {
+      color: var(--accent-green);
+    }
+
+    .section-badge {
+      background: var(--accent-green);
+      color: var(--bg-primary);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.7rem;
+    }
+
+    .message-meta {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+
+    .meta-item {
+      font-size: 0.85rem;
+    }
+
+    .meta-label {
+      color: var(--text-secondary);
+      font-size: 0.75rem;
+      margin-bottom: 2px;
+    }
+
+    .meta-value {
+      color: var(--text-primary);
+      word-break: break-all;
+    }
+
+    .message-full-content {
+      background: var(--bg-card);
+      padding: 12px;
+      border-radius: 6px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+
+    .attachments-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 10px;
+    }
+
+    .attachment-item {
+      background: var(--bg-card);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .attachment-thumb {
+      width: 100%;
+      height: 100px;
+      object-fit: cover;
+      cursor: pointer;
+    }
+
+    .attachment-info {
+      padding: 8px;
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+    }
+
+    .attachment-name {
+      color: var(--text-primary);
+      font-size: 0.8rem;
+      margin-bottom: 4px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .vision-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .vision-list li {
+      background: var(--bg-card);
+      padding: 10px 12px;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      font-size: 0.9rem;
+      line-height: 1.4;
+      border-left: 3px solid var(--accent-yellow);
+    }
+
+    .json-view {
+      background: var(--bg-card);
+      border-radius: 6px;
+      overflow: hidden;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .json-view pre {
+      margin: 0;
+      padding: 12px;
+      font-size: 0.8rem;
+      line-height: 1.4;
+      color: var(--text-primary);
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    .collapsible-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .collapsible-header .toggle-icon {
+      transition: transform 0.2s;
+    }
+
+    .collapsible-header.collapsed .toggle-icon {
+      transform: rotate(-90deg);
+    }
+
+    .collapsible-content {
+      display: block;
+    }
+
+    .collapsible-content.collapsed {
+      display: none;
+    }
+
+    .no-data {
+      color: var(--text-secondary);
+      font-style: italic;
+      font-size: 0.9rem;
+    }
+
+    .message-item.clickable,
+    .decision-item.clickable,
+    .response-item.clickable {
+      cursor: pointer;
+      transition: transform 0.1s, box-shadow 0.1s;
+    }
+
+    .message-item.clickable:hover,
+    .decision-item.clickable:hover,
+    .response-item.clickable:hover {
+      transform: translateX(4px);
+      box-shadow: -4px 0 0 var(--accent-green);
+    }
   </style>
 </head>
 <body>
@@ -354,6 +615,19 @@
         </div>
       </div>
     </div>
+
+    <!-- Message Detail Modal -->
+    <div class="modal-overlay" id="message-modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Message Details</h2>
+          <button class="modal-close" onclick="closeModal()">&times;</button>
+        </div>
+        <div class="modal-body" id="modal-body">
+          <div class="loading">Loading...</div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -372,8 +646,413 @@
     }
 
     function truncate(str, maxLen = 200) {
+      if (!str) return '';
       if (str.length <= maxLen) return str;
       return str.substring(0, maxLen) + '...';
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    function formatBytes(bytes) {
+      if (!bytes) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    function formatJson(obj) {
+      return JSON.stringify(obj, null, 2);
+    }
+
+    // Modal functions
+    function openModal() {
+      document.getElementById('message-modal').classList.add('active');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeModal() {
+      document.getElementById('message-modal').classList.remove('active');
+      document.body.style.overflow = '';
+    }
+
+    // Close modal on escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeModal();
+    });
+
+    // Close modal on overlay click
+    document.getElementById('message-modal').addEventListener('click', (e) => {
+      if (e.target.id === 'message-modal') closeModal();
+    });
+
+    function toggleCollapsible(element) {
+      const header = element;
+      const content = header.nextElementSibling;
+      header.classList.toggle('collapsed');
+      content.classList.toggle('collapsed');
+    }
+
+    async function showMessageDetails(messageId) {
+      openModal();
+      const modalBody = document.getElementById('modal-body');
+      modalBody.innerHTML = '<div class="loading">Loading message details...</div>';
+
+      try {
+        const data = await fetchJson(`${API_BASE}/messages/${messageId}/relations`);
+        renderMessageModal(data);
+      } catch (error) {
+        console.error('Failed to load message details:', error);
+        modalBody.innerHTML = '<div class="empty-state">Failed to load message details</div>';
+      }
+    }
+
+    function renderMessageModal(data) {
+      const { message, response, decision, responsePrompt, decisionPrompt } = data;
+      const modalBody = document.getElementById('modal-body');
+
+      let html = '';
+
+      // Message metadata section
+      html += `
+        <div class="modal-section">
+          <h3>Message Info</h3>
+          <div class="message-meta">
+            <div class="meta-item">
+              <div class="meta-label">ID</div>
+              <div class="meta-value">${message.id}</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Author</div>
+              <div class="meta-value">${escapeHtml(message.author_name)} ${message.is_bot_message ? '(Bot)' : ''}</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Channel</div>
+              <div class="meta-value">${message.channel_id}</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Time</div>
+              <div class="meta-value">${formatTime(message.created_at)}</div>
+            </div>
+            ${message.reply_to_message_id ? `
+            <div class="meta-item">
+              <div class="meta-label">Reply To</div>
+              <div class="meta-value"><a href="#" onclick="showMessageDetails('${message.reply_to_message_id}'); return false;">${message.reply_to_message_id}</a></div>
+            </div>
+            ` : ''}
+            ${message.is_backfilled ? `
+            <div class="meta-item">
+              <div class="meta-label">Source</div>
+              <div class="meta-value">Backfilled</div>
+            </div>
+            ` : ''}
+          </div>
+          <div class="message-full-content">${escapeHtml(message.content) || '(no content)'}</div>
+        </div>
+      `;
+
+      // Attachments section
+      if (message.attachments && message.attachments.length > 0) {
+        html += `
+          <div class="modal-section">
+            <h3>Attachments <span class="section-badge">${message.attachments.length}</span></h3>
+            <div class="attachments-grid">
+              ${message.attachments.map(att => `
+                <div class="attachment-item">
+                  ${att.isImage ? `
+                    <img class="attachment-thumb" src="${att.url}" alt="${escapeHtml(att.name)}" onclick="window.open('${att.url}', '_blank')" />
+                  ` : `
+                    <div class="attachment-thumb" style="display: flex; align-items: center; justify-content: center; background: var(--bg-card);">
+                      <span style="font-size: 2rem;">📎</span>
+                    </div>
+                  `}
+                  <div class="attachment-info">
+                    <div class="attachment-name">${escapeHtml(att.name)}</div>
+                    <div>${formatBytes(att.size)}</div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      // Vision descriptions section
+      if (message.vision_descriptions && message.vision_descriptions.length > 0) {
+        html += `
+          <div class="modal-section">
+            <h3>Vision Descriptions <span class="section-badge">${message.vision_descriptions.length}</span></h3>
+            <ul class="vision-list">
+              ${message.vision_descriptions.map(desc => `
+                <li>${escapeHtml(desc)}</li>
+              `).join('')}
+            </ul>
+          </div>
+        `;
+      }
+
+      // Decision section
+      if (decision) {
+        html += `
+          <div class="modal-section">
+            <h3>Related Decision <span class="section-badge ${decision.should_respond ? 'yes' : ''}" style="${!decision.should_respond ? 'background: var(--accent-red); color: white;' : ''}">${decision.should_respond ? 'RESPONDED' : 'PASSED'}</span></h3>
+            <div class="message-meta">
+              <div class="meta-item">
+                <div class="meta-label">Decision ID</div>
+                <div class="meta-value">${decision.id}</div>
+              </div>
+              <div class="meta-item">
+                <div class="meta-label">Evaluated At</div>
+                <div class="meta-value">${formatTime(decision.evaluated_at)}</div>
+              </div>
+              <div class="meta-item">
+                <div class="meta-label">Messages Evaluated</div>
+                <div class="meta-value">${decision.messages_evaluated}</div>
+              </div>
+            </div>
+            <div class="message-full-content" style="border-left: 3px solid ${decision.should_respond ? 'var(--accent-green)' : 'var(--accent-red)'};">
+              ${escapeHtml(decision.reason)}
+            </div>
+          </div>
+        `;
+
+        // Decision prompt section
+        if (decisionPrompt) {
+          html += `
+            <div class="modal-section has-content">
+              <div class="collapsible-header collapsed" onclick="toggleCollapsible(this)">
+                <h3>Evaluation Prompt <span class="toggle-icon">▼</span></h3>
+              </div>
+              <div class="collapsible-content collapsed">
+                <div class="json-view">
+                  <pre>${escapeHtml(formatJson(decisionPrompt.messages_json))}</pre>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      // Response section
+      if (response) {
+        html += `
+          <div class="modal-section">
+            <h3>Bot Response <span class="section-badge" style="background: ${response.response_type === 'direct' ? 'var(--accent-blue)' : 'var(--accent-yellow)'}; color: ${response.response_type === 'direct' ? 'white' : 'var(--bg-primary)'};">${response.response_type.toUpperCase()}</span></h3>
+            <div class="message-meta">
+              <div class="meta-item">
+                <div class="meta-label">Response ID</div>
+                <div class="meta-value">${response.id}</div>
+              </div>
+              <div class="meta-item">
+                <div class="meta-label">Message ID</div>
+                <div class="meta-value">${response.message_id || 'N/A'}</div>
+              </div>
+              <div class="meta-item">
+                <div class="meta-label">Time</div>
+                <div class="meta-value">${formatTime(response.created_at)}</div>
+              </div>
+            </div>
+            <div class="message-full-content" style="border-left: 3px solid var(--accent-green);">
+              ${escapeHtml(response.content)}
+            </div>
+          </div>
+        `;
+
+        // Response prompt section
+        if (responsePrompt) {
+          html += `
+            <div class="modal-section has-content">
+              <div class="collapsible-header collapsed" onclick="toggleCollapsible(this)">
+                <h3>Response Prompt <span class="toggle-icon">▼</span></h3>
+              </div>
+              <div class="collapsible-content collapsed">
+                <div class="json-view">
+                  <pre>${escapeHtml(formatJson(responsePrompt.messages_json))}</pre>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      // If no decision or response
+      if (!decision && !response) {
+        html += `
+          <div class="modal-section">
+            <h3>Relations</h3>
+            <p class="no-data">No decisions or responses linked to this message yet.</p>
+          </div>
+        `;
+      }
+
+      modalBody.innerHTML = html;
+    }
+
+    async function showDecisionDetails(decisionId) {
+      openModal();
+      const modalBody = document.getElementById('modal-body');
+      modalBody.innerHTML = '<div class="loading">Loading decision details...</div>';
+
+      try {
+        const [decision, prompt] = await Promise.all([
+          fetchJson(`${API_BASE}/decisions/${decisionId}`),
+          fetchJson(`${API_BASE}/decisions/${decisionId}/prompt`).catch(() => null)
+        ]);
+        renderDecisionModal(decision, prompt);
+      } catch (error) {
+        console.error('Failed to load decision details:', error);
+        modalBody.innerHTML = '<div class="empty-state">Failed to load decision details</div>';
+      }
+    }
+
+    function renderDecisionModal(decision, prompt) {
+      const modalBody = document.getElementById('modal-body');
+
+      let html = `
+        <div class="modal-section">
+          <h3>Decision Info <span class="section-badge ${decision.should_respond ? 'yes' : ''}" style="${!decision.should_respond ? 'background: var(--accent-red); color: white;' : ''}">${decision.should_respond ? 'RESPONDED' : 'PASSED'}</span></h3>
+          <div class="message-meta">
+            <div class="meta-item">
+              <div class="meta-label">Decision ID</div>
+              <div class="meta-value">${decision.id}</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Channel</div>
+              <div class="meta-value">${decision.channel_id}</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Evaluated At</div>
+              <div class="meta-value">${formatTime(decision.evaluated_at)}</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Messages Evaluated</div>
+              <div class="meta-value">${decision.messages_evaluated}</div>
+            </div>
+            ${decision.reply_to_message_id ? `
+            <div class="meta-item">
+              <div class="meta-label">Reply To</div>
+              <div class="meta-value"><a href="#" onclick="showMessageDetails('${decision.reply_to_message_id}'); return false;">${decision.reply_to_message_id}</a></div>
+            </div>
+            ` : ''}
+            <div class="meta-item">
+              <div class="meta-label">Response Sent</div>
+              <div class="meta-value">${decision.response_sent ? 'Yes' : 'No'}</div>
+            </div>
+          </div>
+          <div class="message-full-content" style="border-left: 3px solid ${decision.should_respond ? 'var(--accent-green)' : 'var(--accent-red)'};">
+            ${escapeHtml(decision.reason)}
+          </div>
+        </div>
+      `;
+
+      // Evaluated messages
+      if (decision.evaluated_message_ids && decision.evaluated_message_ids.length > 0) {
+        html += `
+          <div class="modal-section">
+            <h3>Evaluated Messages <span class="section-badge">${decision.evaluated_message_ids.length}</span></h3>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+              ${decision.evaluated_message_ids.map(id => `
+                <a href="#" onclick="showMessageDetails('${id}'); return false;" style="color: var(--accent-blue); font-size: 0.85rem;">${id.slice(-8)}</a>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      // Prompt section
+      if (prompt) {
+        html += `
+          <div class="modal-section has-content">
+            <div class="collapsible-header collapsed" onclick="toggleCollapsible(this)">
+              <h3>Evaluation Prompt <span class="toggle-icon">▼</span></h3>
+            </div>
+            <div class="collapsible-content collapsed">
+              <div class="json-view">
+                <pre>${escapeHtml(formatJson(prompt.messages_json))}</pre>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      modalBody.innerHTML = html;
+    }
+
+    async function showResponseDetails(responseId) {
+      openModal();
+      const modalBody = document.getElementById('modal-body');
+      modalBody.innerHTML = '<div class="loading">Loading response details...</div>';
+
+      try {
+        const [response, prompt] = await Promise.all([
+          fetchJson(`${API_BASE}/responses/${responseId}`),
+          fetchJson(`${API_BASE}/responses/${responseId}/prompt`).catch(() => null)
+        ]);
+        renderResponseModal(response, prompt);
+      } catch (error) {
+        console.error('Failed to load response details:', error);
+        modalBody.innerHTML = '<div class="empty-state">Failed to load response details</div>';
+      }
+    }
+
+    function renderResponseModal(response, prompt) {
+      const modalBody = document.getElementById('modal-body');
+
+      let html = `
+        <div class="modal-section">
+          <h3>Response Info <span class="section-badge" style="background: ${response.response_type === 'direct' ? 'var(--accent-blue)' : 'var(--accent-yellow)'}; color: ${response.response_type === 'direct' ? 'white' : 'var(--bg-primary)'};">${response.response_type.toUpperCase()}</span></h3>
+          <div class="message-meta">
+            <div class="meta-item">
+              <div class="meta-label">Response ID</div>
+              <div class="meta-value">${response.id}</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Channel</div>
+              <div class="meta-value">${response.channel_id}</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Message ID</div>
+              <div class="meta-value">${response.message_id || 'N/A'}</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Time</div>
+              <div class="meta-value">${formatTime(response.created_at)}</div>
+            </div>
+            ${response.trigger_message_id ? `
+            <div class="meta-item">
+              <div class="meta-label">Triggered By</div>
+              <div class="meta-value"><a href="#" onclick="showMessageDetails('${response.trigger_message_id}'); return false;">${response.trigger_message_id}</a></div>
+            </div>
+            ` : ''}
+          </div>
+          <div class="message-full-content" style="border-left: 3px solid var(--accent-green);">
+            ${escapeHtml(response.content)}
+          </div>
+        </div>
+      `;
+
+      // Prompt section
+      if (prompt) {
+        html += `
+          <div class="modal-section has-content">
+            <div class="collapsible-header collapsed" onclick="toggleCollapsible(this)">
+              <h3>Response Prompt <span class="toggle-icon">▼</span></h3>
+            </div>
+            <div class="collapsible-content collapsed">
+              <div class="json-view">
+                <pre>${escapeHtml(formatJson(prompt.messages_json))}</pre>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      modalBody.innerHTML = html;
     }
 
     async function loadStats() {
@@ -420,11 +1099,12 @@
       container.innerHTML = '<div class="loading">Loading...</div>';
 
       try {
-        let url = `${API_BASE}/channels/${channelId}/messages?limit=30`;
+        // Use includeRelations=true to get parsed attachment/vision data
+        let url = `${API_BASE}/channels/${channelId}/messages?limit=30&includeRelations=true`;
         if (!channelId) {
           // Load from first available channel or show empty state
           if (channels.length > 0) {
-            url = `${API_BASE}/channels/${channels[0].channel_id}/messages?limit=30`;
+            url = `${API_BASE}/channels/${channels[0].channel_id}/messages?limit=30&includeRelations=true`;
           } else {
             container.innerHTML = '<div class="empty-state">No messages yet</div>';
             return;
@@ -441,15 +1121,29 @@
         // Reverse to show oldest first (for reading)
         const reversed = [...messages].reverse();
 
-        container.innerHTML = reversed.map(msg => `
-          <div class="message-item ${msg.is_bot_message ? 'bot' : ''}">
-            <div class="message-header">
-              <span class="message-author">${msg.author_name}${msg.is_bot_message ? ' (Bot)' : ''}</span>
-              <span class="message-time">${formatTime(msg.created_at)}</span>
+        container.innerHTML = reversed.map(msg => {
+          const hasAttachments = msg.attachments && msg.attachments.length > 0;
+          const hasVision = msg.vision_descriptions && msg.vision_descriptions.length > 0;
+
+          let badges = '';
+          if (hasAttachments) {
+            const imageCount = msg.attachments.filter(a => a.isImage).length;
+            const fileCount = msg.attachments.length - imageCount;
+            if (imageCount > 0) badges += `<span class="msg-badge img-badge" title="${imageCount} image(s)${hasVision ? ' (described)' : ''}">🖼 ${imageCount}</span>`;
+            if (fileCount > 0) badges += `<span class="msg-badge file-badge" title="${fileCount} file(s)">📎 ${fileCount}</span>`;
+          }
+
+          return `
+            <div class="message-item clickable ${msg.is_bot_message ? 'bot' : ''}" onclick="showMessageDetails('${msg.id}')">
+              <div class="message-header">
+                <span class="message-author">${escapeHtml(msg.author_name)}${msg.is_bot_message ? ' (Bot)' : ''}</span>
+                <span class="message-badges">${badges}</span>
+                <span class="message-time">${formatTime(msg.created_at)}</span>
+              </div>
+              <div class="message-content">${escapeHtml(truncate(msg.content)) || '<em>(no text)</em>'}</div>
             </div>
-            <div class="message-content">${truncate(msg.content)}</div>
-          </div>
-        `).join('');
+          `;
+        }).join('');
       } catch (error) {
         console.error('Failed to load messages:', error);
         container.innerHTML = '<div class="empty-state">Failed to load messages</div>';
@@ -475,14 +1169,14 @@
         }
 
         container.innerHTML = decisions.map(d => `
-          <div class="decision-item ${d.should_respond ? 'responded' : ''}">
+          <div class="decision-item clickable ${d.should_respond ? 'responded' : ''}" onclick="showDecisionDetails(${d.id})">
             <div class="decision-header">
               <span class="decision-badge ${d.should_respond ? 'yes' : 'no'}">
                 ${d.should_respond ? 'RESPONDED' : 'PASSED'}
               </span>
               <span class="message-time">${formatTime(d.evaluated_at)}</span>
             </div>
-            <div class="decision-reason">"${d.reason}"</div>
+            <div class="decision-reason">"${escapeHtml(d.reason)}"</div>
             <div class="decision-meta">
               Evaluated ${d.messages_evaluated} messages
               ${d.reply_to_message_id ? ' | Replying to specific message' : ''}
@@ -508,12 +1202,12 @@
         }
 
         container.innerHTML = responses.map(r => `
-          <div class="response-item">
+          <div class="response-item clickable" onclick="showResponseDetails(${r.id})" style="cursor: pointer;">
             <div class="response-header">
               <span class="response-type ${r.response_type}">${r.response_type.toUpperCase()}</span>
               <span class="message-time">${formatTime(r.created_at)}</span>
             </div>
-            <div class="response-content">${truncate(r.content, 300)}</div>
+            <div class="response-content">${escapeHtml(truncate(r.content, 300))}</div>
           </div>
         `).join('');
       } catch (error) {

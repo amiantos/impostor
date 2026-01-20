@@ -1,9 +1,10 @@
 const { OpenAI } = require("openai");
 
 class VisionService {
-  constructor(logger, config) {
+  constructor(logger, config, database = null) {
     this.logger = logger;
     this.config = config;
+    this.db = database;
     this.enabled = config.vision?.enabled ?? false;
     this.supportedFormats = config.vision?.supported_formats || ["png", "jpg", "jpeg", "gif", "webp"];
     this.maxFileSizeMb = config.vision?.max_file_size_mb || 20;
@@ -19,6 +20,14 @@ class VisionService {
       this.openai = null;
       this.logger.info("VisionService disabled (no OpenAI API key or vision disabled)");
     }
+  }
+
+  /**
+   * Set database reference (for late initialization)
+   * @param {DatabaseManager} database - Database manager instance
+   */
+  setDatabase(database) {
+    this.db = database;
   }
 
   /**
@@ -145,7 +154,57 @@ class VisionService {
   }
 
   /**
+   * Process a single message immediately and cache results in database
+   * @param {Message} message - Discord message object
+   * @returns {Promise<string[]>} Array of image descriptions (may be empty)
+   */
+  async processMessageImmediate(message) {
+    if (!this.enabled || !this.openai) {
+      return [];
+    }
+
+    const imageUrls = this.extractImageUrls(message);
+    if (imageUrls.length === 0) {
+      return [];
+    }
+
+    this.logger.debug(`Immediate processing ${imageUrls.length} image(s) from message ${message.id}`);
+
+    const descriptions = [];
+    for (const url of imageUrls) {
+      const description = await this.describeImage(url);
+      if (description) {
+        descriptions.push(description);
+      }
+    }
+
+    // Cache in database if available
+    if (this.db && descriptions.length > 0) {
+      this.db.updateMessageVision(message.id, descriptions);
+      this.logger.debug(`Cached ${descriptions.length} vision description(s) for message ${message.id}`);
+    }
+
+    return descriptions;
+  }
+
+  /**
+   * Get cached vision descriptions for a message from database
+   * @param {string} messageId - Discord message ID
+   * @returns {string[]|null} Cached descriptions or null if not cached
+   */
+  getCachedVision(messageId) {
+    if (!this.db) return null;
+
+    const message = this.db.getMessage(messageId);
+    if (message && message.vision_descriptions && message.vision_descriptions.length > 0) {
+      return message.vision_descriptions;
+    }
+    return null;
+  }
+
+  /**
    * Process images from multiple messages and return a Map of message ID to descriptions
+   * Checks database cache first before making API calls
    * @param {Collection<Message>} messages - Discord messages collection
    * @returns {Promise<Map<string, string[]>>} Map of message ID to array of descriptions
    */
@@ -160,9 +219,23 @@ class VisionService {
     const messageArray = Array.from(messages.values());
 
     for (const message of messageArray) {
+      // Check cache first
+      const cached = this.getCachedVision(message.id);
+      if (cached) {
+        imageDescriptions.set(message.id, cached);
+        this.logger.debug(`Using cached vision for message ${message.id}`);
+        continue;
+      }
+
+      // Not cached, process now
       const descriptions = await this.processMessageImages(message);
       if (descriptions.length > 0) {
         imageDescriptions.set(message.id, descriptions);
+
+        // Cache the results if we have database access
+        if (this.db) {
+          this.db.updateMessageVision(message.id, descriptions);
+        }
       }
     }
 
@@ -171,6 +244,57 @@ class VisionService {
     }
 
     return imageDescriptions;
+  }
+
+  /**
+   * Build image descriptions map from database records
+   * @param {Array} dbMessages - Array of message records from database
+   * @returns {Map<string, string[]>} Map of message ID to descriptions
+   */
+  buildImageDescriptionsFromDB(dbMessages) {
+    const imageDescriptions = new Map();
+
+    for (const msg of dbMessages) {
+      if (msg.vision_descriptions) {
+        const descriptions = typeof msg.vision_descriptions === 'string'
+          ? JSON.parse(msg.vision_descriptions)
+          : msg.vision_descriptions;
+
+        if (descriptions && descriptions.length > 0) {
+          imageDescriptions.set(msg.id, descriptions);
+        }
+      }
+    }
+
+    return imageDescriptions;
+  }
+
+  /**
+   * Serialize attachments from a Discord message
+   * @param {Message} message - Discord message object
+   * @returns {Array|null} Array of attachment objects or null
+   */
+  serializeAttachments(message) {
+    if (!message.attachments || message.attachments.size === 0) {
+      return null;
+    }
+
+    const attachments = [];
+    message.attachments.forEach((attachment) => {
+      attachments.push({
+        id: attachment.id,
+        name: attachment.name,
+        url: attachment.url,
+        proxyURL: attachment.proxyURL,
+        size: attachment.size,
+        contentType: attachment.contentType,
+        width: attachment.width,
+        height: attachment.height,
+        isImage: this.isSupportedImage(attachment)
+      });
+    });
+
+    return attachments.length > 0 ? attachments : null;
   }
 }
 

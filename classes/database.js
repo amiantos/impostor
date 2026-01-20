@@ -20,7 +20,73 @@ class DatabaseManager {
     this.db.pragma("journal_mode = WAL");
 
     this.createTables();
+    this.runMigrations();
     this.logger.info(`Database initialized at ${this.dbPath}`);
+  }
+
+  runMigrations() {
+    // Migration: Add enhanced message columns
+    const messageColumns = this.db.pragma("table_info(messages)");
+    const columnNames = messageColumns.map(c => c.name);
+
+    if (!columnNames.includes("attachments")) {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN attachments TEXT`);
+      this.logger.info("Migration: Added attachments column to messages");
+    }
+
+    if (!columnNames.includes("vision_descriptions")) {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN vision_descriptions TEXT`);
+      this.logger.info("Migration: Added vision_descriptions column to messages");
+    }
+
+    if (!columnNames.includes("reply_to_message_id")) {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN reply_to_message_id TEXT`);
+      this.logger.info("Migration: Added reply_to_message_id column to messages");
+    }
+
+    if (!columnNames.includes("is_backfilled")) {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN is_backfilled BOOLEAN DEFAULT FALSE`);
+      this.logger.info("Migration: Added is_backfilled column to messages");
+    }
+
+    // Migration: Add trigger_message_id to responses
+    const responsesColumns = this.db.pragma("table_info(responses)");
+    const responsesColumnNames = responsesColumns.map(c => c.name);
+
+    if (!responsesColumnNames.includes("trigger_message_id")) {
+      this.db.exec(`ALTER TABLE responses ADD COLUMN trigger_message_id TEXT`);
+      this.logger.info("Migration: Added trigger_message_id column to responses");
+    }
+
+    // Migration: Add evaluated_message_ids to decision_log
+    const decisionColumns = this.db.pragma("table_info(decision_log)");
+    const decisionColumnNames = decisionColumns.map(c => c.name);
+
+    if (!decisionColumnNames.includes("evaluated_message_ids")) {
+      this.db.exec(`ALTER TABLE decision_log ADD COLUMN evaluated_message_ids TEXT`);
+      this.logger.info("Migration: Added evaluated_message_ids column to decision_log");
+    }
+
+    // Create prompts table if it doesn't exist
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS prompts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        response_id INTEGER,
+        decision_id INTEGER,
+        prompt_type TEXT NOT NULL,
+        system_prompt TEXT,
+        messages_json TEXT NOT NULL,
+        model TEXT,
+        temperature REAL,
+        created_at DATETIME NOT NULL
+      )
+    `);
+
+    // Create index for prompts
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_prompts_response ON prompts(response_id);
+      CREATE INDEX IF NOT EXISTS idx_prompts_decision ON prompts(decision_id);
+    `);
   }
 
   createTables() {
@@ -89,14 +155,169 @@ class DatabaseManager {
     );
   }
 
-  getRecentMessages(channelId, limit = 50) {
+  /**
+   * Enhanced message insertion with attachments and vision
+   * @param {Object} options - Message data options
+   */
+  insertMessageEnhanced({
+    id,
+    channelId,
+    authorId,
+    authorName,
+    content,
+    createdAt,
+    isBotMessage = false,
+    attachments = null,
+    visionDescriptions = null,
+    replyToMessageId = null,
+    isBackfilled = false
+  }) {
+    const stmt = this.db.prepare(`
+      INSERT OR REPLACE INTO messages (
+        id, channel_id, author_id, author_name, content, created_at,
+        is_bot_message, attachments, vision_descriptions, reply_to_message_id, is_backfilled
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+      id,
+      channelId,
+      authorId,
+      authorName,
+      content,
+      createdAt instanceof Date ? createdAt.toISOString() : createdAt,
+      isBotMessage ? 1 : 0,
+      attachments ? JSON.stringify(attachments) : null,
+      visionDescriptions ? JSON.stringify(visionDescriptions) : null,
+      replyToMessageId,
+      isBackfilled ? 1 : 0
+    );
+  }
+
+  /**
+   * Check if a message already exists in the database
+   * @param {string} messageId - Discord message ID
+   * @returns {boolean} True if message exists
+   */
+  messageExists(messageId) {
+    const stmt = this.db.prepare(`SELECT 1 FROM messages WHERE id = ?`);
+    return stmt.get(messageId) !== undefined;
+  }
+
+  /**
+   * Update vision descriptions for an existing message
+   * @param {string} messageId - Discord message ID
+   * @param {string[]} visionDescriptions - Array of vision descriptions
+   */
+  updateMessageVision(messageId, visionDescriptions) {
+    const stmt = this.db.prepare(`
+      UPDATE messages SET vision_descriptions = ? WHERE id = ?
+    `);
+    stmt.run(JSON.stringify(visionDescriptions), messageId);
+  }
+
+  /**
+   * Get a single message by ID with parsed JSON fields
+   * @param {string} messageId - Discord message ID
+   * @returns {Object|null} Message object with parsed attachments and vision
+   */
+  getMessage(messageId) {
+    const stmt = this.db.prepare(`SELECT * FROM messages WHERE id = ?`);
+    const msg = stmt.get(messageId);
+    if (msg) {
+      return this._parseMessageRecord(msg);
+    }
+    return null;
+  }
+
+  /**
+   * Get a message with all related data (decision, response, prompt)
+   * @param {string} messageId - Discord message ID
+   * @returns {Object|null} Message with relations
+   */
+  getMessageWithRelations(messageId) {
+    const message = this.getMessage(messageId);
+    if (!message) return null;
+
+    // Find if this message triggered a response
+    const responseStmt = this.db.prepare(`
+      SELECT * FROM responses WHERE trigger_message_id = ?
+    `);
+    const response = responseStmt.get(messageId);
+
+    // Find if this message was part of a decision evaluation
+    const decisionStmt = this.db.prepare(`
+      SELECT * FROM decision_log
+      WHERE evaluated_message_ids LIKE ?
+      ORDER BY evaluated_at DESC
+      LIMIT 1
+    `);
+    const decision = decisionStmt.get(`%"${messageId}"%`);
+
+    // Get any related prompts
+    let responsePrompt = null;
+    let decisionPrompt = null;
+
+    if (response) {
+      const promptStmt = this.db.prepare(`
+        SELECT * FROM prompts WHERE response_id = ?
+      `);
+      responsePrompt = promptStmt.get(response.id);
+      if (responsePrompt) {
+        responsePrompt.messages_json = JSON.parse(responsePrompt.messages_json || "[]");
+      }
+    }
+
+    if (decision) {
+      const promptStmt = this.db.prepare(`
+        SELECT * FROM prompts WHERE decision_id = ?
+      `);
+      decisionPrompt = promptStmt.get(decision.id);
+      if (decisionPrompt) {
+        decisionPrompt.messages_json = JSON.parse(decisionPrompt.messages_json || "[]");
+      }
+      if (decision.evaluated_message_ids) {
+        decision.evaluated_message_ids = JSON.parse(decision.evaluated_message_ids);
+      }
+    }
+
+    return {
+      message,
+      response,
+      decision,
+      responsePrompt,
+      decisionPrompt
+    };
+  }
+
+  /**
+   * Parse a message record from the database
+   * @param {Object} record - Raw database record
+   * @returns {Object} Parsed message object
+   */
+  _parseMessageRecord(record) {
+    return {
+      ...record,
+      attachments: record.attachments ? JSON.parse(record.attachments) : null,
+      vision_descriptions: record.vision_descriptions ? JSON.parse(record.vision_descriptions) : null,
+      is_bot_message: !!record.is_bot_message,
+      is_backfilled: !!record.is_backfilled
+    };
+  }
+
+  getRecentMessages(channelId, limit = 50, parseJson = false) {
     const stmt = this.db.prepare(`
       SELECT * FROM messages
       WHERE channel_id = ?
       ORDER BY created_at DESC
       LIMIT ?
     `);
-    return stmt.all(channelId, limit);
+    const messages = stmt.all(channelId, limit);
+    if (parseJson) {
+      return messages.map(msg => this._parseMessageRecord(msg));
+    }
+    return messages;
   }
 
   getMessagesSinceLastBotResponse(channelId) {
@@ -165,10 +386,10 @@ class DatabaseManager {
   }
 
   // Decision log operations
-  logDecision(channelId, messagesEvaluated, shouldRespond, replyToMessageId, reason) {
+  logDecision(channelId, messagesEvaluated, shouldRespond, replyToMessageId, reason, evaluatedMessageIds = null) {
     const stmt = this.db.prepare(`
-      INSERT INTO decision_log (channel_id, evaluated_at, messages_evaluated, should_respond, reply_to_message_id, reason, response_sent)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO decision_log (channel_id, evaluated_at, messages_evaluated, should_respond, reply_to_message_id, reason, response_sent, evaluated_message_ids)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -178,7 +399,8 @@ class DatabaseManager {
       shouldRespond ? 1 : 0,
       replyToMessageId || null,
       reason,
-      0
+      0,
+      evaluatedMessageIds ? JSON.stringify(evaluatedMessageIds) : null
     );
 
     return result.lastInsertRowid;
@@ -222,19 +444,22 @@ class DatabaseManager {
   }
 
   // Response operations
-  logResponse(channelId, messageId, responseType, content) {
+  logResponse(channelId, messageId, responseType, content, triggerMessageId = null) {
     const stmt = this.db.prepare(`
-      INSERT INTO responses (channel_id, message_id, response_type, content, created_at)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO responses (channel_id, message_id, response_type, content, created_at, trigger_message_id)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
 
-    stmt.run(
+    const result = stmt.run(
       channelId,
       messageId,
       responseType,
       content,
-      new Date().toISOString()
+      new Date().toISOString(),
+      triggerMessageId
     );
+
+    return result.lastInsertRowid;
   }
 
   getRecentResponses(limit = 50) {
@@ -254,6 +479,92 @@ class DatabaseManager {
       LIMIT ?
     `);
     return stmt.all(channelId, limit);
+  }
+
+  /**
+   * Get a response by ID
+   * @param {number} responseId - Response ID
+   * @returns {Object|null} Response object
+   */
+  getResponse(responseId) {
+    const stmt = this.db.prepare(`SELECT * FROM responses WHERE id = ?`);
+    return stmt.get(responseId);
+  }
+
+  /**
+   * Get a decision by ID
+   * @param {number} decisionId - Decision ID
+   * @returns {Object|null} Decision object with parsed JSON
+   */
+  getDecision(decisionId) {
+    const stmt = this.db.prepare(`SELECT * FROM decision_log WHERE id = ?`);
+    const decision = stmt.get(decisionId);
+    if (decision && decision.evaluated_message_ids) {
+      decision.evaluated_message_ids = JSON.parse(decision.evaluated_message_ids);
+    }
+    return decision;
+  }
+
+  // Prompt operations
+  /**
+   * Store a full AI prompt for debugging/inspection
+   * @param {Object} promptData - Prompt data
+   * @returns {number} Inserted prompt ID
+   */
+  storePrompt({
+    responseId = null,
+    decisionId = null,
+    promptType,
+    systemPrompt,
+    messagesJson,
+    model,
+    temperature
+  }) {
+    const stmt = this.db.prepare(`
+      INSERT INTO prompts (response_id, decision_id, prompt_type, system_prompt, messages_json, model, temperature, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const result = stmt.run(
+      responseId,
+      decisionId,
+      promptType,
+      systemPrompt,
+      JSON.stringify(messagesJson),
+      model,
+      temperature,
+      new Date().toISOString()
+    );
+
+    return result.lastInsertRowid;
+  }
+
+  /**
+   * Get prompt by response ID
+   * @param {number} responseId - Response ID
+   * @returns {Object|null} Prompt object with parsed messages
+   */
+  getPromptByResponse(responseId) {
+    const stmt = this.db.prepare(`SELECT * FROM prompts WHERE response_id = ?`);
+    const prompt = stmt.get(responseId);
+    if (prompt) {
+      prompt.messages_json = JSON.parse(prompt.messages_json || "[]");
+    }
+    return prompt;
+  }
+
+  /**
+   * Get prompt by decision ID
+   * @param {number} decisionId - Decision ID
+   * @returns {Object|null} Prompt object with parsed messages
+   */
+  getPromptByDecision(decisionId) {
+    const stmt = this.db.prepare(`SELECT * FROM prompts WHERE decision_id = ?`);
+    const prompt = stmt.get(decisionId);
+    if (prompt) {
+      prompt.messages_json = JSON.parse(prompt.messages_json || "[]");
+    }
+    return prompt;
   }
 
   // Dashboard API helpers
