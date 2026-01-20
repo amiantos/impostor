@@ -498,7 +498,11 @@ Do not include any text outside of this JSON structure. The "message" field shou
     if (allUrlSummaries.length > 0) {
       consolidatedContent += `\n\n--- LINK SUMMARIES (already fetched, do not use tools to re-fetch) ---`;
       for (const summary of allUrlSummaries) {
-        consolidatedContent += `\n\nURL: ${summary.url}\nSummary: ${summary.summary}`;
+        if (summary.success) {
+          consolidatedContent += `\n\nURL: ${summary.url}\nSummary: ${summary.summary}`;
+        } else {
+          consolidatedContent += `\n\nURL: ${summary.url}\nStatus: FAILED TO LOAD - ${summary.error || 'unknown error'}`;
+        }
       }
       consolidatedContent += `\n\n--- END LINK SUMMARIES ---`;
     }

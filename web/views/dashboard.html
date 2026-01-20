@@ -817,7 +817,15 @@
 
       // URL summary indicator
       if (msg.url_summaries && msg.url_summaries.length > 0) {
-        indicators += `<span class="indicator url-summary" title="${msg.url_summaries.length} URL summary(ies)">&#128279; ${msg.url_summaries.length}</span>`;
+        const successCount = msg.url_summaries.filter(s => s.success !== false).length;
+        const failCount = msg.url_summaries.filter(s => s.success === false).length;
+        if (failCount > 0 && successCount > 0) {
+          indicators += `<span class="indicator url-summary" title="${successCount} successful, ${failCount} failed">&#128279; ${successCount}/${msg.url_summaries.length}</span>`;
+        } else if (failCount > 0) {
+          indicators += `<span class="indicator decision-no" title="${failCount} URL(s) failed to load">&#128279; &#10007;</span>`;
+        } else {
+          indicators += `<span class="indicator url-summary" title="${msg.url_summaries.length} URL summary(ies)">&#128279; ${msg.url_summaries.length}</span>`;
+        }
       }
 
       // Decision indicator (only for non-bot messages that triggered evaluation)
@@ -978,11 +986,12 @@
             <h3>URL Summaries <span class="section-badge">${message.url_summaries.length}</span></h3>
             <ul class="vision-list" style="border-left-color: #9370db;">
               ${message.url_summaries.map(summary => `
-                <li style="border-left-color: #9370db;">
+                <li style="border-left-color: ${summary.success !== false ? '#9370db' : 'var(--accent-red)'};">
                   <div style="margin-bottom: 6px;">
                     <a href="${escapeHtml(summary.url)}" target="_blank" style="color: var(--accent-blue); word-break: break-all;">${escapeHtml(summary.url)}</a>
+                    ${summary.success === false ? '<span style="color: var(--accent-red); margin-left: 8px;">(FAILED)</span>' : ''}
                   </div>
-                  <div>${escapeHtml(summary.summary)}</div>
+                  <div>${summary.success !== false ? escapeHtml(summary.summary) : '<em style="color: var(--accent-red);">Error: ' + escapeHtml(summary.error || 'Unknown error') + '</em>'}</div>
                 </li>
               `).join('')}
             </ul>

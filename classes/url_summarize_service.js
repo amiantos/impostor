@@ -102,12 +102,17 @@ class UrlSummarizeService {
   /**
    * Summarize a single URL using Kagi Universal Summarizer
    * @param {string} url - URL to summarize
-   * @returns {Promise<Object|null>} Summary object or null on error
+   * @returns {Promise<Object>} Summary object with success status
    */
   async summarizeUrl(url) {
     if (!this.apiKey) {
       this.logger.debug('UrlSummarizeService: No API key configured');
-      return null;
+      return {
+        url: url,
+        success: false,
+        error: 'No API key configured',
+        summarized_at: new Date().toISOString()
+      };
     }
 
     try {
@@ -128,20 +133,32 @@ class UrlSummarizeService {
 
       // Check for API errors
       if (response.data.error) {
-        this.logger.warn(`Kagi API error for ${url}: ${JSON.stringify(response.data.error)}`);
-        return null;
+        const errorMsg = response.data.error[0]?.msg || JSON.stringify(response.data.error);
+        this.logger.warn(`Kagi API error for ${url}: ${errorMsg}`);
+        return {
+          url: url,
+          success: false,
+          error: errorMsg,
+          summarized_at: new Date().toISOString()
+        };
       }
 
       const data = response.data.data;
       if (!data || !data.output) {
         this.logger.warn(`No summary returned for ${url}`);
-        return null;
+        return {
+          url: url,
+          success: false,
+          error: 'No summary returned',
+          summarized_at: new Date().toISOString()
+        };
       }
 
       this.logger.debug(`Successfully summarized: ${url}`);
 
       return {
         url: url,
+        success: true,
         summary: data.output,
         summary_type: this.summaryType,
         summarized_at: new Date().toISOString()
@@ -154,7 +171,12 @@ class UrlSummarizeService {
         errorMessage = `HTTP ${error.response.status}`;
       }
       this.logger.warn(`Failed to summarize ${url}: ${errorMessage}`);
-      return null;
+      return {
+        url: url,
+        success: false,
+        error: errorMessage,
+        summarized_at: new Date().toISOString()
+      };
     }
   }
 
@@ -165,10 +187,13 @@ class UrlSummarizeService {
    */
   async processMessageImmediate(message) {
     if (!this.enabled || !this.apiKey) {
+      this.logger.debug(`URL summarize skipped: enabled=${this.enabled}, hasApiKey=${!!this.apiKey}`);
       return [];
     }
 
     const urls = this.extractUrls(message.content);
+    this.logger.debug(`Extracted ${urls.length} URL(s) from message: ${urls.join(', ') || '(none)'}`);
+
     if (urls.length === 0) {
       return [];
     }
@@ -179,23 +204,24 @@ class UrlSummarizeService {
       .slice(0, this.maxUrlsPerMessage);
 
     if (urlsToSummarize.length === 0) {
+      this.logger.debug(`No URLs passed filtering`);
       return [];
     }
 
-    this.logger.debug(`Processing ${urlsToSummarize.length} URL(s) from message ${message.id}`);
+    this.logger.info(`Processing ${urlsToSummarize.length} URL(s) from message ${message.id}: ${urlsToSummarize.join(', ')}`);
 
     const summaries = [];
     for (const url of urlsToSummarize) {
       const summary = await this.summarizeUrl(url);
-      if (summary) {
-        summaries.push(summary);
-      }
+      summaries.push(summary); // Include both successful and failed summaries
     }
 
-    // Cache in database if available
+    // Cache in database if available (including failures so bot knows about them)
     if (this.db && summaries.length > 0) {
       this.db.updateMessageUrlSummaries(message.id, summaries);
-      this.logger.debug(`Cached ${summaries.length} URL summary(ies) for message ${message.id}`);
+      const successCount = summaries.filter(s => s.success).length;
+      const failCount = summaries.filter(s => !s.success).length;
+      this.logger.debug(`Cached ${successCount} successful, ${failCount} failed URL summary(ies) for message ${message.id}`);
     }
 
     return summaries;
