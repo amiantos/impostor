@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Impostor is a Discord chatbot powered by DeepSeek API with deepseek-chat model, featuring a built-in Isaac personality (depressive, sarcastic, cynical robot). The bot responds to @mentions and replies in Discord channels.
+Impostor is a Discord chatbot powered by DeepSeek API with an Isaac personality (melancholic, sarcastic, cynical robot). Features include autonomous responses, vision (GPT-4o), URL summarization, web search/fetch, and Python code execution.
 
 ## Development Commands
 
@@ -22,39 +22,82 @@ npm start
 
 ## Architecture
 
-### Core Components
+### Entry Point
+- **index.js**: Initializes Logger and ImpostorClient, starts the bot
 
-- **index.js**: Entry point that initializes logger and ImpostorClient
-- **ImpostorClient** (`classes/impostor_client.js`): Main Discord client handling message events and DeepSeek API integration
-- **ContextUtils** (`classes/context_utils.js`): Simple context builder with hardcoded system prompt for Isaac personality
-- **Logger** (`classes/logger.js`): Simple logging utility
+### Core Classes (`classes/`)
 
-### Key Features
+| Class | Purpose |
+|-------|---------|
+| **ImpostorClient** | Main Discord client, message handling, queue system, tool execution, DeepSeek API calls |
+| **ContextUtils** | System prompt (Isaac personality), message formatting for API calls |
+| **DatabaseManager** | SQLite persistence for messages, decisions, responses, prompts |
+| **MessageTracker** | Per-channel message tracking, triggers vision/URL processing |
+| **ResponseEvaluator** | AI evaluation for autonomous responses (should bot respond?) |
+| **VisionService** | GPT-4o image recognition, caches descriptions in DB |
+| **UrlSummarizeService** | Kagi Universal Summarizer for shared links |
+| **BackfillService** | Loads Discord message history on startup |
+| **PythonTool** | Executes Python code via subprocess |
+| **WebSearchTool** | Kagi FastGPT for current information |
+| **WebFetchTool** | Mozilla Readability + Cheerio for web content extraction |
+| **Logger** | Simple logging utility |
 
-- **DeepSeek API Integration**: Uses DeepSeek API directly with deepseek-chat model
-- **Message Queue System**: Processes messages sequentially to simulate realistic response timing
-- **Hardcoded System Prompt**: Simple implementation with Isaac personality built-in (depressive, sarcastic robot)
-- **Channel Filtering**: Configurable channel restrictions via `config.channels` array
-- **Message Processing**: Handles @mentions and replies, truncates messages over 2000 characters
+### Web Dashboard (`web/`)
+- **server.js**: Express server for dashboard
+- **routes/api.js**: REST API for messages, decisions, responses, prompts
+- **views/dashboard.html**: Debug UI for viewing bot behavior
 
 ### Configuration
+- **conf/config.json**: All settings (gitignored)
+- **conf/config.json.example**: Template with all options documented
 
-Configuration is managed through `conf/config.json`:
-- DeepSeek API settings (key, model, temperature, etc.) in `generator.deepseek`
-- Discord bot token in `bot.token` field
-- Channel ID whitelist in `channels` array (empty array = all channels)
+## Key Features
 
-### System Prompt
+- **Autonomous Responses**: Bot monitors conversations and decides when to naturally respond (debounced, ratio-aware)
+- **Direct Mentions**: @mentions and replies always trigger responses
+- **Tool Iteration**: Up to 10 iterations with reflection for precise tasks (exact character counts, complex math)
+- **Vision**: GPT-4o describes images, cached in DB, included in conversation context
+- **URL Summarization**: Kagi summarizes shared links proactively
+- **Web Tools**: Search (Kagi FastGPT) and fetch (Readability) for current information
 
-The bot uses a hardcoded system prompt in `ContextUtils.system_prompt` that defines Isaac as a depressive, sarcastic, cynical robot. The prompt includes personality traits, behavioral guidelines, and response formatting rules.
+## Database Schema
 
-### Message Flow
+SQLite database at `data/impostor.db`:
+- **messages**: All messages with attachments, vision_descriptions, url_summaries
+- **decision_log**: Autonomous response evaluations with reasoning
+- **responses**: Bot responses with trigger tracking
+- **prompts**: Full prompts for debugging (system + messages)
 
-1. Discord message triggers `handleMessageCreate`
-2. Channel and mention validation
-3. Message added to queue for sequential processing
-4. Queue processor fetches recent messages (40 limit)
-5. Build simple message context using ContextUtils
-6. Generate response via DeepSeek Chat Completions API with system prompt
-7. Reply with truncated response if needed
-8. Process next message in queue after 1-second delay
+## Message Flow
+
+### Direct Response (mention/reply)
+1. `handleMessageCreate` detects mention or reply to bot
+2. Message tracked in DB with vision/URL processing
+3. Added to queue for sequential processing
+4. Build context from recent DB messages via `ContextUtils`
+5. Call DeepSeek with JSON response format
+6. Execute tools if requested, iterate with reflection (max 10 times)
+7. Reply with truncated response (max 2000 chars)
+
+### Autonomous Response
+1. All messages tracked in configured channels
+2. Debounce timer (default 15s) waits for conversation to settle
+3. `ResponseEvaluator` asks DeepSeek if bot should respond
+4. Checks bot message ratio (<40% of recent messages)
+5. If yes, generates response via same pipeline as direct
+6. Decision logged with reasoning
+
+## API Response Format
+
+Bot responses use structured JSON:
+```json
+{
+  "needs_tool": false,
+  "tool_name": null,
+  "tool_input": null,
+  "continue_iterating": false,
+  "message": "Response text here"
+}
+```
+
+Tools: `python`, `web_search`, `web_fetch`
