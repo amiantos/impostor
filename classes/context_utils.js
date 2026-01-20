@@ -70,6 +70,8 @@ Write in basic human internet chat dialog. Write 1 reply only with at least 1 se
 
 You will see usernames at the beginning of messages (like "username: message content"). You can address users by name if it fits naturally, but don't feel obligated to use names in every response.
 
+When users share images, you will see descriptions in brackets like [Image: description]. Reference them naturally in your responses when relevant.
+
 IMPORTANT: You must respond with valid JSON only.
 
 DEFAULT RESPONSE (use this 95% of the time):
@@ -213,7 +215,7 @@ Do not include any text outside of this JSON structure. The "message" field shou
     return true;
   }
 
-  buildChatMessagesForResponsesAPI(prevMessages, client_user_id) {
+  buildChatMessagesForResponsesAPI(prevMessages, client_user_id, imageDescriptions = null) {
     let newChatMessages = [];
     prevMessages.reverse().forEach((msg) => {
       if (msg.content.startsWith("!")) return;
@@ -225,6 +227,14 @@ Do not include any text outside of this JSON structure. The "message" field shou
       if (role === "user") {
         const username = msg.author.username || msg.author.displayName || "Unknown";
         content = `${username}: ${content}`;
+
+        // Append image descriptions if available for this message
+        if (imageDescriptions && imageDescriptions.has(msg.id)) {
+          const descriptions = imageDescriptions.get(msg.id);
+          for (const desc of descriptions) {
+            content += ` [Image: ${desc}]`;
+          }
+        }
       } else {
         // Wrap assistant messages in JSON format so the model sees consistent formatting
         content = JSON.stringify({

@@ -4,6 +4,7 @@ const PythonTool = require("./python_tool");
 const DatabaseManager = require("./database");
 const MessageTracker = require("./message_tracker");
 const ResponseEvaluator = require("./response_evaluator");
+const VisionService = require("./vision_service");
 const { OpenAI } = require("openai");
 
 class ImpostorClient {
@@ -29,6 +30,9 @@ class ImpostorClient {
 
     // Initialize Python tool
     this.pythonTool = new PythonTool(logger);
+
+    // Initialize vision service for image understanding
+    this.visionService = new VisionService(logger, config);
 
     // Initialize database and autonomous response components
     this.db = new DatabaseManager(logger);
@@ -219,11 +223,15 @@ class ImpostorClient {
       throw error;
     }
 
+    // Process images in messages for vision understanding
+    const imageDescriptions = await this.visionService.processMessagesImages(messages);
+
     const response = await this.generateResponseWithChatCompletions({
       messages,
       userName: user_name,
       characterName: character_name,
       botUserId: this.client.user.id,
+      imageDescriptions,
     });
 
     const sentMessage = await message.reply(response);
@@ -252,11 +260,15 @@ class ImpostorClient {
       throw error;
     }
 
+    // Process images in messages for vision understanding
+    const imageDescriptions = await this.visionService.processMessagesImages(messages);
+
     const response = await this.generateResponseWithChatCompletions({
       messages,
       userName: "various",
       characterName: this.client.user.username,
       botUserId: this.client.user.id,
+      imageDescriptions,
     });
 
     let sentMessage;
@@ -287,13 +299,15 @@ class ImpostorClient {
     userName,
     characterName,
     botUserId,
+    imageDescriptions = null,
   }) {
     const systemPrompt = this.contextUtils.buildInstructions();
     this.logger.debug("Generated System Prompt...", systemPrompt);
 
     let inputMessages = this.contextUtils.buildChatMessagesForResponsesAPI(
       messages,
-      botUserId
+      botUserId,
+      imageDescriptions
     );
 
     // Create initial conversation log
