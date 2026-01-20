@@ -133,7 +133,7 @@ class ImpostorClient {
 
     // Autonomous response evaluation (debounced)
     if (this.config.autonomous?.enabled) {
-      this.scheduleAutonomousEvaluation(message.channel);
+      this.scheduleAutonomousEvaluation(message.channel, message);
     }
   }
 
@@ -141,10 +141,16 @@ class ImpostorClient {
    * Schedule an autonomous evaluation with debouncing
    * Waits for conversation to settle before evaluating
    * @param {Channel} channel - Discord channel
+   * @param {Message} message - Discord message that triggered the evaluation
    */
-  scheduleAutonomousEvaluation(channel) {
+  scheduleAutonomousEvaluation(channel, message) {
     const channelId = channel.id;
-    const debounceMs = (this.config.autonomous?.debounce_seconds || 15) * 1000;
+
+    // Use shorter debounce if "isaac" is mentioned (likely being addressed)
+    const mentionsIsaac = message && /\bisaac\b/i.test(message.content);
+    const debounceMs = mentionsIsaac
+      ? 3000
+      : (this.config.autonomous?.debounce_seconds || 10) * 1000;
 
     // Clear any existing timer for this channel
     if (this.evaluationTimers.has(channelId)) {
@@ -172,30 +178,11 @@ class ImpostorClient {
     // Get ALL recent messages for ratio calculation (50 messages)
     const recentMessages = this.db.getRecentMessages(channel.id, 50, true);
 
-    // Calculate bot dominance ratio
+    // Calculate bot dominance ratio (passed to AI evaluator for context)
     const botRatio = this.evaluator.calculateBotRatio(
       recentMessages,
       this.client.user.id
     );
-
-    // Hard cap at 40%: skip if dominating too much
-    if (botRatio > 0.4) {
-      this.logger.debug(
-        `Skipping evaluation - bot ratio ${(botRatio * 100).toFixed(0)}% exceeds 40%`
-      );
-      return;
-    }
-
-    // Soft cap at 15%: probabilistic skip
-    if (botRatio > 0.15) {
-      const skipChance = (botRatio - 0.15) * 2; // 25% ratio = 20% skip chance
-      if (Math.random() < skipChance) {
-        this.logger.debug(
-          `Randomly skipping evaluation - bot ratio ${(botRatio * 100).toFixed(0)}%`
-        );
-        return;
-      }
-    }
 
     // Check if there are any messages after the bot's last response
     const hasNewMessages = this.hasMessagesSinceLastBotResponse(recentMessages);
