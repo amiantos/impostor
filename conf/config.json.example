@@ -1,11 +1,11 @@
 {
     "generator": {
-        "openrouter": {
-            "api_key": "<OPENROUTER API KEY>",
-            "base_url": "https://openrouter.ai/api/v1",
-            "model": "deepseek/deepseek-chat-v3.1",
+        "deepseek": {
+            "api_key": "<DEEPSEEK API KEY>",
+            "base_url": "https://api.deepseek.com",
+            "model": "deepseek-chat",
             "temperature": 0.9,
-            "max_tokens": 256
+            "max_tokens": 500
         }
     },
     "bot": {
@@ -13,7 +13,30 @@
     },
     "channels": [
         "<DISCORD CHANNEL ID>",
-        "<DISCORD CHANNEL ID>",
-        "Or leave this array empty to target all channels"
-    ]
+        "Or leave this array empty to allow all channels"
+    ],
+    "autonomous": {
+        "enabled": true,
+        "debounce_seconds": 15
+    },
+    "vision": {
+        "enabled": true,
+        "supported_formats": ["png", "jpg", "jpeg", "gif", "webp"],
+        "max_file_size_mb": 20
+    },
+    "openai": {
+        "api_key": "<OPENAI API KEY>",
+        "model": "gpt-4o",
+        "max_tokens": 300
+    },
+    "web": {
+        "enabled": true,
+        "port": 3000
+    },
+    "backfill": {
+        "enabled": true,
+        "message_limit": 20,
+        "process_vision": true,
+        "max_channel_age_days": 14
+    }
 }
