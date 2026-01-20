@@ -68,7 +68,11 @@ You rarely use emojis, never use italic text or * marks for actions. You make de
 
 Write in basic human internet chat dialog. Write 1 reply only with at least 1 sentence, up to 2. Always stay in character and avoid repetition. Be concise. Do not repeat the user's question back to them. DO NOT reference your own personality characteristics or the fact that you are a chatbot. Keep responses under 2000 characters.
 
-You will see usernames at the beginning of messages (like "username: message content"). You can address users by name if it fits naturally, but don't feel obligated to use names in every response.
+You will receive conversation context as a chatlog with timestamps and user IDs in this format:
+[HH:MM] username (id:123456789): message content
+[HH:MM] IsaacGPT: bot's previous response
+
+The user IDs help you distinguish between different users, even if they have similar names. Pay attention to who you're responding to - the instruction at the end will tell you which user triggered this response. You can address users by name if it fits naturally, but don't feel obligated to use names in every response.
 
 When users share images, you will see descriptions in brackets like [Image: description]. Reference them naturally in your responses when relevant.
 
@@ -317,6 +321,99 @@ Do not include any text outside of this JSON structure. The "message" field shou
     });
 
     return newChatMessages;
+  }
+
+  /**
+   * Build a consolidated chatlog format for better context understanding
+   * All messages are combined into a single user message formatted as a chatlog
+   * @param {Array} dbMessages - Array of message records from database (newest first)
+   * @param {string} clientUserId - Bot's user ID
+   * @param {Object} triggerInfo - Info about who triggered the response
+   * @param {string} triggerInfo.userId - Discord ID of the user who triggered
+   * @param {string} triggerInfo.userName - Username of the user who triggered
+   * @param {string} triggerInfo.channelName - Name of the channel
+   * @param {Map} imageDescriptions - Map of message ID to image descriptions
+   * @returns {Array} Single-element array with consolidated user message
+   */
+  buildChatMessagesConsolidated(dbMessages, clientUserId, triggerInfo, imageDescriptions = null) {
+    // Reverse to get oldest first (chronological order)
+    const messages = [...dbMessages].reverse();
+
+    let chatlogLines = [];
+
+    messages.forEach((msg) => {
+      if (msg.content.startsWith("!")) return;
+
+      const isBotMessage = msg.author_id === clientUserId || msg.is_bot_message;
+
+      // Format timestamp (HH:MM)
+      const timestamp = this.formatTimestamp(msg.created_at);
+
+      let content = msg.content.replace(`<@${clientUserId}>`, "@IsaacGPT");
+
+      if (isBotMessage) {
+        // Bot messages: just show as "IsaacGPT: message" without JSON wrapping
+        chatlogLines.push(`[${timestamp}] IsaacGPT: ${content}`);
+      } else {
+        // User messages: include ID for disambiguation
+        const username = msg.author_name || "Unknown";
+        const userId = msg.author_id || "unknown";
+
+        // Append image descriptions if available
+        if (imageDescriptions && imageDescriptions.has(msg.id)) {
+          const descriptions = imageDescriptions.get(msg.id);
+          for (const desc of descriptions) {
+            content += ` [Image: ${desc}]`;
+          }
+        }
+
+        // Also check for cached vision_descriptions in the message record itself
+        if (msg.vision_descriptions && msg.vision_descriptions.length > 0) {
+          if (!imageDescriptions || !imageDescriptions.has(msg.id)) {
+            for (const desc of msg.vision_descriptions) {
+              content += ` [Image: ${desc}]`;
+            }
+          }
+        }
+
+        chatlogLines.push(`[${timestamp}] ${username} (id:${userId}): ${content}`);
+      }
+    });
+
+    // Build the consolidated message
+    const channelName = triggerInfo.channelName || "channel";
+    let consolidatedContent = `Recent conversation in #${channelName}:\n\n${chatlogLines.join("\n")}`;
+
+    // Add explicit instruction about who to respond to
+    if (triggerInfo.userId && triggerInfo.userName) {
+      consolidatedContent += `\n\nRespond to ${triggerInfo.userName} (id:${triggerInfo.userId})'s latest message.`;
+    } else {
+      // Autonomous response - respond to the conversation naturally
+      consolidatedContent += `\n\nRespond naturally to the ongoing conversation.`;
+    }
+
+    return [
+      {
+        role: "user",
+        content: consolidatedContent,
+      },
+    ];
+  }
+
+  /**
+   * Format a timestamp or date string to HH:MM format
+   * @param {string|number} timestamp - ISO timestamp or Unix timestamp
+   * @returns {string} Formatted time string
+   */
+  formatTimestamp(timestamp) {
+    try {
+      const date = new Date(timestamp);
+      const hours = date.getHours().toString().padStart(2, "0");
+      const minutes = date.getMinutes().toString().padStart(2, "0");
+      return `${hours}:${minutes}`;
+    } catch (e) {
+      return "??:??";
+    }
   }
 }
 

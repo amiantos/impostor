@@ -296,6 +296,13 @@ class ImpostorClient {
     // Build context from database (with cached vision)
     const { dbMessages, imageDescriptions } = this.buildContextFromDatabase(message.channel.id, 40);
 
+    // Build trigger info for the consolidated chatlog format
+    const triggerInfo = {
+      userId: message.author.id,
+      userName: message.author.username,
+      channelName: message.channel.name || "channel",
+    };
+
     const { response, conversationLog } = await this.generateResponseWithChatCompletions({
       dbMessages,
       userName: user_name,
@@ -303,6 +310,7 @@ class ImpostorClient {
       botUserId: this.client.user.id,
       imageDescriptions,
       useDbContext: true,
+      triggerInfo,
     });
 
     // Send to channel (not as a reply) - the bot knows who it's talking to from context
@@ -358,6 +366,14 @@ class ImpostorClient {
     // Build context from database (with cached vision)
     const { dbMessages, imageDescriptions } = this.buildContextFromDatabase(channel.id, 40);
 
+    // For autonomous responses, find the most recent non-bot message to potentially address
+    // But don't set a specific target - let the bot respond naturally to the conversation
+    const triggerInfo = {
+      userId: null,
+      userName: null,
+      channelName: channel.name || "channel",
+    };
+
     const { response, conversationLog } = await this.generateResponseWithChatCompletions({
       dbMessages,
       userName: "various",
@@ -365,6 +381,7 @@ class ImpostorClient {
       botUserId: this.client.user.id,
       imageDescriptions,
       useDbContext: true,
+      triggerInfo,
     });
 
     // Send to channel (not as a reply) - the bot addresses users naturally in its response
@@ -410,13 +427,22 @@ class ImpostorClient {
     botUserId,
     imageDescriptions = null,
     useDbContext = false,
+    triggerInfo = null,
   }) {
     const systemPrompt = this.contextUtils.buildInstructions();
     this.logger.debug("Generated System Prompt...", systemPrompt);
 
     let inputMessages;
-    if (useDbContext && dbMessages) {
-      // Use database records for context
+    if (useDbContext && dbMessages && triggerInfo) {
+      // Use consolidated chatlog format with trigger info
+      inputMessages = this.contextUtils.buildChatMessagesConsolidated(
+        dbMessages,
+        botUserId,
+        triggerInfo,
+        imageDescriptions
+      );
+    } else if (useDbContext && dbMessages) {
+      // Fallback to old method if no triggerInfo (shouldn't happen)
       inputMessages = this.contextUtils.buildChatMessagesFromDBRecords(
         dbMessages,
         botUserId,
