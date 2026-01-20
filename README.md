@@ -8,6 +8,8 @@ A Discord chatbot powered by DeepSeek API, featuring a built-in Isaac personalit
 - **Autonomous Responses**: Bot naturally participates in conversations without being @mentioned
 - **Conversation Dominance Detection**: Prevents bot from dominating conversations by tracking message ratios
 - **Vision Capability**: Can see and describe images using OpenAI GPT-4o
+- **Web Search**: Answers questions about current events using Kagi FastGPT
+- **Web Fetch**: Reads and extracts content from web pages
 - **Python Tool Integration**: Executes Python code to solve problems and perform calculations
 - **Web Dashboard**: Debug interface for viewing decisions, responses, and prompts
 - **SQLite Database**: Tracks all messages, responses, and AI decisions
@@ -34,6 +36,13 @@ The bot can execute Python code to solve problems:
 - *"What's 15% of $1,250 plus tax at 8.5%?"* → Calculates precisely
 - Multi-iteration refinement with reflection on previous attempts
 
+### Web Search & Fetch
+The bot can search the web and read pages for current information:
+- **Web Search**: Uses Kagi FastGPT to answer questions about current events, news, prices, etc.
+- **Web Fetch**: Reads and extracts content from specific URLs using Mozilla Readability
+- *"What's the weather in Tokyo?"* → Searches and returns current conditions
+- *"What's happening with [recent event]?"* → Gets up-to-date information
+
 ## Requirements
 
 - **Node.js 20+**
@@ -41,6 +50,7 @@ The bot can execute Python code to solve problems:
 - **Docker** (optional, for containerized deployment)
 - **DeepSeek API Key** (for chat responses)
 - **OpenAI API Key** (optional, for vision capability)
+- **Kagi API Key** (optional, for web search - requires [Kagi subscription](https://kagi.com))
 - **Discord Bot Token**
 
 ## Setup
@@ -111,6 +121,9 @@ npm start
         "message_limit": 20,
         "process_vision": true,
         "max_channel_age_days": 14
+    },
+    "kagi": {
+        "api_key": "<KAGI API KEY>"
     }
 }
 ```
@@ -130,6 +143,7 @@ npm start
 | `web.port` | | Dashboard port (default: 3000) |
 | `backfill.enabled` | | Load message history on startup |
 | `backfill.message_limit` | | Messages to load per channel (default: 20) |
+| `kagi.api_key` | | Kagi API key for web search (optional) |
 
 ## Web Dashboard
 
