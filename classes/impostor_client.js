@@ -371,13 +371,29 @@ class ImpostorClient {
 
   /**
    * Build context from database instead of fetching from Discord
+   * Uses the same filtering logic as evaluation for consistency
    * @param {string} channelId - Discord channel ID
-   * @param {number} limit - Maximum messages to fetch
+   * @param {Object} options - Configuration options
+   * @param {number} options.fetchLimit - Maximum messages to fetch from DB (default 50)
+   * @param {number} options.contextBefore - Messages to include before bot's last response (default 5)
+   * @param {boolean} options.useFiltering - Whether to apply time/gap filtering (default true)
    * @returns {Object} Context object with messages, imageDescriptions, and urlSummaries
    */
-  buildContextFromDatabase(channelId, limit = 40) {
-    // Get recent messages from database (parsed JSON)
-    const dbMessages = this.db.getRecentMessages(channelId, limit, true);
+  buildContextFromDatabase(channelId, options = {}) {
+    const {
+      fetchLimit = 50,
+      contextBefore = 5,
+      useFiltering = true
+    } = options;
+
+    let dbMessages;
+    if (useFiltering) {
+      // Fetch raw messages then apply evaluation filtering
+      const rawMessages = this.db.getRecentMessages(channelId, fetchLimit, true);
+      dbMessages = this.getMessagesForEvaluation(rawMessages, contextBefore);
+    } else {
+      dbMessages = this.db.getRecentMessages(channelId, fetchLimit, true);
+    }
 
     // Build image descriptions map from cached vision data
     const imageDescriptions = this.visionService.buildImageDescriptionsFromDB(dbMessages);
@@ -405,7 +421,10 @@ class ImpostorClient {
     await message.channel.sendTyping();
 
     // Build context from database (with cached vision)
-    const { dbMessages, imageDescriptions } = this.buildContextFromDatabase(message.channel.id, 40);
+    const { dbMessages, imageDescriptions } = this.buildContextFromDatabase(message.channel.id, {
+      fetchLimit: 50,
+      contextBefore: 10  // More context for direct mentions
+    });
 
     // Build trigger info for the consolidated chatlog format
     const triggerInfo = {
@@ -475,7 +494,10 @@ class ImpostorClient {
     await channel.sendTyping();
 
     // Build context from database (with cached vision)
-    const { dbMessages, imageDescriptions } = this.buildContextFromDatabase(channel.id, 40);
+    const { dbMessages, imageDescriptions } = this.buildContextFromDatabase(channel.id, {
+      fetchLimit: 50,
+      contextBefore: 5  // Match evaluation settings
+    });
 
     // For autonomous responses, find the most recent non-bot message to potentially address
     // But don't set a specific target - let the bot respond naturally to the conversation
