@@ -64,16 +64,31 @@ Send a standalone message when:
 
   /**
    * Calculate the bot's message ratio in recent history
-   * @param {Array} allRecentMessages - All recent messages (with parsed JSON)
+   * @param {Array} allRecentMessages - All recent messages (with parsed JSON), newest first
    * @param {string} botUserId - Bot's user ID
+   * @param {number} maxMessages - Maximum messages to consider (default 20)
+   * @param {number} maxAgeMinutes - Only count messages within this many minutes (default 30)
    * @returns {number} Ratio from 0.0 to 1.0
    */
-  calculateBotRatio(allRecentMessages, botUserId) {
+  calculateBotRatio(allRecentMessages, botUserId, maxMessages = 20, maxAgeMinutes = 30) {
     if (!allRecentMessages || allRecentMessages.length === 0) return 0;
-    const botMessages = allRecentMessages.filter(
+
+    const cutoffTime = Date.now() - maxAgeMinutes * 60 * 1000;
+
+    // Filter to recent messages within time window, limit to maxMessages
+    const recentMessages = allRecentMessages
+      .slice(0, maxMessages)
+      .filter((m) => {
+        const msgTime = new Date(m.created_at).getTime();
+        return msgTime >= cutoffTime;
+      });
+
+    if (recentMessages.length === 0) return 0;
+
+    const botMessages = recentMessages.filter(
       (m) => m.is_bot_message || m.author_id === botUserId
     );
-    return botMessages.length / allRecentMessages.length;
+    return botMessages.length / recentMessages.length;
   }
 
   /**

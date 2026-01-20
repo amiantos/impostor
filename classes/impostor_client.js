@@ -197,17 +197,19 @@ class ImpostorClient {
       }
     }
 
-    const messagesSinceResponse =
-      this.getMessagesSinceLastBotResponseFromParsed(recentMessages);
-
-    if (messagesSinceResponse.length === 0) {
-      this.logger.debug("No messages to evaluate for autonomous response");
+    // Check if there are any messages after the bot's last response
+    const hasNewMessages = this.hasMessagesSinceLastBotResponse(recentMessages);
+    if (!hasNewMessages) {
+      this.logger.debug("No new messages since last bot response");
       return;
     }
 
+    // Get evaluation context: includes context before bot's last response + bot's response + new messages
+    const evaluationMessages = this.getMessagesForEvaluation(recentMessages, 5);
+
     // Ask AI if we should respond (pass ratio for context)
     const decision = await this.evaluator.shouldRespond(
-      messagesSinceResponse,
+      evaluationMessages,
       this.client.user.id,
       channel.id,
       botRatio
@@ -231,11 +233,23 @@ class ImpostorClient {
   }
 
   /**
-   * Get messages since last bot response from parsed DB messages
+   * Check if there are any messages since the bot's last response
    * @param {Array} messages - Parsed messages from database (newest first)
-   * @returns {Array} Messages since last bot response (oldest first)
+   * @returns {boolean} True if there are new messages to evaluate
    */
-  getMessagesSinceLastBotResponseFromParsed(messages) {
+  hasMessagesSinceLastBotResponse(messages) {
+    if (!messages || messages.length === 0) return false;
+    // If the newest message is from the bot, there's nothing new to evaluate
+    return !messages[0].is_bot_message;
+  }
+
+  /**
+   * Get messages for evaluation context, including bot's last response with surrounding context
+   * @param {Array} messages - Parsed messages from database (newest first)
+   * @param {number} contextBefore - Number of messages to include before bot's last response (default 5)
+   * @returns {Array} Messages with context (oldest first)
+   */
+  getMessagesForEvaluation(messages, contextBefore = 5) {
     // Messages come in newest-first order, find the last bot message
     let lastBotIndex = -1;
     for (let i = 0; i < messages.length; i++) {
@@ -250,8 +264,21 @@ class ImpostorClient {
       return [...messages].reverse();
     }
 
-    // Return messages before the last bot message (reversed to oldest first)
-    return messages.slice(0, lastBotIndex).reverse();
+    // Build context: messages before bot + bot message + messages after bot
+    // In newest-first order:
+    //   - messages.slice(0, lastBotIndex) = messages AFTER bot spoke (chronologically)
+    //   - messages[lastBotIndex] = bot's message
+    //   - messages.slice(lastBotIndex + 1, ...) = messages BEFORE bot spoke (chronologically)
+
+    const messagesAfterBot = messages.slice(0, lastBotIndex);
+    const botMessage = messages[lastBotIndex];
+    const messagesBeforeBot = messages.slice(
+      lastBotIndex + 1,
+      lastBotIndex + 1 + contextBefore
+    );
+
+    // Combine in chronological order (oldest first)
+    return [...messagesBeforeBot.reverse(), botMessage, ...messagesAfterBot.reverse()];
   }
 
   async processMessageQueue() {
