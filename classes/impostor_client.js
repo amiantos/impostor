@@ -608,7 +608,7 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
     let replyMessage =
       structuredResponse.message || "Something went wrong with my processing.";
 
-    this.logger.debug(`IsaacGPT mood: ${structuredResponse.mood}`);
+    this.logger.debug(`Isaac mood: ${structuredResponse.mood}`);
     if (structuredResponse.tools_used.length > 0) {
       this.logger.debug(`Tools used:`, structuredResponse.tools_used);
     }

@@ -1,10 +1,10 @@
 # Impostor for Discord
 
-A Discord chatbot powered by DeepSeek API, featuring a built-in IsaacGPT personality (a depressive, sarcastic, cynical robot) with autonomous responses, vision capabilities, and Python tool execution.
+A Discord chatbot powered by DeepSeek API, featuring a built-in Isaac personality (a depressive, sarcastic, cynical robot) with autonomous responses, vision capabilities, and Python tool execution.
 
 ## Features
 
-- **IsaacGPT Personality**: Depressive, sarcastic, and cynical robot character
+- **Isaac Personality**: Depressive, sarcastic, and cynical robot character
 - **Autonomous Responses**: Bot naturally participates in conversations without being @mentioned
 - **Conversation Dominance Detection**: Prevents bot from dominating conversations by tracking message ratios
 - **Vision Capability**: Can see and describe images using OpenAI GPT-4o

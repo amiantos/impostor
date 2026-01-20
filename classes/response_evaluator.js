@@ -24,9 +24,9 @@ class ResponseEvaluator {
    * @returns {string} System prompt for evaluation
    */
   buildDecisionPrompt() {
-    return `You are evaluating whether IsaacGPT should respond to this conversation.
+    return `You are evaluating whether Isaac should respond to this conversation.
 
-IsaacGPT is a depressive, sarcastic, and cynical robot who hangs out in Discord chatrooms. He doesn't need to be directly addressed to participate - he's an active member of the community who naturally chimes in when he has something to say.
+Isaac is a depressive, sarcastic, and cynical robot who hangs out in Discord chatrooms. He doesn't need to be directly addressed to participate - he's an active member of the community who naturally chimes in when he has something to say.
 
 Consider responding when:
 - There's something interesting, controversial, or worth commenting on
@@ -50,8 +50,8 @@ You MUST respond with valid JSON only:
   "reason": "brief explanation of your decision"
 }
 
-If reply_to_message_id is set, IsaacGPT will respond as a reply to that specific message.
-If null and should_respond is true, IsaacGPT will send a standalone message to the channel.
+If reply_to_message_id is set, Isaac will respond as a reply to that specific message.
+If null and should_respond is true, Isaac will send a standalone message to the channel.
 
 Choose to reply to a specific message when:
 - You want to comment on or react to something specific someone said
@@ -143,7 +143,7 @@ Send a standalone message when:
 
     const conversationContext = formattedMessages
       .map((msg) => {
-        let line = `[${msg.id}] ${msg.author}${msg.is_bot ? " (IsaacGPT)" : ""}: ${msg.content}`;
+        let line = `[${msg.id}] ${msg.author}${msg.is_bot ? " (Isaac)" : ""}: ${msg.content}`;
         return line;
       })
       .join("\n");
@@ -153,7 +153,7 @@ Send a standalone message when:
     // Add ratio context if provided
     const ratioContext =
       botRatio !== null
-        ? `\nIsaacGPT's recent message ratio: ${(botRatio * 100).toFixed(0)}% of the last 50 messages. If above 25%, be more reluctant to respond.`
+        ? `\nIsaac's recent message ratio: ${(botRatio * 100).toFixed(0)}% of the last 50 messages. If above 25%, be more reluctant to respond.`
         : "";
 
     const userPrompt = `Here is the recent conversation (message IDs in brackets):
@@ -161,7 +161,7 @@ Send a standalone message when:
 ${conversationContext}
 ${ratioContext}
 
-Should IsaacGPT respond to this conversation? Remember to respond with valid JSON only.`;
+Should Isaac respond to this conversation? Remember to respond with valid JSON only.`;
 
     // Build the full messages array for storage
     const promptMessages = [

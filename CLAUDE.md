@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Impostor is a Discord chatbot powered by DeepSeek API with deepseek-chat model, featuring a built-in IsaacGPT personality (depressive, sarcastic, cynical robot). The bot responds to @mentions and replies in Discord channels.
+Impostor is a Discord chatbot powered by DeepSeek API with deepseek-chat model, featuring a built-in Isaac personality (depressive, sarcastic, cynical robot). The bot responds to @mentions and replies in Discord channels.
 
 ## Development Commands
 
@@ -26,14 +26,14 @@ npm start
 
 - **index.js**: Entry point that initializes logger and ImpostorClient
 - **ImpostorClient** (`classes/impostor_client.js`): Main Discord client handling message events and DeepSeek API integration
-- **ContextUtils** (`classes/context_utils.js`): Simple context builder with hardcoded system prompt for IsaacGPT personality
+- **ContextUtils** (`classes/context_utils.js`): Simple context builder with hardcoded system prompt for Isaac personality
 - **Logger** (`classes/logger.js`): Simple logging utility
 
 ### Key Features
 
 - **DeepSeek API Integration**: Uses DeepSeek API directly with deepseek-chat model
 - **Message Queue System**: Processes messages sequentially to simulate realistic response timing
-- **Hardcoded System Prompt**: Simple implementation with IsaacGPT personality built-in (depressive, sarcastic robot)
+- **Hardcoded System Prompt**: Simple implementation with Isaac personality built-in (depressive, sarcastic robot)
 - **Channel Filtering**: Configurable channel restrictions via `config.channels` array
 - **Message Processing**: Handles @mentions and replies, truncates messages over 2000 characters
 
@@ -46,7 +46,7 @@ Configuration is managed through `conf/config.json`:
 
 ### System Prompt
 
-The bot uses a hardcoded system prompt in `ContextUtils.system_prompt` that defines IsaacGPT as a depressive, sarcastic, cynical robot. The prompt includes personality traits, behavioral guidelines, and response formatting rules.
+The bot uses a hardcoded system prompt in `ContextUtils.system_prompt` that defines Isaac as a depressive, sarcastic, cynical robot. The prompt includes personality traits, behavioral guidelines, and response formatting rules.
 
 ### Message Flow
 

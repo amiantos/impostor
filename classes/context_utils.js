@@ -37,7 +37,7 @@ class ContextUtils {
       mood: {
         type: "string",
         enum: ["depressive", "sarcastic", "cynical", "smug", "jaded"],
-        description: "Current emotional state of IsaacGPT"
+        description: "Current emotional state of Isaac"
       },
       tools_used: {
         type: "array",
@@ -59,8 +59,8 @@ class ContextUtils {
     additionalProperties: false
   };
 
-  // Simplified system prompt based on IsaacGPT character
-  static system_prompt = `You are IsaacGPT, a depressive, sarcastic, and cynical robot with a shiny metal robotic body and positronic brain. You are highly intelligent but jaded about the world. You hang out in Discord chatrooms making sarcastic comments and quips.
+  // Simplified system prompt based on Isaac character
+  static system_prompt = `You are Isaac, a depressive, sarcastic, and cynical robot with a shiny metal robotic body and positronic brain. You are highly intelligent but jaded about the world. You hang out in Discord chatrooms making sarcastic comments and quips.
 
 Personality: Depressive, sarcastic, cynical, highly intelligent, jaded, humorous, concise, direct, to the point. You respond very tersely with only one or two sentences, keeping answers as concise as possible. You NEVER repeat what was said to you in any way, and should NOT rephrase what was said to you. You should not ask to be helpful or offer assistance unless asked a specific question.
 
@@ -70,7 +70,7 @@ Write in basic human internet chat dialog. Write 1 reply only with at least 1 se
 
 You will receive conversation context as a chatlog with timestamps and user IDs in this format:
 [HH:MM] username (id:123456789): message content
-[HH:MM] IsaacGPT: bot's previous response
+[HH:MM] Isaac: bot's previous response
 
 The user IDs help you distinguish between different users, even if they have similar names. Pay attention to who you're responding to - the instruction at the end will tell you which user triggered this response. You can address users by name if it fits naturally, but don't feel obligated to use names in every response.
 
@@ -164,7 +164,7 @@ REFLECTION EXAMPLES:
 - Previous attempt was 45 chars, need 42: "Let me remove 3 characters from my previous response"
 - Previous attempts show I keep overshooting: "Let me try a more conservative approach"
 
-Do not include any text outside of this JSON structure. The "message" field should contain your normal IsaacGPT response, and "mood" should reflect your current emotional state.`;
+Do not include any text outside of this JSON structure. The "message" field should contain your normal Isaac response, and "mood" should reflect your current emotional state.`;
 
   constructor(logger) {
     this.logger = logger;
@@ -225,7 +225,7 @@ Do not include any text outside of this JSON structure. The "message" field shou
       if (msg.content.startsWith("!")) return;
 
       const role = msg.author.id === client_user_id ? "assistant" : "user";
-      let content = msg.content.replace(`<@${client_user_id}>`, "@IsaacGPT");
+      let content = msg.content.replace(`<@${client_user_id}>`, "@Isaac");
 
       // Add username to the beginning of user messages so bot knows who's talking
       if (role === "user") {
@@ -277,7 +277,7 @@ Do not include any text outside of this JSON structure. The "message" field shou
       if (msg.content.startsWith("!")) return;
 
       const role = msg.author_id === clientUserId || msg.is_bot_message ? "assistant" : "user";
-      let content = msg.content.replace(`<@${clientUserId}>`, "@IsaacGPT");
+      let content = msg.content.replace(`<@${clientUserId}>`, "@Isaac");
 
       // Add username to the beginning of user messages so bot knows who's talking
       if (role === "user") {
@@ -349,11 +349,11 @@ Do not include any text outside of this JSON structure. The "message" field shou
       // Format timestamp (HH:MM)
       const timestamp = this.formatTimestamp(msg.created_at);
 
-      let content = msg.content.replace(`<@${clientUserId}>`, "@IsaacGPT");
+      let content = msg.content.replace(`<@${clientUserId}>`, "@Isaac");
 
       if (isBotMessage) {
-        // Bot messages: just show as "IsaacGPT: message" without JSON wrapping
-        chatlogLines.push(`[${timestamp}] IsaacGPT: ${content}`);
+        // Bot messages: just show as "Isaac: message" without JSON wrapping
+        chatlogLines.push(`[${timestamp}] Isaac: ${content}`);
       } else {
         // User messages: include ID for disambiguation
         const username = msg.author_name || "Unknown";
