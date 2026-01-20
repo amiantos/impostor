@@ -5,9 +5,8 @@ WORKDIR /usr/src/app
 
 # Install app dependencies
 COPY package*.json ./
-RUN npm install
-RUN npm install -g nodemon
+RUN npm install --omit=dev
 
 EXPOSE 3000
 
-CMD ["nodemon", "index.js"]
+CMD ["node", "index.js"]
