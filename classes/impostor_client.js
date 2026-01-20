@@ -144,7 +144,7 @@ class ImpostorClient {
    */
   scheduleAutonomousEvaluation(channel) {
     const channelId = channel.id;
-    const debounceMs = (this.config.autonomous?.debounce_seconds || 30) * 1000;
+    const debounceMs = (this.config.autonomous?.debounce_seconds || 15) * 1000;
 
     // Clear any existing timer for this channel
     if (this.evaluationTimers.has(channelId)) {
