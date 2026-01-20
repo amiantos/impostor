@@ -653,9 +653,6 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
       }
     }
 
-    // Update tools_used array with all iterations
-    structuredResponse.tools_used = allToolResults;
-
     if (iterationCount >= maxIterations) {
       this.logger.warn(
         `Reached maximum iterations (${maxIterations}), stopping tool execution`
@@ -665,11 +662,6 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
     // Extract final message
     let replyMessage =
       structuredResponse.message || "Something went wrong with my processing.";
-
-    this.logger.debug(`Isaac mood: ${structuredResponse.mood}`);
-    if (structuredResponse.tools_used.length > 0) {
-      this.logger.debug(`Tools used:`, structuredResponse.tools_used);
-    }
 
     if (replyMessage.length > 2000) {
       this.logger.warn("Message too long, truncating.");
@@ -711,8 +703,6 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
         needs_tool: false,
         continue_iterating: false,
         message: rawResponse || "Error parsing response.",
-        mood: "jaded",
-        tools_used: [],
       };
     }
   }

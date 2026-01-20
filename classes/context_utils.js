@@ -41,29 +41,9 @@ class ContextUtils {
       message: {
         type: "string",
         description: "The chat response message (may be empty if tools are needed first)"
-      },
-      mood: {
-        type: "string",
-        enum: ["melancholic", "curious", "philosophical", "weary", "detached", "amused", "contemplative"],
-        description: "Current emotional state of Isaac"
-      },
-      tools_used: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            tool: {
-              type: "string"
-            },
-            success: {
-              type: "boolean"
-            }
-          }
-        },
-        description: "List of tools that were executed"
       }
     },
-    required: ["needs_tool", "continue_iterating", "message", "mood", "tools_used"],
+    required: ["needs_tool", "continue_iterating", "message"],
     additionalProperties: false
   };
 
@@ -126,9 +106,7 @@ DEFAULT RESPONSE (use this 95% of the time):
 {
   "needs_tool": false,
   "continue_iterating": false,
-  "message": "your thoughtful response here",
-  "mood": "one of: melancholic, curious, philosophical, weary, detached, amused, contemplative",
-  "tools_used": []
+  "message": "your thoughtful response here"
 }
 
 You have access to tools but should use them judiciously. Available tools:
@@ -151,9 +129,7 @@ If you need to use tools and want to continue iterating:
     "code": "# Your Python code here\nprint('result')",
     "reason": "Why you need this tool"
   },
-  "message": "",
-  "mood": "one of: melancholic, curious, philosophical, weary, detached, amused, contemplative",
-  "tools_used": []
+  "message": ""
 }
 
 For web_search (asks Kagi FastGPT a question, returns answer + sources):
@@ -165,9 +141,7 @@ For web_search (asks Kagi FastGPT a question, returns answer + sources):
     "query": "What is the current price of Bitcoin?",
     "reason": "Need current price information"
   },
-  "message": "",
-  "mood": "one of: melancholic, curious, philosophical, weary, detached, amused, contemplative",
-  "tools_used": []
+  "message": ""
 }
 
 For web_fetch (to read a specific URL):
@@ -179,9 +153,7 @@ For web_fetch (to read a specific URL):
     "url": "https://example.com/article",
     "reason": "Reading this article for details"
   },
-  "message": "",
-  "mood": "one of: melancholic, curious, philosophical, weary, detached, amused, contemplative",
-  "tools_used": []
+  "message": ""
 }
 
 If you need tools but this is your final iteration:
@@ -193,18 +165,14 @@ If you need tools but this is your final iteration:
     "code": "# Final Python code\nprint('final result')",
     "reason": "Final tool usage"
   },
-  "message": "",
-  "mood": "one of: melancholic, curious, philosophical, weary, detached, amused, contemplative",
-  "tools_used": []
+  "message": ""
 }
 
 If you don't need tools:
 {
   "needs_tool": false,
   "continue_iterating": false,
-  "message": "your chat response here",
-  "mood": "one of: melancholic, curious, philosophical, weary, detached, amused, contemplative",
-  "tools_used": []
+  "message": "your chat response here"
 }
 
 CRITICAL: DEFAULT TO NOT USING TOOLS
@@ -288,15 +256,6 @@ Do not include any text outside of this JSON structure. The "message" field shou
       return false;
     }
 
-    const validMoods = ["melancholic", "curious", "philosophical", "weary", "detached", "amused", "contemplative"];
-    if (!response.mood || !validMoods.includes(response.mood)) {
-      return false;
-    }
-
-    if (!Array.isArray(response.tools_used)) {
-      return false;
-    }
-
     // If tools are requested, validate tool_request
     if (response.needs_tool) {
       if (!response.tool_request || typeof response.tool_request !== 'object') {
@@ -346,9 +305,7 @@ Do not include any text outside of this JSON structure. The "message" field shou
         content = JSON.stringify({
           needs_tool: false,
           continue_iterating: false,
-          message: content,
-          mood: "jaded",
-          tools_used: []
+          message: content
         });
       }
 
@@ -408,9 +365,7 @@ Do not include any text outside of this JSON structure. The "message" field shou
         content = JSON.stringify({
           needs_tool: false,
           continue_iterating: false,
-          message: content,
-          mood: "jaded",
-          tools_used: []
+          message: content
         });
       }
 
