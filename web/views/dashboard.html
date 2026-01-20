@@ -867,7 +867,18 @@
     }
 
     function renderMessageModal(data) {
-      const { message, response, decision, responsePrompt, decisionPrompt } = data;
+      const { message, type } = data;
+
+      if (type === 'bot') {
+        renderBotMessageModal(data);
+      } else {
+        renderUserMessageModal(data);
+      }
+    }
+
+    // Simplified view for non-bot messages: just message info, attachments, vision
+    function renderUserMessageModal(data) {
+      const { message } = data;
       const modalBody = document.getElementById('modal-body');
 
       let html = '';
@@ -883,11 +894,11 @@
             </div>
             <div class="meta-item">
               <div class="meta-label">Author</div>
-              <div class="meta-value">${escapeHtml(message.author_name)} ${message.is_bot_message ? '(Bot)' : ''}</div>
+              <div class="meta-value">${escapeHtml(message.author_name)}</div>
             </div>
             <div class="meta-item">
               <div class="meta-label">Channel</div>
-              <div class="meta-value">${message.channel_id}</div>
+              <div class="meta-value">${message.channel_name || message.channel_id}</div>
             </div>
             <div class="meta-item">
               <div class="meta-label">Time</div>
@@ -950,96 +961,145 @@
         `;
       }
 
-      // Decision section
-      if (decision) {
+      modalBody.innerHTML = html;
+    }
+
+    // Comprehensive view for bot messages: response type, decision, evaluated messages, prompts
+    function renderBotMessageModal(data) {
+      const { message, response, decision, responsePrompt, decisionPrompt, evaluatedMessages } = data;
+      const modalBody = document.getElementById('modal-body');
+
+      let html = '';
+
+      // Response type badge
+      const responseType = response ? response.response_type : null;
+      const typeBadge = responseType === 'direct'
+        ? '<span class="bot-badge direct" style="margin-left: 10px;">DIRECT</span>'
+        : responseType === 'autonomous'
+          ? '<span class="bot-badge autonomous" style="margin-left: 10px;">AUTONOMOUS</span>'
+          : '';
+
+      // Message metadata section
+      html += `
+        <div class="modal-section">
+          <h3>Message Info ${typeBadge}</h3>
+          <div class="message-meta">
+            <div class="meta-item">
+              <div class="meta-label">ID</div>
+              <div class="meta-value">${message.id}</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Author</div>
+              <div class="meta-value">${escapeHtml(message.author_name)} (Bot)</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Channel</div>
+              <div class="meta-value">${message.channel_name || message.channel_id}</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Time</div>
+              <div class="meta-value">${formatDateTime(message.created_at)}</div>
+            </div>
+          </div>
+          <div class="message-full-content" style="border-left: 3px solid var(--accent-green);">${escapeHtml(message.content) || '(no content)'}</div>
+        </div>
+      `;
+
+      // For DIRECT responses - no evaluation needed
+      if (responseType === 'direct') {
         html += `
           <div class="modal-section">
-            <h3>Related Decision <span class="section-badge ${decision.should_respond ? 'yes' : ''}" style="${!decision.should_respond ? 'background: var(--accent-red); color: white;' : ''}">${decision.should_respond ? 'RESPONDED' : 'PASSED'}</span></h3>
-            <div class="message-meta">
-              <div class="meta-item">
-                <div class="meta-label">Decision ID</div>
-                <div class="meta-value">${decision.id}</div>
-              </div>
-              <div class="meta-item">
-                <div class="meta-label">Evaluated At</div>
-                <div class="meta-value">${formatDateTime(decision.evaluated_at)}</div>
-              </div>
-              <div class="meta-item">
-                <div class="meta-label">Messages Evaluated</div>
-                <div class="meta-value">${decision.messages_evaluated}</div>
-              </div>
-            </div>
-            <div class="message-full-content" style="border-left: 3px solid ${decision.should_respond ? 'var(--accent-green)' : 'var(--accent-red)'};">
-              ${escapeHtml(decision.reason)}
+            <h3>Trigger</h3>
+            <div class="message-full-content" style="border-left: 3px solid var(--accent-blue);">
+              <strong style="color: var(--accent-blue);">Direct response</strong> - no evaluation needed.<br>
+              Isaac was @mentioned or replied to directly.
             </div>
           </div>
         `;
+      }
 
-        // Decision prompt section
-        if (decisionPrompt) {
+      // For AUTONOMOUS responses - show decision details
+      if (responseType === 'autonomous') {
+        if (decision) {
           html += `
-            <div class="modal-section has-content">
-              <div class="collapsible-header collapsed" onclick="toggleCollapsible(this)">
-                <h3>Evaluation Prompt <span class="toggle-icon">&#9660;</span></h3>
+            <div class="modal-section">
+              <h3>Decision</h3>
+              <div class="message-full-content" style="border-left: 3px solid var(--accent-green);">
+                ${escapeHtml(decision.reason)}
               </div>
-              <div class="collapsible-content collapsed">
-                <div class="json-view">
-                  <pre>${escapeHtml(formatJson(decisionPrompt.messages_json))}</pre>
+            </div>
+          `;
+
+          // Evaluated messages section (collapsible)
+          if (evaluatedMessages && evaluatedMessages.length > 0) {
+            html += `
+              <div class="modal-section has-content">
+                <div class="collapsible-header collapsed" onclick="toggleCollapsible(this)">
+                  <h3>Evaluated Messages <span class="section-badge">${evaluatedMessages.length}</span> <span class="toggle-icon">&#9660;</span></h3>
+                </div>
+                <div class="collapsible-content collapsed">
+                  <div class="evaluated-messages-list">
+                    ${evaluatedMessages.map(msg => `
+                      <div class="evaluated-message-item" onclick="showMessageDetails('${msg.id}')" style="
+                        background: var(--bg-card);
+                        padding: 10px 12px;
+                        border-radius: 6px;
+                        margin-bottom: 8px;
+                        cursor: pointer;
+                        border-left: 3px solid ${msg.is_bot_message ? 'var(--accent-green)' : 'var(--accent-blue)'};
+                      ">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                          <span style="font-weight: 600; color: ${msg.is_bot_message ? 'var(--accent-green)' : 'var(--accent-blue)'};">
+                            ${escapeHtml(msg.author_name)}${msg.is_bot_message ? ' (Bot)' : ''}
+                          </span>
+                          <span style="color: var(--text-secondary); font-size: 0.8rem;">${formatTime(msg.created_at)}</span>
+                        </div>
+                        <div style="font-size: 0.9rem; color: var(--text-primary);">${escapeHtml(truncate(msg.content, 150))}</div>
+                      </div>
+                    `).join('')}
+                  </div>
                 </div>
               </div>
+            `;
+          }
+
+          // Evaluation prompt section (collapsible)
+          if (decisionPrompt) {
+            html += `
+              <div class="modal-section has-content">
+                <div class="collapsible-header collapsed" onclick="toggleCollapsible(this)">
+                  <h3>Evaluation Prompt <span class="toggle-icon">&#9660;</span></h3>
+                </div>
+                <div class="collapsible-content collapsed">
+                  <div class="json-view">
+                    <pre>${escapeHtml(formatJson(decisionPrompt.messages_json))}</pre>
+                  </div>
+                </div>
+              </div>
+            `;
+          }
+        } else {
+          html += `
+            <div class="modal-section">
+              <h3>Decision</h3>
+              <p class="no-data">No decision record found for this autonomous response.</p>
             </div>
           `;
         }
       }
 
-      // Response section
-      if (response) {
+      // Response prompt section (collapsible) - for both types
+      if (responsePrompt) {
         html += `
-          <div class="modal-section">
-            <h3>Bot Response <span class="section-badge" style="background: ${response.response_type === 'direct' ? 'var(--accent-blue)' : 'var(--accent-yellow)'}; color: ${response.response_type === 'direct' ? 'white' : 'var(--bg-primary)'};">${response.response_type.toUpperCase()}</span></h3>
-            <div class="message-meta">
-              <div class="meta-item">
-                <div class="meta-label">Response ID</div>
-                <div class="meta-value">${response.id}</div>
-              </div>
-              <div class="meta-item">
-                <div class="meta-label">Message ID</div>
-                <div class="meta-value">${response.message_id || 'N/A'}</div>
-              </div>
-              <div class="meta-item">
-                <div class="meta-label">Time</div>
-                <div class="meta-value">${formatDateTime(response.created_at)}</div>
+          <div class="modal-section has-content">
+            <div class="collapsible-header collapsed" onclick="toggleCollapsible(this)">
+              <h3>Response Prompt <span class="toggle-icon">&#9660;</span></h3>
+            </div>
+            <div class="collapsible-content collapsed">
+              <div class="json-view">
+                <pre>${escapeHtml(formatJson(responsePrompt.messages_json))}</pre>
               </div>
             </div>
-            <div class="message-full-content" style="border-left: 3px solid var(--accent-green);">
-              ${escapeHtml(response.content)}
-            </div>
-          </div>
-        `;
-
-        // Response prompt section
-        if (responsePrompt) {
-          html += `
-            <div class="modal-section has-content">
-              <div class="collapsible-header collapsed" onclick="toggleCollapsible(this)">
-                <h3>Response Prompt <span class="toggle-icon">&#9660;</span></h3>
-              </div>
-              <div class="collapsible-content collapsed">
-                <div class="json-view">
-                  <pre>${escapeHtml(formatJson(responsePrompt.messages_json))}</pre>
-                </div>
-              </div>
-            </div>
-          `;
-        }
-      }
-
-      // If no decision or response
-      if (!decision && !response) {
-        html += `
-          <div class="modal-section">
-            <h3>Relations</h3>
-            <p class="no-data">No decisions or responses linked to this message yet.</p>
           </div>
         `;
       }

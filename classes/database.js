@@ -311,6 +311,108 @@ class DatabaseManager {
   }
 
   /**
+   * Get comprehensive details for a bot message
+   * Returns the response, decision that led to it, prompts, and evaluated messages
+   * @param {string} messageId - Discord message ID of the bot's response
+   * @returns {Object|null} Bot message details
+   */
+  getBotMessageDetails(messageId) {
+    const message = this.getMessage(messageId);
+    if (!message || !message.is_bot_message) return null;
+
+    // 1. Get the response record where message_id matches the bot's message ID
+    const responseStmt = this.db.prepare(`
+      SELECT * FROM responses WHERE message_id = ?
+    `);
+    const response = responseStmt.get(messageId);
+
+    if (!response) {
+      // Bot message without a response record - return basic info
+      return {
+        message,
+        response: null,
+        decision: null,
+        decisionPrompt: null,
+        responsePrompt: null,
+        evaluatedMessages: []
+      };
+    }
+
+    // 2. Find the decision that led to this response
+    // For AUTONOMOUS responses: find decision with response_sent = 1, same channel, close timestamp
+    // For DIRECT responses: there may not be a decision (direct mention/reply)
+    let decision = null;
+    let decisionPrompt = null;
+    let evaluatedMessages = [];
+
+    if (response.response_type === 'autonomous') {
+      const decisionStmt = this.db.prepare(`
+        SELECT * FROM decision_log
+        WHERE channel_id = ? AND response_sent = 1
+        AND datetime(evaluated_at) <= datetime(?, '+10 seconds')
+        AND datetime(evaluated_at) >= datetime(?, '-60 seconds')
+        ORDER BY evaluated_at DESC LIMIT 1
+      `);
+      decision = decisionStmt.get(response.channel_id, response.created_at, response.created_at);
+
+      if (decision) {
+        // Parse evaluated_message_ids
+        if (decision.evaluated_message_ids) {
+          try {
+            decision.evaluated_message_ids = JSON.parse(decision.evaluated_message_ids);
+          } catch (e) {
+            decision.evaluated_message_ids = [];
+          }
+        }
+
+        // Get decision prompt
+        const decisionPromptStmt = this.db.prepare(`
+          SELECT * FROM prompts WHERE decision_id = ?
+        `);
+        decisionPrompt = decisionPromptStmt.get(decision.id);
+        if (decisionPrompt) {
+          decisionPrompt.messages_json = JSON.parse(decisionPrompt.messages_json || "[]");
+        }
+
+        // Get the evaluated messages
+        if (decision.evaluated_message_ids && decision.evaluated_message_ids.length > 0) {
+          const placeholders = decision.evaluated_message_ids.map(() => '?').join(',');
+          const evalMsgsStmt = this.db.prepare(`
+            SELECT id, author_name, content, created_at, is_bot_message
+            FROM messages WHERE id IN (${placeholders})
+          `);
+          const fetchedMsgs = evalMsgsStmt.all(...decision.evaluated_message_ids);
+
+          // Sort by the order they appear in evaluated_message_ids
+          const msgMap = new Map(fetchedMsgs.map(m => [m.id, m]));
+          evaluatedMessages = decision.evaluated_message_ids
+            .map(id => msgMap.get(id))
+            .filter(m => m != null);
+        }
+      }
+    }
+
+    // 3. Get response prompt
+    let responsePrompt = null;
+    const responsePromptStmt = this.db.prepare(`
+      SELECT * FROM prompts WHERE response_id = ?
+    `);
+    responsePrompt = responsePromptStmt.get(response.id);
+    if (responsePrompt) {
+      responsePrompt.messages_json = JSON.parse(responsePrompt.messages_json || "[]");
+    }
+
+    return {
+      message,
+      response,
+      decision,
+      decisionPrompt,
+      responsePrompt,
+      evaluatedMessages
+    };
+  }
+
+  /**
    * Parse a message record from the database
    * @param {Object} record - Raw database record
    * @returns {Object} Parsed message object

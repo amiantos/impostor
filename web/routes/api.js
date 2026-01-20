@@ -56,17 +56,32 @@ router.get("/messages/:messageId", (req, res) => {
   }
 });
 
-// Get a message with all related data (decision, response, prompt)
+// Get a message with related data
+// Returns different data structure for bot vs non-bot messages
 router.get("/messages/:messageId/relations", (req, res) => {
   try {
     const { messageId } = req.params;
-    const result = req.db.getMessageWithRelations(messageId);
 
-    if (!result) {
+    // First, get the message to check if it's a bot message
+    const message = req.db.getMessage(messageId);
+    if (!message) {
       return res.status(404).json({ error: "Message not found" });
     }
 
-    res.json(result);
+    if (message.is_bot_message) {
+      // Bot message: return comprehensive decision/response details
+      const result = req.db.getBotMessageDetails(messageId);
+      if (!result) {
+        return res.status(404).json({ error: "Message not found" });
+      }
+      res.json({ ...result, type: 'bot' });
+    } else {
+      // Non-bot message: return simplified view (no decision/response clutter)
+      res.json({
+        message,
+        type: 'user'
+      });
+    }
   } catch (error) {
     req.logger.error("Error fetching message relations:", error);
     res.status(500).json({ error: "Failed to fetch message relations" });
