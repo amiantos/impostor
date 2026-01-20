@@ -59,7 +59,6 @@ class MessageTracker {
   shouldEvaluate(channelId) {
     const messagesThreshold = this.config.messages_before_evaluation || 5;
     const secondsThreshold = this.config.seconds_before_evaluation || 60;
-    const cooldownSeconds = this.config.cooldown_seconds || 60;
 
     // Check message count threshold
     const messageCount = this.messageCountSinceEval.get(channelId) || 0;
@@ -70,18 +69,6 @@ class MessageTracker {
     const now = Date.now();
     const timeSinceLastEval = lastEvalTime ? (now - lastEvalTime) / 1000 : Infinity;
     const hasEnoughTimePassed = timeSinceLastEval >= secondsThreshold;
-
-    // Check cooldown from last bot response
-    const lastBotResponseTime = this.db.getLastBotResponseTime(channelId);
-    const timeSinceLastResponse = lastBotResponseTime ? (now - lastBotResponseTime.getTime()) / 1000 : Infinity;
-    const cooldownPassed = timeSinceLastResponse >= cooldownSeconds;
-
-    // Must have both enough time since last eval AND cooldown passed
-    // Plus either enough messages OR enough time
-    if (!cooldownPassed) {
-      this.logger.debug(`Channel ${channelId}: Cooldown not passed (${timeSinceLastResponse.toFixed(0)}s < ${cooldownSeconds}s)`);
-      return false;
-    }
 
     if (hasEnoughMessages) {
       this.logger.debug(`Channel ${channelId}: Triggering eval - ${messageCount} messages (threshold: ${messagesThreshold})`);
