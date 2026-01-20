@@ -39,6 +39,15 @@
         "enabled": true,
         "message_limit": 20,
         "process_vision": true,
+        "process_urls": false,
         "max_channel_age_days": 14
+    },
+    "kagi": {
+        "api_key": "<KAGI API KEY (optional, for web search and URL summarization)>"
+    },
+    "url_summarize": {
+        "enabled": true,
+        "summary_type": "takeaway",
+        "max_urls_per_message": 3
     }
 }

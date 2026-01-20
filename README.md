@@ -8,6 +8,7 @@ A Discord chatbot powered by DeepSeek API, featuring a built-in Isaac personalit
 - **Autonomous Responses**: Bot naturally participates in conversations without being @mentioned
 - **Conversation Dominance Detection**: Prevents bot from dominating conversations by tracking message ratios
 - **Vision Capability**: Can see and describe images using OpenAI GPT-4o
+- **URL Summarization**: Automatically summarizes shared links using Kagi Universal Summarizer
 - **Web Search**: Answers questions about current events using Kagi FastGPT
 - **Web Fetch**: Reads and extracts content from web pages
 - **Python Tool Integration**: Executes Python code to solve problems and perform calculations
@@ -35,6 +36,13 @@ The bot can execute Python code to solve problems:
 - *"Write a response that's exactly 42 characters long"* → Iteratively crafts and measures
 - *"What's 15% of $1,250 plus tax at 8.5%?"* → Calculates precisely
 - Multi-iteration refinement with reflection on previous attempts
+
+### URL Summarization
+When users share links, the bot automatically summarizes them:
+- Uses Kagi Universal Summarizer for articles, YouTube videos, PDFs, and more
+- Summaries are cached in the database and included in conversation context
+- Bot can discuss shared links naturally without needing to fetch them again
+- Skips Discord CDN links, images, and GIF services
 
 ### Web Search & Fetch
 The bot can search the web and read pages for current information:
@@ -120,10 +128,16 @@ npm start
         "enabled": true,
         "message_limit": 20,
         "process_vision": true,
+        "process_urls": false,
         "max_channel_age_days": 14
     },
     "kagi": {
         "api_key": "<KAGI API KEY>"
+    },
+    "url_summarize": {
+        "enabled": true,
+        "summary_type": "takeaway",
+        "max_urls_per_message": 3
     }
 }
 ```
@@ -143,7 +157,11 @@ npm start
 | `web.port` | | Dashboard port (default: 3000) |
 | `backfill.enabled` | | Load message history on startup |
 | `backfill.message_limit` | | Messages to load per channel (default: 20) |
-| `kagi.api_key` | | Kagi API key for web search (optional) |
+| `backfill.process_urls` | | Summarize URLs during backfill (default: false) |
+| `kagi.api_key` | | Kagi API key for web search and URL summarization |
+| `url_summarize.enabled` | | Enable automatic URL summarization (default: true) |
+| `url_summarize.summary_type` | | "takeaway" for bullets, "summary" for paragraphs |
+| `url_summarize.max_urls_per_message` | | Max URLs to summarize per message (default: 3) |
 
 ## Web Dashboard
 
@@ -155,7 +173,7 @@ When enabled, access the dashboard at `http://localhost:3000` to view:
 ## Data Storage
 
 All data is stored in `data/impostor.db` (SQLite):
-- Message history with attachments and vision descriptions
+- Message history with attachments, vision descriptions, and URL summaries
 - Bot responses and trigger messages
 - AI decision logs with reasoning
 - Full prompts for debugging
