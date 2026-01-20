@@ -47,6 +47,12 @@ class BackfillService {
         (a, b) => a.createdAt - b.createdAt
       );
 
+      // Update channel name for all messages in this channel (even if they exist)
+      // This ensures channel names get populated for channels that were backfilled before this feature
+      if (channel.name) {
+        this.db.updateChannelName(channel.id, channel.name);
+      }
+
       for (const message of messageArray) {
         // Skip if already in database
         if (this.db.messageExists(message.id)) {
@@ -79,6 +85,7 @@ class BackfillService {
         this.db.insertMessageEnhanced({
           id: message.id,
           channelId: message.channel.id,
+          channelName: message.channel.name || null,
           authorId: message.author.id,
           authorName: message.author.username || message.author.displayName || "Unknown",
           content: message.content,

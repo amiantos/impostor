@@ -59,6 +59,7 @@ class MessageTracker {
     this.db.insertMessageEnhanced({
       id: message.id,
       channelId: message.channel.id,
+      channelName: message.channel.name || null,
       authorId: message.author.id,
       authorName: message.author.username || message.author.displayName || "Unknown",
       content: message.content,

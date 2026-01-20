@@ -49,6 +49,11 @@ class DatabaseManager {
       this.logger.info("Migration: Added is_backfilled column to messages");
     }
 
+    if (!columnNames.includes("channel_name")) {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN channel_name TEXT`);
+      this.logger.info("Migration: Added channel_name column to messages");
+    }
+
     // Migration: Add trigger_message_id to responses
     const responsesColumns = this.db.pragma("table_info(responses)");
     const responsesColumnNames = responsesColumns.map(c => c.name);
@@ -162,6 +167,7 @@ class DatabaseManager {
   insertMessageEnhanced({
     id,
     channelId,
+    channelName = null,
     authorId,
     authorName,
     content,
@@ -174,15 +180,16 @@ class DatabaseManager {
   }) {
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO messages (
-        id, channel_id, author_id, author_name, content, created_at,
+        id, channel_id, channel_name, author_id, author_name, content, created_at,
         is_bot_message, attachments, vision_descriptions, reply_to_message_id, is_backfilled
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
       id,
       channelId,
+      channelName,
       authorId,
       authorName,
       content,
@@ -215,6 +222,18 @@ class DatabaseManager {
       UPDATE messages SET vision_descriptions = ? WHERE id = ?
     `);
     stmt.run(JSON.stringify(visionDescriptions), messageId);
+  }
+
+  /**
+   * Update channel name for all messages in a channel
+   * @param {string} channelId - Discord channel ID
+   * @param {string} channelName - Channel name
+   */
+  updateChannelName(channelId, channelName) {
+    const stmt = this.db.prepare(`
+      UPDATE messages SET channel_name = ? WHERE channel_id = ? AND (channel_name IS NULL OR channel_name != ?)
+    `);
+    stmt.run(channelName, channelId, channelName);
   }
 
   /**
@@ -567,10 +586,154 @@ class DatabaseManager {
     return prompt;
   }
 
+  /**
+   * Get messages with bulk relation data for dashboard
+   * Returns messages with associated decision/response info for inline indicators
+   * @param {string|null} channelId - Channel ID (null for all channels)
+   * @param {number} limit - Max messages to return
+   * @returns {Object} { messages: [], relations: { messageId: { decision, response, triggeredResponse } } }
+   */
+  getMessagesWithRelations(channelId, limit = 100) {
+    // Get messages (all channels or specific channel)
+    let messages;
+    if (channelId) {
+      const messagesStmt = this.db.prepare(`
+        SELECT * FROM messages
+        WHERE channel_id = ?
+        ORDER BY created_at DESC
+        LIMIT ?
+      `);
+      messages = messagesStmt.all(channelId, limit).map(msg => this._parseMessageRecord(msg));
+    } else {
+      const messagesStmt = this.db.prepare(`
+        SELECT * FROM messages
+        ORDER BY created_at DESC
+        LIMIT ?
+      `);
+      messages = messagesStmt.all(limit).map(msg => this._parseMessageRecord(msg));
+    }
+
+    if (messages.length === 0) {
+      return { messages: [], relations: {} };
+    }
+
+    const messageIds = messages.map(m => m.id);
+    const messageIdSet = new Set(messageIds);
+    const relations = {};
+
+    // Initialize relations for each message
+    messageIds.forEach(id => {
+      relations[id] = {
+        decision: null,
+        response: null,
+        triggeredResponse: false
+      };
+    });
+
+    // Get recent decisions for this channel (or all channels)
+    // This catches both RESPOND and PASS decisions
+    let decisions;
+    if (channelId) {
+      const decisionsStmt = this.db.prepare(`
+        SELECT * FROM decision_log
+        WHERE channel_id = ?
+        ORDER BY evaluated_at DESC
+        LIMIT ?
+      `);
+      decisions = decisionsStmt.all(channelId, limit);
+    } else {
+      const decisionsStmt = this.db.prepare(`
+        SELECT * FROM decision_log
+        ORDER BY evaluated_at DESC
+        LIMIT ?
+      `);
+      decisions = decisionsStmt.all(limit);
+    }
+
+    // For each decision, find the trigger message
+    // The trigger is the LAST message in evaluated_message_ids (the most recent)
+    decisions.forEach(decision => {
+      let triggerMessageId = null;
+
+      // First try to get the last message from evaluated_message_ids
+      if (decision.evaluated_message_ids) {
+        try {
+          const ids = JSON.parse(decision.evaluated_message_ids);
+          if (ids.length > 0) {
+            // Last message in the array is the trigger (most recent)
+            triggerMessageId = ids[ids.length - 1];
+          }
+        } catch (e) {
+          // JSON parse failed, fall through to reply_to_message_id
+        }
+      }
+
+      // Fallback to reply_to_message_id for direct mentions
+      if (!triggerMessageId && decision.reply_to_message_id) {
+        triggerMessageId = decision.reply_to_message_id;
+      }
+
+      // If this trigger message is in our current view, add the decision
+      if (triggerMessageId && messageIdSet.has(triggerMessageId)) {
+        // Only set if not already set (keep most recent decision for this message)
+        if (!relations[triggerMessageId].decision) {
+          relations[triggerMessageId].decision = {
+            id: decision.id,
+            should_respond: !!decision.should_respond,
+            reason: decision.reason,
+            evaluated_at: decision.evaluated_at
+          };
+        }
+      }
+    });
+
+    // Find responses triggered by these messages
+    const responsesStmt = this.db.prepare(`
+      SELECT * FROM responses
+      WHERE trigger_message_id IN (${messageIds.map(() => '?').join(',')})
+    `);
+    const responses = responsesStmt.all(...messageIds);
+
+    responses.forEach(response => {
+      if (response.trigger_message_id && relations[response.trigger_message_id]) {
+        relations[response.trigger_message_id].triggeredResponse = true;
+        relations[response.trigger_message_id].response = {
+          id: response.id,
+          response_type: response.response_type,
+          message_id: response.message_id
+        };
+      }
+    });
+
+    // For bot messages, find the associated response record
+    const botMessages = messages.filter(m => m.is_bot_message);
+    if (botMessages.length > 0) {
+      const botMsgIds = botMessages.map(m => m.id);
+      const botResponsesStmt = this.db.prepare(`
+        SELECT * FROM responses
+        WHERE message_id IN (${botMsgIds.map(() => '?').join(',')})
+      `);
+      const botResponses = botResponsesStmt.all(...botMsgIds);
+
+      botResponses.forEach(response => {
+        if (response.message_id && relations[response.message_id]) {
+          relations[response.message_id].response = {
+            id: response.id,
+            response_type: response.response_type,
+            trigger_message_id: response.trigger_message_id
+          };
+        }
+      });
+    }
+
+    return { messages, relations };
+  }
+
   // Dashboard API helpers
   getActiveChannels() {
     const stmt = this.db.prepare(`
       SELECT DISTINCT channel_id,
+             (SELECT channel_name FROM messages WHERE messages.channel_id = m.channel_id AND channel_name IS NOT NULL ORDER BY created_at DESC LIMIT 1) as channel_name,
              (SELECT COUNT(*) FROM messages WHERE messages.channel_id = m.channel_id) as message_count,
              (SELECT MAX(created_at) FROM messages WHERE messages.channel_id = m.channel_id) as last_activity
       FROM messages m

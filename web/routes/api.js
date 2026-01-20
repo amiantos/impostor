@@ -179,6 +179,31 @@ router.get("/decisions", (req, res) => {
   }
 });
 
+// Get messages with bulk relations for chat view (all channels)
+router.get("/chat", (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 100;
+    const result = req.db.getMessagesWithRelations(null, limit);
+    res.json(result);
+  } catch (error) {
+    req.logger.error("Error fetching chat data:", error);
+    res.status(500).json({ error: "Failed to fetch chat data" });
+  }
+});
+
+// Get messages with bulk relations for chat view (specific channel)
+router.get("/channels/:channelId/chat", (req, res) => {
+  try {
+    const { channelId } = req.params;
+    const limit = parseInt(req.query.limit) || 100;
+    const result = req.db.getMessagesWithRelations(channelId, limit);
+    res.json(result);
+  } catch (error) {
+    req.logger.error("Error fetching chat data:", error);
+    res.status(500).json({ error: "Failed to fetch chat data" });
+  }
+});
+
 // Get recent responses (all channels)
 router.get("/responses", (req, res) => {
   try {

@@ -23,38 +23,39 @@
       box-sizing: border-box;
     }
 
+    html, body {
+      height: 100%;
+      overflow: hidden;
+    }
+
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       background: var(--bg-primary);
       color: var(--text-primary);
-      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
     }
 
-    .container {
-      max-width: 1400px;
-      margin: 0 auto;
-      padding: 20px;
-    }
-
-    header {
+    /* Header */
+    .header {
       background: var(--bg-secondary);
-      padding: 20px;
-      margin-bottom: 20px;
-      border-radius: 8px;
+      padding: 16px 24px;
       display: flex;
       justify-content: space-between;
       align-items: center;
+      border-bottom: 1px solid var(--bg-card);
+      flex-shrink: 0;
     }
 
-    header h1 {
+    .header-left {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
     }
 
     .status-indicator {
-      width: 12px;
-      height: 12px;
+      width: 10px;
+      height: 10px;
       background: var(--accent-green);
       border-radius: 50%;
       animation: pulse 2s infinite;
@@ -65,250 +66,262 @@
       50% { opacity: 0.5; }
     }
 
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 15px;
-      margin-bottom: 20px;
+    .header h1 {
+      font-size: 1.25rem;
+      font-weight: 600;
     }
 
-    .stat-card {
-      background: var(--bg-card);
-      padding: 20px;
-      border-radius: 8px;
-      text-align: center;
-    }
-
-    .stat-card h3 {
-      color: var(--text-secondary);
-      font-size: 0.9rem;
-      margin-bottom: 8px;
-    }
-
-    .stat-card .value {
-      font-size: 2rem;
-      font-weight: bold;
-      color: var(--accent-blue);
-    }
-
-    .main-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 20px;
-    }
-
-    @media (max-width: 900px) {
-      .main-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    .panel {
-      background: var(--bg-secondary);
-      border-radius: 8px;
-      overflow: hidden;
-    }
-
-    .panel-header {
-      background: var(--bg-card);
-      padding: 15px 20px;
+    .header-actions {
       display: flex;
-      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .btn {
+      background: var(--bg-card);
+      color: var(--text-primary);
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: background 0.2s;
+    }
+
+    .btn:hover {
+      background: var(--accent-blue);
+    }
+
+    .btn-primary {
+      background: var(--accent-blue);
+    }
+
+    .btn-primary:hover {
+      background: #2a6f9e;
+    }
+
+    /* Channel Tabs */
+    .channel-tabs {
+      background: var(--bg-secondary);
+      padding: 0 24px;
+      display: flex;
+      gap: 4px;
+      overflow-x: auto;
+      border-bottom: 1px solid var(--bg-card);
+      flex-shrink: 0;
+    }
+
+    .channel-tab {
+      padding: 12px 16px;
+      background: transparent;
+      color: var(--text-secondary);
+      border: none;
+      cursor: pointer;
+      font-size: 0.9rem;
+      white-space: nowrap;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+
+    .channel-tab:hover {
+      color: var(--text-primary);
+      background: var(--bg-card);
+    }
+
+    .channel-tab.active {
+      color: var(--accent-blue);
+      border-bottom-color: var(--accent-blue);
+    }
+
+    .channel-tab .count {
+      background: var(--bg-card);
+      padding: 2px 6px;
+      border-radius: 10px;
+      font-size: 0.75rem;
+      margin-left: 6px;
+    }
+
+    .channel-tab.active .count {
+      background: var(--accent-blue);
+      color: white;
+    }
+
+    /* Chat Container */
+    .chat-container {
+      flex: 1;
+      min-height: 0; /* Critical: allows flex item to shrink and scroll */
+      overflow-y: auto;
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .chat-container.loading {
+      justify-content: center;
       align-items: center;
     }
 
-    .panel-header h2 {
-      font-size: 1.1rem;
-    }
-
-    .panel-content {
-      padding: 15px;
-      max-height: 500px;
-      overflow-y: auto;
-    }
-
-    .channel-select {
+    /* Message Bubbles */
+    .message-bubble {
       background: var(--bg-secondary);
-      color: var(--text-primary);
-      border: 1px solid var(--bg-card);
-      padding: 5px 10px;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-
-    .message-item {
-      padding: 10px;
-      margin-bottom: 10px;
-      background: var(--bg-primary);
-      border-radius: 6px;
+      border-radius: 8px;
+      padding: 12px 16px;
       border-left: 3px solid var(--accent-blue);
+      cursor: pointer;
+      transition: transform 0.1s, box-shadow 0.1s;
+      max-width: 100%;
     }
 
-    .message-item.bot {
+    .message-bubble:hover {
+      transform: translateX(4px);
+      box-shadow: -4px 0 0 var(--accent-green);
+    }
+
+    .message-bubble.bot {
       border-left-color: var(--accent-green);
+      background: linear-gradient(135deg, var(--bg-secondary) 0%, rgba(78, 204, 163, 0.1) 100%);
     }
 
     .message-header {
       display: flex;
       align-items: center;
-      margin-bottom: 5px;
-      font-size: 0.85rem;
       gap: 8px;
+      margin-bottom: 6px;
+      flex-wrap: wrap;
     }
 
     .message-author {
+      font-weight: 600;
       color: var(--accent-blue);
-      font-weight: bold;
     }
 
-    .message-item.bot .message-author {
+    .message-bubble.bot .message-author {
       color: var(--accent-green);
     }
 
     .message-time {
       color: var(--text-secondary);
+      font-size: 0.8rem;
     }
 
-    .message-badges {
+    .message-indicators {
       display: flex;
-      gap: 4px;
+      gap: 6px;
       margin-left: auto;
-      margin-right: 8px;
+      align-items: center;
     }
 
-    .msg-badge {
-      font-size: 0.7rem;
-      padding: 1px 5px;
-      border-radius: 3px;
+    .indicator {
+      font-size: 0.75rem;
+      padding: 2px 6px;
+      border-radius: 4px;
       background: var(--bg-card);
       color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      cursor: help;
     }
 
-    .msg-badge.img-badge {
-      background: var(--accent-yellow);
-      color: var(--bg-primary);
+    .indicator.decision-yes {
+      background: rgba(78, 204, 163, 0.2);
+      color: var(--accent-green);
     }
 
-    .msg-badge.file-badge {
+    .indicator.decision-no {
+      background: rgba(233, 69, 96, 0.2);
+      color: var(--accent-red);
+    }
+
+    .indicator.triggered {
+      background: rgba(50, 130, 184, 0.2);
+      color: var(--accent-blue);
+    }
+
+    .indicator.attachment-img {
+      background: rgba(249, 237, 105, 0.2);
+      color: var(--accent-yellow);
+    }
+
+    .indicator.attachment-file {
+      background: rgba(50, 130, 184, 0.2);
+      color: var(--accent-blue);
+    }
+
+    .bot-badge {
+      font-size: 0.7rem;
+      font-weight: bold;
+      padding: 2px 8px;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+
+    .bot-badge.direct {
       background: var(--accent-blue);
       color: white;
+    }
+
+    .bot-badge.autonomous {
+      background: var(--accent-yellow);
+      color: var(--bg-primary);
     }
 
     .message-content {
       font-size: 0.95rem;
-      line-height: 1.4;
+      line-height: 1.5;
       word-wrap: break-word;
-    }
-
-    .decision-item {
-      padding: 12px;
-      margin-bottom: 10px;
-      background: var(--bg-primary);
-      border-radius: 6px;
-      border-left: 3px solid var(--accent-red);
-    }
-
-    .decision-item.responded {
-      border-left-color: var(--accent-green);
-    }
-
-    .decision-header {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 8px;
-      font-size: 0.85rem;
-    }
-
-    .decision-badge {
-      padding: 2px 8px;
-      border-radius: 4px;
-      font-size: 0.75rem;
-      font-weight: bold;
-    }
-
-    .decision-badge.yes {
-      background: var(--accent-green);
-      color: var(--bg-primary);
-    }
-
-    .decision-badge.no {
-      background: var(--accent-red);
-      color: white;
-    }
-
-    .decision-reason {
-      font-size: 0.9rem;
-      color: var(--text-secondary);
-      font-style: italic;
-    }
-
-    .decision-meta {
-      font-size: 0.8rem;
-      color: var(--text-secondary);
-      margin-top: 5px;
-    }
-
-    .response-item {
-      padding: 12px;
-      margin-bottom: 10px;
-      background: var(--bg-primary);
-      border-radius: 6px;
-    }
-
-    .response-header {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 8px;
-      font-size: 0.85rem;
-    }
-
-    .response-type {
-      padding: 2px 8px;
-      border-radius: 4px;
-      font-size: 0.75rem;
-      font-weight: bold;
-    }
-
-    .response-type.direct {
-      background: var(--accent-blue);
-      color: white;
-    }
-
-    .response-type.autonomous {
-      background: var(--accent-yellow);
-      color: var(--bg-primary);
-    }
-
-    .response-content {
-      font-size: 0.9rem;
-      line-height: 1.4;
       color: var(--text-primary);
     }
 
-    .refresh-btn {
-      background: var(--accent-blue);
-      color: white;
-      border: none;
-      padding: 8px 16px;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 0.85rem;
-      transition: opacity 0.2s;
-    }
-
-    .refresh-btn:hover {
-      opacity: 0.8;
-    }
-
-    .empty-state {
-      text-align: center;
-      padding: 40px 20px;
+    .message-content em {
       color: var(--text-secondary);
     }
 
-    .loading {
+    /* Jump to Bottom Button */
+    .jump-to-bottom {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--accent-blue);
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 24px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      transition: all 0.2s;
+      display: none;
+      z-index: 100;
+    }
+
+    .jump-to-bottom:hover {
+      background: #2a6f9e;
+      transform: translateY(-2px);
+    }
+
+    .jump-to-bottom.visible {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Empty State */
+    .empty-state {
       text-align: center;
-      padding: 20px;
+      padding: 60px 20px;
+      color: var(--text-secondary);
+    }
+
+    .empty-state h3 {
+      margin-bottom: 8px;
+      color: var(--text-primary);
+    }
+
+    /* Loading */
+    .loading-spinner {
+      text-align: center;
+      padding: 40px;
       color: var(--text-secondary);
     }
 
@@ -533,99 +546,64 @@
       font-size: 0.9rem;
     }
 
-    .message-item.clickable,
-    .decision-item.clickable,
-    .response-item.clickable {
-      cursor: pointer;
-      transition: transform 0.1s, box-shadow 0.1s;
-    }
+    /* Responsive */
+    @media (max-width: 768px) {
+      .header {
+        padding: 12px 16px;
+      }
 
-    .message-item.clickable:hover,
-    .decision-item.clickable:hover,
-    .response-item.clickable:hover {
-      transform: translateX(4px);
-      box-shadow: -4px 0 0 var(--accent-green);
+      .channel-tabs {
+        padding: 0 16px;
+      }
+
+      .chat-container {
+        padding: 16px;
+      }
+
+      .message-bubble {
+        padding: 10px 12px;
+      }
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h1>
-        <span class="status-indicator"></span>
-        Isaac Dashboard
-      </h1>
-      <button class="refresh-btn" onclick="refreshAll()">Refresh All</button>
-    </header>
-
-    <div class="stats-grid">
-      <div class="stat-card">
-        <h3>Total Messages</h3>
-        <div class="value" id="stat-messages">-</div>
-      </div>
-      <div class="stat-card">
-        <h3>Decisions Made</h3>
-        <div class="value" id="stat-decisions">-</div>
-      </div>
-      <div class="stat-card">
-        <h3>Total Responses</h3>
-        <div class="value" id="stat-responses">-</div>
-      </div>
-      <div class="stat-card">
-        <h3>Autonomous Responses</h3>
-        <div class="value" id="stat-autonomous">-</div>
-      </div>
-      <div class="stat-card">
-        <h3>Direct Responses</h3>
-        <div class="value" id="stat-direct">-</div>
-      </div>
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <span class="status-indicator"></span>
+      <h1>Isaac Dashboard</h1>
     </div>
-
-    <div class="main-grid">
-      <div class="panel">
-        <div class="panel-header">
-          <h2>Recent Messages</h2>
-          <select class="channel-select" id="messages-channel" onchange="loadMessages()">
-            <option value="">All Channels</option>
-          </select>
-        </div>
-        <div class="panel-content" id="messages-list">
-          <div class="loading">Loading...</div>
-        </div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-header">
-          <h2>Decision Log</h2>
-          <select class="channel-select" id="decisions-channel" onchange="loadDecisions()">
-            <option value="">All Channels</option>
-          </select>
-        </div>
-        <div class="panel-content" id="decisions-list">
-          <div class="loading">Loading...</div>
-        </div>
-      </div>
-
-      <div class="panel" style="grid-column: span 2;">
-        <div class="panel-header">
-          <h2>Response History</h2>
-        </div>
-        <div class="panel-content" id="responses-list">
-          <div class="loading">Loading...</div>
-        </div>
-      </div>
+    <div class="header-actions">
+      <button class="btn btn-primary" onclick="refreshChat()">Refresh</button>
     </div>
+  </header>
 
-    <!-- Message Detail Modal -->
-    <div class="modal-overlay" id="message-modal">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2>Message Details</h2>
-          <button class="modal-close" onclick="closeModal()">&times;</button>
-        </div>
-        <div class="modal-body" id="modal-body">
-          <div class="loading">Loading...</div>
-        </div>
+  <!-- Channel Tabs -->
+  <nav class="channel-tabs" id="channel-tabs">
+    <button class="channel-tab active" data-channel="">
+      All Channels
+    </button>
+  </nav>
+
+  <!-- Chat Container -->
+  <main class="chat-container" id="chat-container">
+    <div class="loading-spinner">Loading messages...</div>
+  </main>
+
+  <!-- Jump to Bottom Button -->
+  <button class="jump-to-bottom" id="jump-to-bottom" onclick="scrollToBottom()">
+    <span>Jump to bottom</span>
+  </button>
+
+  <!-- Message Detail Modal -->
+  <div class="modal-overlay" id="message-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Message Details</h2>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-body">
+        <div class="loading-spinner">Loading...</div>
       </div>
     </div>
   </div>
@@ -633,7 +611,12 @@
   <script>
     const API_BASE = '/api';
     let channels = [];
+    let currentChannel = '';
+    let chatData = { messages: [], relations: {} };
+    let isUserScrolled = false;
+    let isInitialLoad = true;
 
+    // Utility functions
     async function fetchJson(url) {
       const response = await fetch(url);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -642,10 +625,15 @@
 
     function formatTime(isoString) {
       const date = new Date(isoString);
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function formatDateTime(isoString) {
+      const date = new Date(isoString);
       return date.toLocaleString();
     }
 
-    function truncate(str, maxLen = 200) {
+    function truncate(str, maxLen = 500) {
       if (!str) return '';
       if (str.length <= maxLen) return str;
       return str.substring(0, maxLen) + '...';
@@ -670,6 +658,28 @@
       return JSON.stringify(obj, null, 2);
     }
 
+    // Scroll handling
+    function setupScrollHandler() {
+      const container = document.getElementById('chat-container');
+      const jumpBtn = document.getElementById('jump-to-bottom');
+
+      container.addEventListener('scroll', () => {
+        const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+        isUserScrolled = !isNearBottom;
+        jumpBtn.classList.toggle('visible', isUserScrolled);
+      });
+    }
+
+    function scrollToBottom(smooth = true) {
+      const container = document.getElementById('chat-container');
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: smooth ? 'smooth' : 'auto'
+      });
+      isUserScrolled = false;
+      document.getElementById('jump-to-bottom').classList.remove('visible');
+    }
+
     // Modal functions
     function openModal() {
       document.getElementById('message-modal').classList.add('active');
@@ -681,12 +691,10 @@
       document.body.style.overflow = '';
     }
 
-    // Close modal on escape key
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') closeModal();
     });
 
-    // Close modal on overlay click
     document.getElementById('message-modal').addEventListener('click', (e) => {
       if (e.target.id === 'message-modal') closeModal();
     });
@@ -698,10 +706,156 @@
       content.classList.toggle('collapsed');
     }
 
+    // Channel tabs
+    async function loadChannels() {
+      try {
+        channels = await fetchJson(`${API_BASE}/channels`);
+        renderChannelTabs();
+      } catch (error) {
+        console.error('Failed to load channels:', error);
+      }
+    }
+
+    function renderChannelTabs() {
+      const container = document.getElementById('channel-tabs');
+
+      let html = `<button class="channel-tab ${currentChannel === '' ? 'active' : ''}" data-channel="" onclick="selectChannel('')">
+        All Channels
+      </button>`;
+
+      channels.forEach(ch => {
+        const displayName = ch.channel_name || ch.channel_id.slice(-6);
+        const isActive = currentChannel === ch.channel_id;
+        html += `<button class="channel-tab ${isActive ? 'active' : ''}" data-channel="${ch.channel_id}" onclick="selectChannel('${ch.channel_id}')" title="${ch.channel_id}">
+          #${escapeHtml(displayName)}<span class="count">${ch.message_count}</span>
+        </button>`;
+      });
+
+      container.innerHTML = html;
+    }
+
+    function selectChannel(channelId) {
+      currentChannel = channelId;
+      isUserScrolled = false; // Reset scroll state when changing channels
+      renderChannelTabs();
+      loadChat();
+    }
+
+    // Chat loading
+    async function loadChat() {
+      const container = document.getElementById('chat-container');
+      container.innerHTML = '<div class="loading-spinner">Loading messages...</div>';
+      container.classList.add('loading');
+
+      try {
+        // Use different endpoint based on whether a specific channel is selected
+        let url;
+        if (currentChannel) {
+          url = `${API_BASE}/channels/${currentChannel}/chat?limit=100`;
+        } else {
+          // "All Channels" - fetch from all channels
+          url = `${API_BASE}/chat?limit=100`;
+        }
+
+        chatData = await fetchJson(url);
+        renderChat();
+      } catch (error) {
+        console.error('Failed to load chat:', error);
+        container.classList.remove('loading');
+        container.innerHTML = '<div class="empty-state"><h3>Failed to load messages</h3><p>Please try refreshing.</p></div>';
+      }
+    }
+
+    function renderChat() {
+      const container = document.getElementById('chat-container');
+      container.classList.remove('loading');
+
+      if (!chatData.messages || chatData.messages.length === 0) {
+        container.innerHTML = '<div class="empty-state"><h3>No messages yet</h3><p>Messages will appear here as they come in.</p></div>';
+        return;
+      }
+
+      // Reverse to show oldest first (chronological order)
+      const messages = [...chatData.messages].reverse();
+      const relations = chatData.relations || {};
+
+      container.innerHTML = messages.map(msg => renderMessageBubble(msg, relations[msg.id])).join('');
+
+      // Scroll to bottom
+      if (isInitialLoad || !isUserScrolled) {
+        // Use setTimeout to ensure DOM has updated
+        setTimeout(() => {
+          container.scrollTop = container.scrollHeight;
+          isInitialLoad = false;
+        }, 10);
+      }
+    }
+
+    function renderMessageBubble(msg, relation) {
+      const isBot = msg.is_bot_message;
+      const hasAttachments = msg.attachments && msg.attachments.length > 0;
+
+      // Build indicators
+      let indicators = '';
+
+      // Attachment indicators
+      if (hasAttachments) {
+        const imageCount = msg.attachments.filter(a => a.isImage).length;
+        const fileCount = msg.attachments.length - imageCount;
+        if (imageCount > 0) {
+          indicators += `<span class="indicator attachment-img" title="${imageCount} image attachment(s)">&#128444; ${imageCount}</span>`;
+        }
+        if (fileCount > 0) {
+          indicators += `<span class="indicator attachment-file" title="${fileCount} file attachment(s)">&#128206; ${fileCount}</span>`;
+        }
+      }
+
+      // Decision indicator (only for non-bot messages that triggered evaluation)
+      if (!isBot && relation && relation.decision) {
+        const decision = relation.decision;
+        if (decision.should_respond) {
+          indicators += `<span class="indicator decision-yes" title="Decision: RESPOND - ${escapeHtml(decision.reason)}">&#129504;&#10003;</span>`;
+        } else {
+          indicators += `<span class="indicator decision-no" title="Decision: PASS - ${escapeHtml(decision.reason)}">&#129504;&#10007;</span>`;
+        }
+      }
+
+      // Triggered response indicator (only for non-bot messages)
+      if (!isBot && relation && relation.triggeredResponse) {
+        indicators += `<span class="indicator triggered" title="This message triggered a response">&#8617;&#65039;</span>`;
+      }
+
+      // Bot badge
+      let botBadge = '';
+      if (isBot && relation && relation.response) {
+        const responseType = relation.response.response_type;
+        if (responseType === 'direct') {
+          botBadge = '<span class="bot-badge direct">DIRECT</span>';
+        } else if (responseType === 'autonomous') {
+          botBadge = '<span class="bot-badge autonomous">AUTO</span>';
+        }
+      }
+
+      const content = msg.content ? escapeHtml(truncate(msg.content)) : '<em>(no text content)</em>';
+
+      return `
+        <div class="message-bubble ${isBot ? 'bot' : ''}" onclick="showMessageDetails('${msg.id}')">
+          <div class="message-header">
+            <span class="message-author">${escapeHtml(msg.author_name)}</span>
+            ${botBadge}
+            <span class="message-time">${formatTime(msg.created_at)}</span>
+            <div class="message-indicators">${indicators}</div>
+          </div>
+          <div class="message-content">${content}</div>
+        </div>
+      `;
+    }
+
+    // Message detail modal
     async function showMessageDetails(messageId) {
       openModal();
       const modalBody = document.getElementById('modal-body');
-      modalBody.innerHTML = '<div class="loading">Loading message details...</div>';
+      modalBody.innerHTML = '<div class="loading-spinner">Loading message details...</div>';
 
       try {
         const data = await fetchJson(`${API_BASE}/messages/${messageId}/relations`);
@@ -737,7 +891,7 @@
             </div>
             <div class="meta-item">
               <div class="meta-label">Time</div>
-              <div class="meta-value">${formatTime(message.created_at)}</div>
+              <div class="meta-value">${formatDateTime(message.created_at)}</div>
             </div>
             ${message.reply_to_message_id ? `
             <div class="meta-item">
@@ -768,7 +922,7 @@
                     <img class="attachment-thumb" src="${att.url}" alt="${escapeHtml(att.name)}" onclick="window.open('${att.url}', '_blank')" />
                   ` : `
                     <div class="attachment-thumb" style="display: flex; align-items: center; justify-content: center; background: var(--bg-card);">
-                      <span style="font-size: 2rem;">📎</span>
+                      <span style="font-size: 2rem;">&#128206;</span>
                     </div>
                   `}
                   <div class="attachment-info">
@@ -808,7 +962,7 @@
               </div>
               <div class="meta-item">
                 <div class="meta-label">Evaluated At</div>
-                <div class="meta-value">${formatTime(decision.evaluated_at)}</div>
+                <div class="meta-value">${formatDateTime(decision.evaluated_at)}</div>
               </div>
               <div class="meta-item">
                 <div class="meta-label">Messages Evaluated</div>
@@ -826,7 +980,7 @@
           html += `
             <div class="modal-section has-content">
               <div class="collapsible-header collapsed" onclick="toggleCollapsible(this)">
-                <h3>Evaluation Prompt <span class="toggle-icon">▼</span></h3>
+                <h3>Evaluation Prompt <span class="toggle-icon">&#9660;</span></h3>
               </div>
               <div class="collapsible-content collapsed">
                 <div class="json-view">
@@ -854,7 +1008,7 @@
               </div>
               <div class="meta-item">
                 <div class="meta-label">Time</div>
-                <div class="meta-value">${formatTime(response.created_at)}</div>
+                <div class="meta-value">${formatDateTime(response.created_at)}</div>
               </div>
             </div>
             <div class="message-full-content" style="border-left: 3px solid var(--accent-green);">
@@ -868,7 +1022,7 @@
           html += `
             <div class="modal-section has-content">
               <div class="collapsible-header collapsed" onclick="toggleCollapsible(this)">
-                <h3>Response Prompt <span class="toggle-icon">▼</span></h3>
+                <h3>Response Prompt <span class="toggle-icon">&#9660;</span></h3>
               </div>
               <div class="collapsible-content collapsed">
                 <div class="json-view">
@@ -893,342 +1047,21 @@
       modalBody.innerHTML = html;
     }
 
-    async function showDecisionDetails(decisionId) {
-      openModal();
-      const modalBody = document.getElementById('modal-body');
-      modalBody.innerHTML = '<div class="loading">Loading decision details...</div>';
-
-      try {
-        const [decision, prompt] = await Promise.all([
-          fetchJson(`${API_BASE}/decisions/${decisionId}`),
-          fetchJson(`${API_BASE}/decisions/${decisionId}/prompt`).catch(() => null)
-        ]);
-        renderDecisionModal(decision, prompt);
-      } catch (error) {
-        console.error('Failed to load decision details:', error);
-        modalBody.innerHTML = '<div class="empty-state">Failed to load decision details</div>';
-      }
-    }
-
-    function renderDecisionModal(decision, prompt) {
-      const modalBody = document.getElementById('modal-body');
-
-      let html = `
-        <div class="modal-section">
-          <h3>Decision Info <span class="section-badge ${decision.should_respond ? 'yes' : ''}" style="${!decision.should_respond ? 'background: var(--accent-red); color: white;' : ''}">${decision.should_respond ? 'RESPONDED' : 'PASSED'}</span></h3>
-          <div class="message-meta">
-            <div class="meta-item">
-              <div class="meta-label">Decision ID</div>
-              <div class="meta-value">${decision.id}</div>
-            </div>
-            <div class="meta-item">
-              <div class="meta-label">Channel</div>
-              <div class="meta-value">${decision.channel_id}</div>
-            </div>
-            <div class="meta-item">
-              <div class="meta-label">Evaluated At</div>
-              <div class="meta-value">${formatTime(decision.evaluated_at)}</div>
-            </div>
-            <div class="meta-item">
-              <div class="meta-label">Messages Evaluated</div>
-              <div class="meta-value">${decision.messages_evaluated}</div>
-            </div>
-            ${decision.reply_to_message_id ? `
-            <div class="meta-item">
-              <div class="meta-label">Reply To</div>
-              <div class="meta-value"><a href="#" onclick="showMessageDetails('${decision.reply_to_message_id}'); return false;">${decision.reply_to_message_id}</a></div>
-            </div>
-            ` : ''}
-            <div class="meta-item">
-              <div class="meta-label">Response Sent</div>
-              <div class="meta-value">${decision.response_sent ? 'Yes' : 'No'}</div>
-            </div>
-          </div>
-          <div class="message-full-content" style="border-left: 3px solid ${decision.should_respond ? 'var(--accent-green)' : 'var(--accent-red)'};">
-            ${escapeHtml(decision.reason)}
-          </div>
-        </div>
-      `;
-
-      // Evaluated messages
-      if (decision.evaluated_message_ids && decision.evaluated_message_ids.length > 0) {
-        html += `
-          <div class="modal-section">
-            <h3>Evaluated Messages <span class="section-badge">${decision.evaluated_message_ids.length}</span></h3>
-            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-              ${decision.evaluated_message_ids.map(id => `
-                <a href="#" onclick="showMessageDetails('${id}'); return false;" style="color: var(--accent-blue); font-size: 0.85rem;">${id.slice(-8)}</a>
-              `).join('')}
-            </div>
-          </div>
-        `;
-      }
-
-      // Prompt section
-      if (prompt) {
-        html += `
-          <div class="modal-section has-content">
-            <div class="collapsible-header collapsed" onclick="toggleCollapsible(this)">
-              <h3>Evaluation Prompt <span class="toggle-icon">▼</span></h3>
-            </div>
-            <div class="collapsible-content collapsed">
-              <div class="json-view">
-                <pre>${escapeHtml(formatJson(prompt.messages_json))}</pre>
-              </div>
-            </div>
-          </div>
-        `;
-      }
-
-      modalBody.innerHTML = html;
-    }
-
-    async function showResponseDetails(responseId) {
-      openModal();
-      const modalBody = document.getElementById('modal-body');
-      modalBody.innerHTML = '<div class="loading">Loading response details...</div>';
-
-      try {
-        const [response, prompt] = await Promise.all([
-          fetchJson(`${API_BASE}/responses/${responseId}`),
-          fetchJson(`${API_BASE}/responses/${responseId}/prompt`).catch(() => null)
-        ]);
-        renderResponseModal(response, prompt);
-      } catch (error) {
-        console.error('Failed to load response details:', error);
-        modalBody.innerHTML = '<div class="empty-state">Failed to load response details</div>';
-      }
-    }
-
-    function renderResponseModal(response, prompt) {
-      const modalBody = document.getElementById('modal-body');
-
-      let html = `
-        <div class="modal-section">
-          <h3>Response Info <span class="section-badge" style="background: ${response.response_type === 'direct' ? 'var(--accent-blue)' : 'var(--accent-yellow)'}; color: ${response.response_type === 'direct' ? 'white' : 'var(--bg-primary)'};">${response.response_type.toUpperCase()}</span></h3>
-          <div class="message-meta">
-            <div class="meta-item">
-              <div class="meta-label">Response ID</div>
-              <div class="meta-value">${response.id}</div>
-            </div>
-            <div class="meta-item">
-              <div class="meta-label">Channel</div>
-              <div class="meta-value">${response.channel_id}</div>
-            </div>
-            <div class="meta-item">
-              <div class="meta-label">Message ID</div>
-              <div class="meta-value">${response.message_id || 'N/A'}</div>
-            </div>
-            <div class="meta-item">
-              <div class="meta-label">Time</div>
-              <div class="meta-value">${formatTime(response.created_at)}</div>
-            </div>
-            ${response.trigger_message_id ? `
-            <div class="meta-item">
-              <div class="meta-label">Triggered By</div>
-              <div class="meta-value"><a href="#" onclick="showMessageDetails('${response.trigger_message_id}'); return false;">${response.trigger_message_id}</a></div>
-            </div>
-            ` : ''}
-          </div>
-          <div class="message-full-content" style="border-left: 3px solid var(--accent-green);">
-            ${escapeHtml(response.content)}
-          </div>
-        </div>
-      `;
-
-      // Prompt section
-      if (prompt) {
-        html += `
-          <div class="modal-section has-content">
-            <div class="collapsible-header collapsed" onclick="toggleCollapsible(this)">
-              <h3>Response Prompt <span class="toggle-icon">▼</span></h3>
-            </div>
-            <div class="collapsible-content collapsed">
-              <div class="json-view">
-                <pre>${escapeHtml(formatJson(prompt.messages_json))}</pre>
-              </div>
-            </div>
-          </div>
-        `;
-      }
-
-      modalBody.innerHTML = html;
-    }
-
-    async function loadStats() {
-      try {
-        const stats = await fetchJson(`${API_BASE}/stats`);
-        document.getElementById('stat-messages').textContent = stats.totalMessages.toLocaleString();
-        document.getElementById('stat-decisions').textContent = stats.totalDecisions.toLocaleString();
-        document.getElementById('stat-responses').textContent = stats.totalResponses.toLocaleString();
-        document.getElementById('stat-autonomous').textContent = stats.autonomousResponses.toLocaleString();
-        document.getElementById('stat-direct').textContent = stats.directResponses.toLocaleString();
-      } catch (error) {
-        console.error('Failed to load stats:', error);
-      }
-    }
-
-    async function loadChannels() {
-      try {
-        channels = await fetchJson(`${API_BASE}/channels`);
-        const selects = ['messages-channel', 'decisions-channel'];
-
-        selects.forEach(selectId => {
-          const select = document.getElementById(selectId);
-          // Clear existing options except the first one
-          while (select.options.length > 1) {
-            select.remove(1);
-          }
-
-          channels.forEach(ch => {
-            const option = document.createElement('option');
-            option.value = ch.channel_id;
-            option.textContent = `Channel ${ch.channel_id.slice(-6)} (${ch.message_count} msgs)`;
-            select.appendChild(option);
-          });
-        });
-      } catch (error) {
-        console.error('Failed to load channels:', error);
-      }
-    }
-
-    async function loadMessages() {
-      const container = document.getElementById('messages-list');
-      const channelId = document.getElementById('messages-channel').value;
-
-      container.innerHTML = '<div class="loading">Loading...</div>';
-
-      try {
-        // Use includeRelations=true to get parsed attachment/vision data
-        let url = `${API_BASE}/channels/${channelId}/messages?limit=30&includeRelations=true`;
-        if (!channelId) {
-          // Load from first available channel or show empty state
-          if (channels.length > 0) {
-            url = `${API_BASE}/channels/${channels[0].channel_id}/messages?limit=30&includeRelations=true`;
-          } else {
-            container.innerHTML = '<div class="empty-state">No messages yet</div>';
-            return;
-          }
-        }
-
-        const messages = await fetchJson(url);
-
-        if (messages.length === 0) {
-          container.innerHTML = '<div class="empty-state">No messages in this channel</div>';
-          return;
-        }
-
-        // Reverse to show oldest first (for reading)
-        const reversed = [...messages].reverse();
-
-        container.innerHTML = reversed.map(msg => {
-          const hasAttachments = msg.attachments && msg.attachments.length > 0;
-          const hasVision = msg.vision_descriptions && msg.vision_descriptions.length > 0;
-
-          let badges = '';
-          if (hasAttachments) {
-            const imageCount = msg.attachments.filter(a => a.isImage).length;
-            const fileCount = msg.attachments.length - imageCount;
-            if (imageCount > 0) badges += `<span class="msg-badge img-badge" title="${imageCount} image(s)${hasVision ? ' (described)' : ''}">🖼 ${imageCount}</span>`;
-            if (fileCount > 0) badges += `<span class="msg-badge file-badge" title="${fileCount} file(s)">📎 ${fileCount}</span>`;
-          }
-
-          return `
-            <div class="message-item clickable ${msg.is_bot_message ? 'bot' : ''}" onclick="showMessageDetails('${msg.id}')">
-              <div class="message-header">
-                <span class="message-author">${escapeHtml(msg.author_name)}${msg.is_bot_message ? ' (Bot)' : ''}</span>
-                <span class="message-badges">${badges}</span>
-                <span class="message-time">${formatTime(msg.created_at)}</span>
-              </div>
-              <div class="message-content">${escapeHtml(truncate(msg.content)) || '<em>(no text)</em>'}</div>
-            </div>
-          `;
-        }).join('');
-      } catch (error) {
-        console.error('Failed to load messages:', error);
-        container.innerHTML = '<div class="empty-state">Failed to load messages</div>';
-      }
-    }
-
-    async function loadDecisions() {
-      const container = document.getElementById('decisions-list');
-      const channelId = document.getElementById('decisions-channel').value;
-
-      container.innerHTML = '<div class="loading">Loading...</div>';
-
-      try {
-        let url = channelId
-          ? `${API_BASE}/channels/${channelId}/decisions?limit=30`
-          : `${API_BASE}/decisions?limit=30`;
-
-        const decisions = await fetchJson(url);
-
-        if (decisions.length === 0) {
-          container.innerHTML = '<div class="empty-state">No decisions logged yet</div>';
-          return;
-        }
-
-        container.innerHTML = decisions.map(d => `
-          <div class="decision-item clickable ${d.should_respond ? 'responded' : ''}" onclick="showDecisionDetails(${d.id})">
-            <div class="decision-header">
-              <span class="decision-badge ${d.should_respond ? 'yes' : 'no'}">
-                ${d.should_respond ? 'RESPONDED' : 'PASSED'}
-              </span>
-              <span class="message-time">${formatTime(d.evaluated_at)}</span>
-            </div>
-            <div class="decision-reason">"${escapeHtml(d.reason)}"</div>
-            <div class="decision-meta">
-              Evaluated ${d.messages_evaluated} messages
-              ${d.reply_to_message_id ? ' | Replying to specific message' : ''}
-            </div>
-          </div>
-        `).join('');
-      } catch (error) {
-        console.error('Failed to load decisions:', error);
-        container.innerHTML = '<div class="empty-state">Failed to load decisions</div>';
-      }
-    }
-
-    async function loadResponses() {
-      const container = document.getElementById('responses-list');
-      container.innerHTML = '<div class="loading">Loading...</div>';
-
-      try {
-        const responses = await fetchJson(`${API_BASE}/responses?limit=20`);
-
-        if (responses.length === 0) {
-          container.innerHTML = '<div class="empty-state">No responses yet</div>';
-          return;
-        }
-
-        container.innerHTML = responses.map(r => `
-          <div class="response-item clickable" onclick="showResponseDetails(${r.id})" style="cursor: pointer;">
-            <div class="response-header">
-              <span class="response-type ${r.response_type}">${r.response_type.toUpperCase()}</span>
-              <span class="message-time">${formatTime(r.created_at)}</span>
-            </div>
-            <div class="response-content">${escapeHtml(truncate(r.content, 300))}</div>
-          </div>
-        `).join('');
-      } catch (error) {
-        console.error('Failed to load responses:', error);
-        container.innerHTML = '<div class="empty-state">Failed to load responses</div>';
-      }
-    }
-
-    async function refreshAll() {
-      await loadStats();
+    // Refresh function
+    async function refreshChat() {
+      isUserScrolled = false; // Reset scroll state on manual refresh
       await loadChannels();
-      await loadMessages();
-      await loadDecisions();
-      await loadResponses();
+      await loadChat();
     }
 
-    // Initial load
-    refreshAll();
+    // Initialize
+    async function init() {
+      setupScrollHandler();
+      await loadChannels();
+      await loadChat();
+    }
 
-    // Auto-refresh every 30 seconds
-    setInterval(refreshAll, 30000);
+    init();
   </script>
 </body>
 </html>
