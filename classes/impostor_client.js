@@ -16,8 +16,8 @@ class ImpostorClient {
       ],
     });
     this.openai = new OpenAI({
-      apiKey: config.generator.openrouter.api_key,
-      baseURL: config.generator.openrouter.base_url,
+      apiKey: config.generator.deepseek.api_key,
+      baseURL: config.generator.deepseek.base_url,
     });
 
     // Message queue system
@@ -156,7 +156,7 @@ class ImpostorClient {
     this.logger.debug("Generated Messages...", conversationLog);
 
     // First API call - check if tools are needed
-    let response = await this.callOpenRouter(conversationLog);
+    let response = await this.callDeepSeek(conversationLog);
     let structuredResponse = await this.parseStructuredResponse(response);
 
     let iterationCount = 0;
@@ -206,7 +206,7 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
       }
 
       // Next API call with tool results
-      response = await this.callOpenRouter(conversationLog);
+      response = await this.callDeepSeek(conversationLog);
       structuredResponse = await this.parseStructuredResponse(response);
 
       // If not continuing to iterate, break the loop
@@ -238,19 +238,13 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
     return replyMessage;
   }
 
-  async callOpenRouter(conversationLog) {
+  async callDeepSeek(conversationLog) {
     return await this.openai.chat.completions.create({
-      model: this.config.generator.openrouter.model,
+      model: this.config.generator.deepseek.model,
       messages: conversationLog,
-      max_tokens: this.config.generator.openrouter.max_tokens,
-      temperature: this.config.generator.openrouter.temperature,
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: "isaacgpt_response",
-          schema: this.contextUtils.constructor.response_schema
-        }
-      }
+      max_tokens: this.config.generator.deepseek.max_tokens,
+      temperature: this.config.generator.deepseek.temperature,
+      response_format: { type: "json_object" }
     });
   }
 

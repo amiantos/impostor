@@ -225,6 +225,15 @@ Do not include any text outside of this JSON structure. The "message" field shou
       if (role === "user") {
         const username = msg.author.username || msg.author.displayName || "Unknown";
         content = `${username}: ${content}`;
+      } else {
+        // Wrap assistant messages in JSON format so the model sees consistent formatting
+        content = JSON.stringify({
+          needs_tool: false,
+          continue_iterating: false,
+          message: content,
+          mood: "jaded",
+          tools_used: []
+        });
       }
 
       let messageFormatted = {
