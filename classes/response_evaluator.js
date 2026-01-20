@@ -63,6 +63,20 @@ Send a standalone message when:
   }
 
   /**
+   * Calculate the bot's message ratio in recent history
+   * @param {Array} allRecentMessages - All recent messages (with parsed JSON)
+   * @param {string} botUserId - Bot's user ID
+   * @returns {number} Ratio from 0.0 to 1.0
+   */
+  calculateBotRatio(allRecentMessages, botUserId) {
+    if (!allRecentMessages || allRecentMessages.length === 0) return 0;
+    const botMessages = allRecentMessages.filter(
+      (m) => m.is_bot_message || m.author_id === botUserId
+    );
+    return botMessages.length / allRecentMessages.length;
+  }
+
+  /**
    * Format messages from database for the AI evaluation
    * Includes vision descriptions when available
    * @param {Array} messages - Array of message objects from database (with parsed JSON)
@@ -98,9 +112,10 @@ Send a standalone message when:
    * @param {Array} messages - Array of message objects from database (with parsed JSON)
    * @param {string} botUserId - The bot's Discord user ID
    * @param {string} channelId - The channel ID
+   * @param {number|null} botRatio - Bot's message ratio in recent history (0.0-1.0)
    * @returns {Object} Decision object { should_respond, reply_to_message_id, reason, decisionId }
    */
-  async shouldRespond(messages, botUserId, channelId) {
+  async shouldRespond(messages, botUserId, channelId, botRatio = null) {
     if (!messages || messages.length === 0) {
       this.logger.debug("No messages to evaluate");
       return { should_respond: false, reply_to_message_id: null, reason: "No messages to evaluate", decisionId: null };
@@ -119,9 +134,17 @@ Send a standalone message when:
       .join("\n");
 
     const systemPrompt = this.buildDecisionPrompt();
+
+    // Add ratio context if provided
+    const ratioContext =
+      botRatio !== null
+        ? `\nIsaacGPT's recent message ratio: ${(botRatio * 100).toFixed(0)}% of the last 50 messages. If above 25%, be more reluctant to respond.`
+        : "";
+
     const userPrompt = `Here is the recent conversation (message IDs in brackets):
 
 ${conversationContext}
+${ratioContext}
 
 Should IsaacGPT respond to this conversation? Remember to respond with valid JSON only.`;
 

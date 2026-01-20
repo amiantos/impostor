@@ -169,20 +169,48 @@ class ImpostorClient {
    * @param {Channel} channel - Discord channel
    */
   async evaluateAutonomousResponse(channel) {
-    // Get messages since last bot response for context (with parsed JSON)
+    // Get ALL recent messages for ratio calculation (50 messages)
     const recentMessages = this.db.getRecentMessages(channel.id, 50, true);
-    const messagesSinceResponse = this.getMessagesSinceLastBotResponseFromParsed(recentMessages);
+
+    // Calculate bot dominance ratio
+    const botRatio = this.evaluator.calculateBotRatio(
+      recentMessages,
+      this.client.user.id
+    );
+
+    // Hard cap at 40%: skip if dominating too much
+    if (botRatio > 0.4) {
+      this.logger.debug(
+        `Skipping evaluation - bot ratio ${(botRatio * 100).toFixed(0)}% exceeds 40%`
+      );
+      return;
+    }
+
+    // Soft cap at 15%: probabilistic skip
+    if (botRatio > 0.15) {
+      const skipChance = (botRatio - 0.15) * 2; // 25% ratio = 20% skip chance
+      if (Math.random() < skipChance) {
+        this.logger.debug(
+          `Randomly skipping evaluation - bot ratio ${(botRatio * 100).toFixed(0)}%`
+        );
+        return;
+      }
+    }
+
+    const messagesSinceResponse =
+      this.getMessagesSinceLastBotResponseFromParsed(recentMessages);
 
     if (messagesSinceResponse.length === 0) {
       this.logger.debug("No messages to evaluate for autonomous response");
       return;
     }
 
-    // Ask AI if we should respond
+    // Ask AI if we should respond (pass ratio for context)
     const decision = await this.evaluator.shouldRespond(
       messagesSinceResponse,
       this.client.user.id,
-      channel.id
+      channel.id,
+      botRatio
     );
 
     if (decision.should_respond) {
