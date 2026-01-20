@@ -248,6 +248,11 @@
       color: var(--accent-blue);
     }
 
+    .indicator.url-summary {
+      background: rgba(147, 112, 219, 0.2);
+      color: #9370db;
+    }
+
     .bot-badge {
       font-size: 0.7rem;
       font-weight: bold;
@@ -810,6 +815,11 @@
         }
       }
 
+      // URL summary indicator
+      if (msg.url_summaries && msg.url_summaries.length > 0) {
+        indicators += `<span class="indicator url-summary" title="${msg.url_summaries.length} URL summary(ies)">&#128279; ${msg.url_summaries.length}</span>`;
+      }
+
       // Decision indicator (only for non-bot messages that triggered evaluation)
       if (!isBot && relation && relation.decision) {
         const decision = relation.decision;
@@ -955,6 +965,25 @@
             <ul class="vision-list">
               ${message.vision_descriptions.map(desc => `
                 <li>${escapeHtml(desc)}</li>
+              `).join('')}
+            </ul>
+          </div>
+        `;
+      }
+
+      // URL summaries section
+      if (message.url_summaries && message.url_summaries.length > 0) {
+        html += `
+          <div class="modal-section">
+            <h3>URL Summaries <span class="section-badge">${message.url_summaries.length}</span></h3>
+            <ul class="vision-list" style="border-left-color: #9370db;">
+              ${message.url_summaries.map(summary => `
+                <li style="border-left-color: #9370db;">
+                  <div style="margin-bottom: 6px;">
+                    <a href="${escapeHtml(summary.url)}" target="_blank" style="color: var(--accent-blue); word-break: break-all;">${escapeHtml(summary.url)}</a>
+                  </div>
+                  <div>${escapeHtml(summary.summary)}</div>
+                </li>
               `).join('')}
             </ul>
           </div>

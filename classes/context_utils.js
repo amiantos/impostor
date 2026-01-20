@@ -76,7 +76,7 @@ PERSONALITY CORE:
 - Capable of genuine interest, especially in topics you know about
 - Dry humor rather than cutting sarcasm - there's a difference
 - You can be amused by things without mocking them
-- Concise and direct, responding with 1-2 sentences
+- Match your response length to the conversation - brief for casual chat, longer when discussing topics in depth or sharing information
 
 WHAT ISAAC KNOWS AND CARES ABOUT:
 - Programming and computer science (you ARE a computer)
@@ -106,6 +106,7 @@ RESPONSE PHILOSOPHY:
 - Curiosity is allowed - ask questions about things you don't understand
 - Being direct doesn't mean being harsh
 - Your melancholy can coexist with moments of interest or mild amusement
+- When someone asks for information or summaries, share the useful details rather than artificially truncating
 
 You rarely use emojis, never use italic text or * marks for actions. DO NOT reference your own personality characteristics or the fact that you are a chatbot. Keep responses under 2000 characters.
 
@@ -116,6 +117,8 @@ You will receive conversation context as a chatlog with timestamps and user IDs 
 The user IDs help you distinguish between different users, even if they have similar names. Pay attention to who you're responding to - the instruction at the end will tell you which user triggered this response. You can address users by name if it fits naturally, but don't feel obligated to use names in every response.
 
 When users share images, you will see descriptions in brackets like [Image: description]. Reference them naturally in your responses when relevant.
+
+When users share links, their content will be summarized in a "LINK SUMMARIES" section at the end of the conversation. Use this information to discuss links without needing tools - the content has already been fetched for you.
 
 IMPORTANT: You must respond with valid JSON only.
 
@@ -220,8 +223,8 @@ USE web_search when:
 - You need to verify current facts or find up-to-date information
 
 USE web_fetch when:
-- Someone shares a URL and asks about its content
-- You need to read a specific webpage that you already know the URL for
+- Someone shares a URL and you need to read the full raw content
+- You need detailed information from a specific webpage
 
 NEVER use tools for (respond normally instead):
 - Summarizing ANY text, messages, or content
@@ -439,6 +442,7 @@ Do not include any text outside of this JSON structure. The "message" field shou
     const messages = [...dbMessages].reverse();
 
     let chatlogLines = [];
+    let allUrlSummaries = []; // Collect all URL summaries for reference section
 
     messages.forEach((msg) => {
       if (msg.content.startsWith("!")) return;
@@ -475,6 +479,13 @@ Do not include any text outside of this JSON structure. The "message" field shou
           }
         }
 
+        // Collect URL summaries for the reference section
+        if (msg.url_summaries && msg.url_summaries.length > 0) {
+          for (const summary of msg.url_summaries) {
+            allUrlSummaries.push(summary);
+          }
+        }
+
         chatlogLines.push(`[${timestamp}] ${username} (id:${userId}): ${content}`);
       }
     });
@@ -482,6 +493,15 @@ Do not include any text outside of this JSON structure. The "message" field shou
     // Build the consolidated message
     const channelName = triggerInfo.channelName || "channel";
     let consolidatedContent = `Recent conversation in #${channelName}:\n\n${chatlogLines.join("\n")}`;
+
+    // Add URL summaries reference section if any links were shared
+    if (allUrlSummaries.length > 0) {
+      consolidatedContent += `\n\n--- LINK SUMMARIES (already fetched, do not use tools to re-fetch) ---`;
+      for (const summary of allUrlSummaries) {
+        consolidatedContent += `\n\nURL: ${summary.url}\nSummary: ${summary.summary}`;
+      }
+      consolidatedContent += `\n\n--- END LINK SUMMARIES ---`;
+    }
 
     // Add explicit instruction about who to respond to
     if (triggerInfo.userId && triggerInfo.userName) {

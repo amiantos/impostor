@@ -5,11 +5,12 @@
  * evaluations should be triggered based on message count and time thresholds.
  */
 class MessageTracker {
-  constructor(logger, database, config, visionService = null) {
+  constructor(logger, database, config, visionService = null, urlSummarizeService = null) {
     this.logger = logger;
     this.db = database;
     this.config = config.autonomous || {};
     this.visionService = visionService;
+    this.urlSummarizeService = urlSummarizeService;
 
     // In-memory tracking for evaluation timing (not persisted)
     this.lastEvaluation = new Map(); // channelId → timestamp
@@ -25,15 +26,24 @@ class MessageTracker {
   }
 
   /**
+   * Set URL summarize service reference (for late initialization)
+   * @param {UrlSummarizeService} urlSummarizeService - URL summarize service instance
+   */
+  setUrlSummarizeService(urlSummarizeService) {
+    this.urlSummarizeService = urlSummarizeService;
+  }
+
+  /**
    * Track a new message with enhanced data
    * @param {Message} message - Discord message object
    * @param {Object} options - Options for tracking
    * @param {boolean} options.isBotMessage - Whether this message is from the bot
    * @param {boolean} options.processVision - Whether to process vision immediately (default true)
+   * @param {boolean} options.processUrls - Whether to process URLs immediately (default true)
    * @returns {Promise<Object>} The stored message data
    */
   async addMessage(message, options = {}) {
-    const { isBotMessage = false, processVision = true } = typeof options === 'boolean'
+    const { isBotMessage = false, processVision = true, processUrls = true } = typeof options === 'boolean'
       ? { isBotMessage: options }
       : options;
 
@@ -55,6 +65,12 @@ class MessageTracker {
       }
     }
 
+    // Process URLs immediately if enabled and not a bot message
+    let urlSummaries = null;
+    if (processUrls && this.urlSummarizeService && !isBotMessage) {
+      urlSummaries = await this.urlSummarizeService.processMessageImmediate(message);
+    }
+
     // Store enhanced message in database
     this.db.insertMessageEnhanced({
       id: message.id,
@@ -67,6 +83,7 @@ class MessageTracker {
       isBotMessage,
       attachments,
       visionDescriptions,
+      urlSummaries,
       replyToMessageId,
       isBackfilled: false
     });
@@ -80,7 +97,8 @@ class MessageTracker {
 
     return {
       id: message.id,
-      visionDescriptions
+      visionDescriptions,
+      urlSummaries
     };
   }
 

@@ -92,6 +92,12 @@ class DatabaseManager {
       CREATE INDEX IF NOT EXISTS idx_prompts_response ON prompts(response_id);
       CREATE INDEX IF NOT EXISTS idx_prompts_decision ON prompts(decision_id);
     `);
+
+    // Migration: Add url_summaries column to messages
+    if (!columnNames.includes("url_summaries")) {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN url_summaries TEXT`);
+      this.logger.info("Migration: Added url_summaries column to messages");
+    }
   }
 
   createTables() {
@@ -175,15 +181,16 @@ class DatabaseManager {
     isBotMessage = false,
     attachments = null,
     visionDescriptions = null,
+    urlSummaries = null,
     replyToMessageId = null,
     isBackfilled = false
   }) {
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO messages (
         id, channel_id, channel_name, author_id, author_name, content, created_at,
-        is_bot_message, attachments, vision_descriptions, reply_to_message_id, is_backfilled
+        is_bot_message, attachments, vision_descriptions, url_summaries, reply_to_message_id, is_backfilled
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -197,6 +204,7 @@ class DatabaseManager {
       isBotMessage ? 1 : 0,
       attachments ? JSON.stringify(attachments) : null,
       visionDescriptions ? JSON.stringify(visionDescriptions) : null,
+      urlSummaries ? JSON.stringify(urlSummaries) : null,
       replyToMessageId,
       isBackfilled ? 1 : 0
     );
@@ -222,6 +230,18 @@ class DatabaseManager {
       UPDATE messages SET vision_descriptions = ? WHERE id = ?
     `);
     stmt.run(JSON.stringify(visionDescriptions), messageId);
+  }
+
+  /**
+   * Update URL summaries for an existing message
+   * @param {string} messageId - Discord message ID
+   * @param {Array} urlSummaries - Array of URL summary objects
+   */
+  updateMessageUrlSummaries(messageId, urlSummaries) {
+    const stmt = this.db.prepare(`
+      UPDATE messages SET url_summaries = ? WHERE id = ?
+    `);
+    stmt.run(JSON.stringify(urlSummaries), messageId);
   }
 
   /**
@@ -422,6 +442,7 @@ class DatabaseManager {
       ...record,
       attachments: record.attachments ? JSON.parse(record.attachments) : null,
       vision_descriptions: record.vision_descriptions ? JSON.parse(record.vision_descriptions) : null,
+      url_summaries: record.url_summaries ? JSON.parse(record.url_summaries) : null,
       is_bot_message: !!record.is_bot_message,
       is_backfilled: !!record.is_backfilled
     };

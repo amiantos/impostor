@@ -7,6 +7,7 @@ const DatabaseManager = require("./database");
 const MessageTracker = require("./message_tracker");
 const ResponseEvaluator = require("./response_evaluator");
 const VisionService = require("./vision_service");
+const UrlSummarizeService = require("./url_summarize_service");
 const BackfillService = require("./backfill_service");
 const { OpenAI } = require("openai");
 
@@ -46,12 +47,15 @@ class ImpostorClient {
     // Initialize vision service with database for caching
     this.visionService = new VisionService(logger, config, this.db);
 
-    // Initialize message tracker with vision service
-    this.messageTracker = new MessageTracker(logger, this.db, config, this.visionService);
+    // Initialize URL summarize service with database for caching
+    this.urlSummarizeService = new UrlSummarizeService(logger, config, this.db);
+
+    // Initialize message tracker with vision and URL summarize services
+    this.messageTracker = new MessageTracker(logger, this.db, config, this.visionService, this.urlSummarizeService);
     this.evaluator = new ResponseEvaluator(logger, config, this.db, this.visionService);
 
     // Initialize backfill service
-    this.backfillService = new BackfillService(logger, this.db, this.visionService, config);
+    this.backfillService = new BackfillService(logger, this.db, this.visionService, this.urlSummarizeService, config);
 
     // Set up periodic maintenance
     this.maintenanceInterval = setInterval(() => {
@@ -369,7 +373,7 @@ class ImpostorClient {
    * Build context from database instead of fetching from Discord
    * @param {string} channelId - Discord channel ID
    * @param {number} limit - Maximum messages to fetch
-   * @returns {Object} Context object with messages and imageDescriptions
+   * @returns {Object} Context object with messages, imageDescriptions, and urlSummaries
    */
   buildContextFromDatabase(channelId, limit = 40) {
     // Get recent messages from database (parsed JSON)
@@ -378,9 +382,13 @@ class ImpostorClient {
     // Build image descriptions map from cached vision data
     const imageDescriptions = this.visionService.buildImageDescriptionsFromDB(dbMessages);
 
+    // Build URL summaries map from cached URL data
+    const urlSummaries = this.urlSummarizeService.buildUrlSummariesFromDB(dbMessages);
+
     return {
       dbMessages,
-      imageDescriptions
+      imageDescriptions,
+      urlSummaries
     };
   }
 
