@@ -36,7 +36,6 @@ npm start
 | **ResponseEvaluator** | AI evaluation for autonomous responses (should bot respond?) |
 | **VisionService** | GPT-4o image recognition, caches descriptions in DB |
 | **UrlSummarizeService** | Kagi Universal Summarizer for shared links |
-| **BackfillService** | Loads Discord message history on startup |
 | **PythonTool** | Executes Python code via subprocess |
 | **WebSearchTool** | Kagi FastGPT for current information |
 | **WebFetchTool** | Mozilla Readability + Cheerio for web content extraction |

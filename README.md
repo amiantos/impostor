@@ -14,7 +14,6 @@ A Discord chatbot powered by DeepSeek API, featuring a built-in Isaac personalit
 - **Python Tool Integration**: Executes Python code to solve problems and perform calculations
 - **Web Dashboard**: Debug interface for viewing decisions, responses, and prompts
 - **SQLite Database**: Tracks all messages, responses, and AI decisions
-- **Message Backfill**: Loads recent message history on startup for context
 
 ## How It Works
 
@@ -124,13 +123,6 @@ npm start
         "enabled": true,
         "port": 3000
     },
-    "backfill": {
-        "enabled": true,
-        "message_limit": 20,
-        "process_vision": true,
-        "process_urls": false,
-        "max_channel_age_days": 14
-    },
     "kagi": {
         "api_key": "<KAGI API KEY>"
     },
@@ -155,9 +147,6 @@ npm start
 | `openai` | | OpenAI API settings for vision (GPT-4o) |
 | `web.enabled` | | Enable web dashboard |
 | `web.port` | | Dashboard port (default: 3000) |
-| `backfill.enabled` | | Load message history on startup |
-| `backfill.message_limit` | | Messages to load per channel (default: 20) |
-| `backfill.process_urls` | | Summarize URLs during backfill (default: false) |
 | `kagi.api_key` | | Kagi API key for web search and URL summarization |
 | `url_summarize.enabled` | | Enable automatic URL summarization (default: true) |
 | `url_summarize.summary_type` | | "takeaway" for bullets, "summary" for paragraphs |

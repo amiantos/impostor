@@ -8,7 +8,6 @@ const MessageTracker = require("./message_tracker");
 const ResponseEvaluator = require("./response_evaluator");
 const VisionService = require("./vision_service");
 const UrlSummarizeService = require("./url_summarize_service");
-const BackfillService = require("./backfill_service");
 const { OpenAI } = require("openai");
 
 class ImpostorClient {
@@ -54,22 +53,13 @@ class ImpostorClient {
     this.messageTracker = new MessageTracker(logger, this.db, config, this.visionService, this.urlSummarizeService);
     this.evaluator = new ResponseEvaluator(logger, config, this.db, this.visionService);
 
-    // Initialize backfill service
-    this.backfillService = new BackfillService(logger, this.db, this.visionService, this.urlSummarizeService, config);
-
     // Set up periodic maintenance
     this.maintenanceInterval = setInterval(() => {
       this.messageTracker.runMaintenance();
     }, 60 * 60 * 1000); // Run every hour
 
-    this.client.on("ready", async () => {
+    this.client.on("ready", () => {
       this.logger.info(`The bot is online as ${this.client.user.tag}!`);
-
-      // Run backfill on startup for configured channels
-      if (config.backfill?.enabled ?? true) {
-        const channelIds = config.channels || [];
-        await this.backfillService.backfillAllChannels(this.client, channelIds);
-      }
     });
 
     this.client.on("messageCreate", async (message) => {

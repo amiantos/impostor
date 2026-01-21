@@ -44,11 +44,6 @@ class DatabaseManager {
       this.logger.info("Migration: Added reply_to_message_id column to messages");
     }
 
-    if (!columnNames.includes("is_backfilled")) {
-      this.db.exec(`ALTER TABLE messages ADD COLUMN is_backfilled BOOLEAN DEFAULT FALSE`);
-      this.logger.info("Migration: Added is_backfilled column to messages");
-    }
-
     if (!columnNames.includes("channel_name")) {
       this.db.exec(`ALTER TABLE messages ADD COLUMN channel_name TEXT`);
       this.logger.info("Migration: Added channel_name column to messages");
@@ -182,15 +177,14 @@ class DatabaseManager {
     attachments = null,
     visionDescriptions = null,
     urlSummaries = null,
-    replyToMessageId = null,
-    isBackfilled = false
+    replyToMessageId = null
   }) {
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO messages (
         id, channel_id, channel_name, author_id, author_name, content, created_at,
-        is_bot_message, attachments, vision_descriptions, url_summaries, reply_to_message_id, is_backfilled
+        is_bot_message, attachments, vision_descriptions, url_summaries, reply_to_message_id
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -205,8 +199,7 @@ class DatabaseManager {
       attachments ? JSON.stringify(attachments) : null,
       visionDescriptions ? JSON.stringify(visionDescriptions) : null,
       urlSummaries ? JSON.stringify(urlSummaries) : null,
-      replyToMessageId,
-      isBackfilled ? 1 : 0
+      replyToMessageId
     );
   }
 
@@ -443,8 +436,7 @@ class DatabaseManager {
       attachments: record.attachments ? JSON.parse(record.attachments) : null,
       vision_descriptions: record.vision_descriptions ? JSON.parse(record.vision_descriptions) : null,
       url_summaries: record.url_summaries ? JSON.parse(record.url_summaries) : null,
-      is_bot_message: !!record.is_bot_message,
-      is_backfilled: !!record.is_backfilled
+      is_bot_message: !!record.is_bot_message
     };
   }
 

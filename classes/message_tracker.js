@@ -84,8 +84,7 @@ class MessageTracker {
       attachments,
       visionDescriptions,
       urlSummaries,
-      replyToMessageId,
-      isBackfilled: false
+      replyToMessageId
     });
 
     // Update in-memory counter

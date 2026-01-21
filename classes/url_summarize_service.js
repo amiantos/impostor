@@ -266,7 +266,7 @@ class UrlSummarizeService {
   }
 
   /**
-   * Process URLs from multiple messages (for backfill)
+   * Process URLs from multiple messages (batch processing)
    * Checks database cache first before making API calls
    * @param {Array} messages - Array of messages (Discord Message objects or DB records)
    * @param {boolean} fromDb - Whether messages are from database records
