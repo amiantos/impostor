@@ -289,7 +289,7 @@ Do not include any text outside of this JSON structure. The "message" field shou
 
   buildChatMessagesForResponsesAPI(prevMessages, client_user_id, imageDescriptions = null) {
     let newChatMessages = [];
-    prevMessages.reverse().forEach((msg) => {
+    prevMessages.forEach((msg) => {
       if (msg.content.startsWith("!")) return;
 
       const role = msg.author.id === client_user_id ? "assistant" : "user";
@@ -328,7 +328,7 @@ Do not include any text outside of this JSON structure. The "message" field shou
 
   /**
    * Build chat messages from database records instead of Discord.js Message objects
-   * @param {Array} dbMessages - Array of message records from database (newest first)
+   * @param {Array} dbMessages - Array of message records from database (chronological order, oldest first)
    * @param {string} clientUserId - Bot's user ID
    * @param {Map} imageDescriptions - Map of message ID to image descriptions
    * @returns {Array} Formatted messages for the API
@@ -336,8 +336,8 @@ Do not include any text outside of this JSON structure. The "message" field shou
   buildChatMessagesFromDBRecords(dbMessages, clientUserId, imageDescriptions = null) {
     let newChatMessages = [];
 
-    // Reverse to get oldest first
-    const messages = [...dbMessages].reverse();
+    // Messages already in chronological order (oldest first)
+    const messages = dbMessages;
 
     messages.forEach((msg) => {
       if (msg.content.startsWith("!")) return;
@@ -390,7 +390,7 @@ Do not include any text outside of this JSON structure. The "message" field shou
   /**
    * Build a consolidated chatlog format for better context understanding
    * All messages are combined into a single user message formatted as a chatlog
-   * @param {Array} dbMessages - Array of message records from database (newest first)
+   * @param {Array} dbMessages - Array of message records from database (chronological order, oldest first)
    * @param {string} clientUserId - Bot's user ID
    * @param {Object} triggerInfo - Info about who triggered the response
    * @param {string} triggerInfo.userId - Discord ID of the user who triggered
@@ -400,8 +400,8 @@ Do not include any text outside of this JSON structure. The "message" field shou
    * @returns {Array} Single-element array with consolidated user message
    */
   buildChatMessagesConsolidated(dbMessages, clientUserId, triggerInfo, imageDescriptions = null) {
-    // Reverse to get oldest first (chronological order)
-    const messages = [...dbMessages].reverse();
+    // Messages already in chronological order (oldest first)
+    const messages = dbMessages;
 
     let chatlogLines = [];
     let allUrlSummaries = []; // Collect all URL summaries for reference section

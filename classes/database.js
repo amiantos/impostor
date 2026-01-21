@@ -442,10 +442,12 @@ class DatabaseManager {
 
   getRecentMessages(channelId, limit = 50, parseJson = false) {
     const stmt = this.db.prepare(`
-      SELECT * FROM messages
-      WHERE channel_id = ?
-      ORDER BY created_at DESC
-      LIMIT ?
+      SELECT * FROM (
+        SELECT * FROM messages
+        WHERE channel_id = ?
+        ORDER BY created_at DESC
+        LIMIT ?
+      ) ORDER BY created_at ASC
     `);
     const messages = stmt.all(channelId, limit);
     if (parseJson) {
@@ -474,12 +476,14 @@ class DatabaseManager {
     } else {
       // No bot response yet, get recent messages
       const stmt = this.db.prepare(`
-        SELECT * FROM messages
-        WHERE channel_id = ?
-        ORDER BY created_at DESC
-        LIMIT 50
+        SELECT * FROM (
+          SELECT * FROM messages
+          WHERE channel_id = ?
+          ORDER BY created_at DESC
+          LIMIT 50
+        ) ORDER BY created_at ASC
       `);
-      return stmt.all(channelId).reverse();
+      return stmt.all(channelId);
     }
   }
 
