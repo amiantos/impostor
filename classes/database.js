@@ -25,6 +25,36 @@ class DatabaseManager {
   }
 
   runMigrations() {
+    // Migration: Create users table
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        username TEXT NOT NULL,
+        first_seen DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL
+      )
+    `);
+
+    // Migration: Create user_memories table
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS user_memories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        category TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
+        is_active BOOLEAN DEFAULT TRUE,
+        source_message_id TEXT,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      )
+    `);
+
+    // Create index for efficient memory lookups
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_memories_user ON user_memories(user_id, is_active)
+    `);
+
     // Migration: Add enhanced message columns
     const messageColumns = this.db.pragma("table_info(messages)");
     const columnNames = messageColumns.map(c => c.name);
@@ -875,6 +905,209 @@ class DatabaseManager {
       autonomousResponses: autonomousResponseCount,
       directResponses: directResponseCount
     };
+  }
+
+  // User operations
+  /**
+   * Create or update a user record
+   * @param {string} userId - Discord user ID
+   * @param {string} username - Discord username
+   * @returns {Object} User record
+   */
+  upsertUser(userId, username) {
+    const now = new Date().toISOString();
+    const existing = this.getUser(userId);
+
+    if (existing) {
+      const stmt = this.db.prepare(`
+        UPDATE users SET username = ?, updated_at = ? WHERE id = ?
+      `);
+      stmt.run(username, now, userId);
+    } else {
+      const stmt = this.db.prepare(`
+        INSERT INTO users (id, username, first_seen, updated_at)
+        VALUES (?, ?, ?, ?)
+      `);
+      stmt.run(userId, username, now, now);
+    }
+
+    return this.getUser(userId);
+  }
+
+  /**
+   * Get a single user by ID
+   * @param {string} userId - Discord user ID
+   * @returns {Object|null} User record
+   */
+  getUser(userId) {
+    const stmt = this.db.prepare(`SELECT * FROM users WHERE id = ?`);
+    return stmt.get(userId) || null;
+  }
+
+  /**
+   * Get all users with memory counts
+   * @param {number} limit - Max users to return
+   * @returns {Array} User records with memory counts
+   */
+  getAllUsers(limit = 100) {
+    const stmt = this.db.prepare(`
+      SELECT u.*,
+        (SELECT COUNT(*) FROM user_memories WHERE user_id = u.id AND is_active = 1) as memory_count
+      FROM users u
+      ORDER BY u.updated_at DESC
+      LIMIT ?
+    `);
+    return stmt.all(limit);
+  }
+
+  // Memory operations
+  /**
+   * Insert a new memory
+   * @param {Object} params - Memory parameters
+   * @returns {number} Inserted memory ID
+   */
+  insertMemory({ userId, category, content, sourceMessageId = null }) {
+    const now = new Date().toISOString();
+    const stmt = this.db.prepare(`
+      INSERT INTO user_memories (user_id, category, content, created_at, updated_at, is_active, source_message_id)
+      VALUES (?, ?, ?, ?, ?, 1, ?)
+    `);
+    const result = stmt.run(userId, category, content, now, now, sourceMessageId);
+    return result.lastInsertRowid;
+  }
+
+  /**
+   * Get memories for a single user
+   * @param {string} userId - Discord user ID
+   * @param {number} limit - Max memories to return
+   * @returns {Array} Memory records
+   */
+  getMemoriesForUser(userId, limit = 50) {
+    const stmt = this.db.prepare(`
+      SELECT * FROM user_memories
+      WHERE user_id = ? AND is_active = 1
+      ORDER BY created_at DESC
+      LIMIT ?
+    `);
+    return stmt.all(userId, limit);
+  }
+
+  /**
+   * Get memories for multiple users (batch fetch for context)
+   * @param {Array<string>} userIds - Array of Discord user IDs
+   * @param {number} limitPerUser - Max memories per user
+   * @returns {Map<string, Array>} Map of userId to memories
+   */
+  getMemoriesForUsers(userIds, limitPerUser = 10) {
+    if (!userIds || userIds.length === 0) {
+      return new Map();
+    }
+
+    const memories = new Map();
+
+    // Initialize map with empty arrays
+    for (const userId of userIds) {
+      memories.set(userId, []);
+    }
+
+    // Fetch memories for each user
+    const stmt = this.db.prepare(`
+      SELECT * FROM user_memories
+      WHERE user_id = ? AND is_active = 1
+      ORDER BY created_at DESC
+      LIMIT ?
+    `);
+
+    for (const userId of userIds) {
+      const userMemories = stmt.all(userId, limitPerUser);
+      if (userMemories.length > 0) {
+        memories.set(userId, userMemories);
+      }
+    }
+
+    return memories;
+  }
+
+  /**
+   * Soft delete a memory (set is_active = false)
+   * @param {number} memoryId - Memory ID
+   * @returns {boolean} Success
+   */
+  deactivateMemory(memoryId) {
+    const stmt = this.db.prepare(`
+      UPDATE user_memories SET is_active = 0, updated_at = ? WHERE id = ?
+    `);
+    const result = stmt.run(new Date().toISOString(), memoryId);
+    return result.changes > 0;
+  }
+
+  /**
+   * Update a memory's content
+   * @param {number} memoryId - Memory ID
+   * @param {string} content - New content
+   * @returns {boolean} Success
+   */
+  updateMemory(memoryId, content) {
+    const stmt = this.db.prepare(`
+      UPDATE user_memories SET content = ?, updated_at = ? WHERE id = ?
+    `);
+    const result = stmt.run(content, new Date().toISOString(), memoryId);
+    return result.changes > 0;
+  }
+
+  /**
+   * Get a single memory by ID
+   * @param {number} memoryId - Memory ID
+   * @returns {Object|null} Memory record
+   */
+  getMemory(memoryId) {
+    const stmt = this.db.prepare(`SELECT * FROM user_memories WHERE id = ?`);
+    return stmt.get(memoryId) || null;
+  }
+
+  /**
+   * Get memory statistics for dashboard
+   * @returns {Object} Stats object
+   */
+  getMemoryStats() {
+    const totalMemories = this.db.prepare(`
+      SELECT COUNT(*) as count FROM user_memories WHERE is_active = 1
+    `).get().count;
+
+    const totalUsers = this.db.prepare(`
+      SELECT COUNT(*) as count FROM users
+    `).get().count;
+
+    const usersWithMemories = this.db.prepare(`
+      SELECT COUNT(DISTINCT user_id) as count FROM user_memories WHERE is_active = 1
+    `).get().count;
+
+    const byCategory = this.db.prepare(`
+      SELECT category, COUNT(*) as count
+      FROM user_memories
+      WHERE is_active = 1
+      GROUP BY category
+    `).all();
+
+    return {
+      totalMemories,
+      totalUsers,
+      usersWithMemories,
+      byCategory: byCategory.reduce((acc, row) => {
+        acc[row.category] = row.count;
+        return acc;
+      }, {})
+    };
+  }
+
+  /**
+   * Get user with their username from database (for memory context)
+   * @param {string} userId - Discord user ID
+   * @returns {Object|null} User with username
+   */
+  getUserWithUsername(userId) {
+    const stmt = this.db.prepare(`SELECT id, username FROM users WHERE id = ?`);
+    return stmt.get(userId) || null;
   }
 
   close() {

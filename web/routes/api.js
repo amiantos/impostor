@@ -231,4 +231,110 @@ router.get("/responses", (req, res) => {
   }
 });
 
+// ============ User Memory Endpoints ============
+
+// Get all users with memory counts
+router.get("/users", (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 100;
+    const users = req.db.getAllUsers(limit);
+    res.json(users);
+  } catch (error) {
+    req.logger.error("Error fetching users:", error);
+    res.status(500).json({ error: "Failed to fetch users" });
+  }
+});
+
+// Get a single user with their memories
+router.get("/users/:userId", (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = req.db.getUser(userId);
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const memories = req.db.getMemoriesForUser(userId, 100);
+    res.json({ user, memories });
+  } catch (error) {
+    req.logger.error("Error fetching user:", error);
+    res.status(500).json({ error: "Failed to fetch user" });
+  }
+});
+
+// Get memories for a specific user
+router.get("/users/:userId/memories", (req, res) => {
+  try {
+    const { userId } = req.params;
+    const limit = parseInt(req.query.limit) || 50;
+    const memories = req.db.getMemoriesForUser(userId, limit);
+    res.json(memories);
+  } catch (error) {
+    req.logger.error("Error fetching user memories:", error);
+    res.status(500).json({ error: "Failed to fetch memories" });
+  }
+});
+
+// Get memory statistics
+router.get("/memories/stats", (req, res) => {
+  try {
+    const stats = req.db.getMemoryStats();
+    res.json(stats);
+  } catch (error) {
+    req.logger.error("Error fetching memory stats:", error);
+    res.status(500).json({ error: "Failed to fetch memory stats" });
+  }
+});
+
+// Soft delete a memory
+router.delete("/memories/:memoryId", (req, res) => {
+  try {
+    const memoryId = parseInt(req.params.memoryId);
+    const memory = req.db.getMemory(memoryId);
+
+    if (!memory) {
+      return res.status(404).json({ error: "Memory not found" });
+    }
+
+    const success = req.db.deactivateMemory(memoryId);
+    if (success) {
+      res.json({ success: true, message: "Memory deleted" });
+    } else {
+      res.status(500).json({ error: "Failed to delete memory" });
+    }
+  } catch (error) {
+    req.logger.error("Error deleting memory:", error);
+    res.status(500).json({ error: "Failed to delete memory" });
+  }
+});
+
+// Update a memory's content
+router.patch("/memories/:memoryId", (req, res) => {
+  try {
+    const memoryId = parseInt(req.params.memoryId);
+    const { content } = req.body;
+
+    if (!content || typeof content !== "string" || content.trim().length === 0) {
+      return res.status(400).json({ error: "Content is required and must be a non-empty string" });
+    }
+
+    const memory = req.db.getMemory(memoryId);
+    if (!memory) {
+      return res.status(404).json({ error: "Memory not found" });
+    }
+
+    const success = req.db.updateMemory(memoryId, content.trim());
+    if (success) {
+      const updated = req.db.getMemory(memoryId);
+      res.json({ success: true, memory: updated });
+    } else {
+      res.status(500).json({ error: "Failed to update memory" });
+    }
+  } catch (error) {
+    req.logger.error("Error updating memory:", error);
+    res.status(500).json({ error: "Failed to update memory" });
+  }
+});
+
 module.exports = router;

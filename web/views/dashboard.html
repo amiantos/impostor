@@ -551,6 +551,214 @@
       font-size: 0.9rem;
     }
 
+    /* Memories View */
+    .memories-container {
+      display: flex;
+      height: 100%;
+      min-height: 0;
+    }
+
+    .users-sidebar {
+      width: 280px;
+      background: var(--bg-secondary);
+      border-right: 1px solid var(--bg-card);
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+
+    .users-sidebar h3 {
+      padding: 16px;
+      margin: 0;
+      font-size: 1rem;
+      border-bottom: 1px solid var(--bg-card);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .user-item {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--bg-card);
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .user-item:hover {
+      background: var(--bg-card);
+    }
+
+    .user-item.active {
+      background: var(--bg-card);
+      border-left: 3px solid var(--accent-blue);
+    }
+
+    .user-item-name {
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 4px;
+    }
+
+    .user-item-meta {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      display: flex;
+      gap: 12px;
+    }
+
+    .memories-panel {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      min-height: 0;
+    }
+
+    .memories-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .memories-header h3 {
+      margin: 0;
+      font-size: 1.2rem;
+    }
+
+    .memory-stats {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+
+    .memory-category-section {
+      margin-bottom: 24px;
+    }
+
+    .memory-category-title {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .memory-card {
+      background: var(--bg-secondary);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 8px;
+      border-left: 3px solid var(--accent-green);
+    }
+
+    .memory-card.category-fact {
+      border-left-color: var(--accent-green);
+    }
+
+    .memory-card.category-preference {
+      border-left-color: var(--accent-blue);
+    }
+
+    .memory-card.category-relationship {
+      border-left-color: var(--accent-yellow);
+    }
+
+    .memory-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+
+    .memory-category-badge {
+      font-size: 0.7rem;
+      font-weight: bold;
+      padding: 2px 8px;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+
+    .memory-category-badge.fact {
+      background: rgba(78, 204, 163, 0.2);
+      color: var(--accent-green);
+    }
+
+    .memory-category-badge.preference {
+      background: rgba(50, 130, 184, 0.2);
+      color: var(--accent-blue);
+    }
+
+    .memory-category-badge.relationship {
+      background: rgba(249, 237, 105, 0.2);
+      color: var(--accent-yellow);
+    }
+
+    .memory-card-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .memory-action-btn {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 0.85rem;
+      padding: 4px 8px;
+      border-radius: 4px;
+      transition: all 0.2s;
+    }
+
+    .memory-action-btn:hover {
+      background: var(--bg-card);
+      color: var(--text-primary);
+    }
+
+    .memory-action-btn.delete:hover {
+      color: var(--accent-red);
+    }
+
+    .memory-card-content {
+      font-size: 0.95rem;
+      line-height: 1.5;
+      color: var(--text-primary);
+    }
+
+    .memory-card-date {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      margin-top: 8px;
+    }
+
+    .memory-edit-input {
+      width: 100%;
+      background: var(--bg-card);
+      border: 1px solid var(--accent-blue);
+      border-radius: 4px;
+      padding: 8px;
+      color: var(--text-primary);
+      font-size: 0.95rem;
+      font-family: inherit;
+      resize: vertical;
+      min-height: 60px;
+    }
+
+    .memory-edit-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .no-memories-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-secondary);
+    }
+
+    .no-memories-state h4 {
+      margin-bottom: 8px;
+      color: var(--text-primary);
+    }
+
     /* Responsive */
     @media (max-width: 768px) {
       .header {
@@ -588,12 +796,35 @@
     <button class="channel-tab active" data-channel="">
       All Channels
     </button>
+    <!-- Memories tab will be added dynamically -->
   </nav>
 
   <!-- Chat Container -->
   <main class="chat-container" id="chat-container">
     <div class="loading-spinner">Loading messages...</div>
   </main>
+
+  <!-- Memories Container (hidden by default) -->
+  <div class="memories-container" id="memories-container" style="display: none; flex: 1; min-height: 0;">
+    <div class="users-sidebar">
+      <h3>Users <span id="users-count" class="count">0</span></h3>
+      <div id="users-list">
+        <div class="loading-spinner">Loading users...</div>
+      </div>
+    </div>
+    <div class="memories-panel">
+      <div class="memories-header">
+        <h3 id="selected-user-name">Select a user</h3>
+        <span class="memory-stats" id="memory-stats"></span>
+      </div>
+      <div id="memories-list">
+        <div class="no-memories-state">
+          <h4>No user selected</h4>
+          <p>Select a user from the sidebar to view their memories.</p>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Jump to Bottom Button -->
   <button class="jump-to-bottom" id="jump-to-bottom" onclick="scrollToBottom()">
@@ -1151,6 +1382,265 @@
       await loadChannels();
       await loadChat();
     }
+
+    // ============ Memories View Functions ============
+
+    let usersData = [];
+    let selectedUserId = null;
+    let isMemoriesView = false;
+    let memoryStats = null;
+
+    async function loadUsers() {
+      try {
+        usersData = await fetchJson(`${API_BASE}/users`);
+        memoryStats = await fetchJson(`${API_BASE}/memories/stats`);
+        renderUsersList();
+      } catch (error) {
+        console.error('Failed to load users:', error);
+        document.getElementById('users-list').innerHTML =
+          '<div class="empty-state">Failed to load users</div>';
+      }
+    }
+
+    function renderUsersList() {
+      const container = document.getElementById('users-list');
+      const countEl = document.getElementById('users-count');
+
+      // Filter to only users with memories
+      const usersWithMemories = usersData.filter(u => u.memory_count > 0);
+      countEl.textContent = usersWithMemories.length;
+
+      if (usersWithMemories.length === 0) {
+        container.innerHTML = `
+          <div class="no-memories-state" style="padding: 20px;">
+            <p>No memories stored yet.</p>
+            <p style="font-size: 0.8rem;">Isaac will store memories when users share personal information.</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = usersWithMemories.map(user => `
+        <div class="user-item ${selectedUserId === user.id ? 'active' : ''}"
+             onclick="selectUser('${user.id}')">
+          <div class="user-item-name">${escapeHtml(user.username)}</div>
+          <div class="user-item-meta">
+            <span>${user.memory_count} ${user.memory_count === 1 ? 'memory' : 'memories'}</span>
+            <span>First seen: ${new Date(user.first_seen).toLocaleDateString()}</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function selectUser(userId) {
+      selectedUserId = userId;
+      renderUsersList();
+      await loadUserMemories(userId);
+    }
+
+    async function loadUserMemories(userId) {
+      const container = document.getElementById('memories-list');
+      const headerEl = document.getElementById('selected-user-name');
+      const statsEl = document.getElementById('memory-stats');
+
+      container.innerHTML = '<div class="loading-spinner">Loading memories...</div>';
+
+      try {
+        const data = await fetchJson(`${API_BASE}/users/${userId}`);
+        const { user, memories } = data;
+
+        headerEl.textContent = user.username;
+        statsEl.textContent = `${memories.length} ${memories.length === 1 ? 'memory' : 'memories'}`;
+
+        if (memories.length === 0) {
+          container.innerHTML = `
+            <div class="no-memories-state">
+              <h4>No memories</h4>
+              <p>Isaac hasn't stored any memories for this user yet.</p>
+            </div>
+          `;
+          return;
+        }
+
+        // Group by category
+        const categories = {
+          fact: memories.filter(m => m.category === 'fact'),
+          preference: memories.filter(m => m.category === 'preference'),
+          relationship: memories.filter(m => m.category === 'relationship')
+        };
+
+        let html = '';
+
+        if (categories.fact.length > 0) {
+          html += renderMemoryCategory('Facts', 'fact', categories.fact);
+        }
+        if (categories.preference.length > 0) {
+          html += renderMemoryCategory('Preferences', 'preference', categories.preference);
+        }
+        if (categories.relationship.length > 0) {
+          html += renderMemoryCategory('Relationship Notes', 'relationship', categories.relationship);
+        }
+
+        container.innerHTML = html;
+      } catch (error) {
+        console.error('Failed to load user memories:', error);
+        container.innerHTML = '<div class="empty-state">Failed to load memories</div>';
+      }
+    }
+
+    function renderMemoryCategory(title, category, memories) {
+      return `
+        <div class="memory-category-section">
+          <div class="memory-category-title">${title}</div>
+          ${memories.map(memory => renderMemoryCard(memory)).join('')}
+        </div>
+      `;
+    }
+
+    function renderMemoryCard(memory) {
+      return `
+        <div class="memory-card category-${memory.category}" id="memory-${memory.id}">
+          <div class="memory-card-header">
+            <span class="memory-category-badge ${memory.category}">${memory.category}</span>
+            <div class="memory-card-actions">
+              <button class="memory-action-btn" onclick="editMemory(${memory.id})" title="Edit">Edit</button>
+              <button class="memory-action-btn delete" onclick="deleteMemory(${memory.id})" title="Delete">Delete</button>
+            </div>
+          </div>
+          <div class="memory-card-content" id="memory-content-${memory.id}">${escapeHtml(memory.content)}</div>
+          <div class="memory-card-date">Created: ${formatDateTime(memory.created_at)}</div>
+        </div>
+      `;
+    }
+
+    function editMemory(memoryId) {
+      const contentEl = document.getElementById(`memory-content-${memoryId}`);
+      const currentContent = contentEl.textContent;
+
+      contentEl.innerHTML = `
+        <textarea class="memory-edit-input" id="memory-edit-${memoryId}">${escapeHtml(currentContent)}</textarea>
+        <div class="memory-edit-actions">
+          <button class="btn btn-primary" onclick="saveMemory(${memoryId})">Save</button>
+          <button class="btn" onclick="cancelEditMemory(${memoryId}, '${escapeHtml(currentContent).replace(/'/g, "\\'")}')">Cancel</button>
+        </div>
+      `;
+
+      document.getElementById(`memory-edit-${memoryId}`).focus();
+    }
+
+    function cancelEditMemory(memoryId, originalContent) {
+      const contentEl = document.getElementById(`memory-content-${memoryId}`);
+      contentEl.textContent = originalContent;
+    }
+
+    async function saveMemory(memoryId) {
+      const textarea = document.getElementById(`memory-edit-${memoryId}`);
+      const newContent = textarea.value.trim();
+
+      if (!newContent) {
+        alert('Memory content cannot be empty');
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_BASE}/memories/${memoryId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: newContent })
+        });
+
+        if (!response.ok) throw new Error('Failed to update');
+
+        // Reload the memories
+        await loadUserMemories(selectedUserId);
+      } catch (error) {
+        console.error('Failed to save memory:', error);
+        alert('Failed to save memory');
+      }
+    }
+
+    async function deleteMemory(memoryId) {
+      if (!confirm('Are you sure you want to delete this memory?')) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_BASE}/memories/${memoryId}`, {
+          method: 'DELETE'
+        });
+
+        if (!response.ok) throw new Error('Failed to delete');
+
+        // Reload users and memories
+        await loadUsers();
+        if (selectedUserId) {
+          await loadUserMemories(selectedUserId);
+        }
+      } catch (error) {
+        console.error('Failed to delete memory:', error);
+        alert('Failed to delete memory');
+      }
+    }
+
+    function switchToMemoriesView() {
+      isMemoriesView = true;
+      document.getElementById('chat-container').style.display = 'none';
+      document.getElementById('memories-container').style.display = 'flex';
+      document.getElementById('jump-to-bottom').style.display = 'none';
+
+      // Update tab styling
+      document.querySelectorAll('.channel-tab').forEach(tab => {
+        tab.classList.remove('active');
+      });
+      document.getElementById('memories-tab').classList.add('active');
+
+      loadUsers();
+    }
+
+    function switchToChatView() {
+      isMemoriesView = false;
+      document.getElementById('chat-container').style.display = 'flex';
+      document.getElementById('memories-container').style.display = 'none';
+
+      // Tab styling handled by selectChannel
+    }
+
+    // Override selectChannel to handle memories view
+    const originalSelectChannel = selectChannel;
+    selectChannel = function(channelId) {
+      if (isMemoriesView) {
+        switchToChatView();
+      }
+      currentChannel = channelId;
+      isUserScrolled = false;
+      renderChannelTabs();
+      loadChat();
+    };
+
+    // Override renderChannelTabs to include memories tab
+    const originalRenderChannelTabs = renderChannelTabs;
+    renderChannelTabs = function() {
+      const container = document.getElementById('channel-tabs');
+
+      let html = `<button class="channel-tab ${!isMemoriesView && currentChannel === '' ? 'active' : ''}" data-channel="" onclick="selectChannel('')">
+        All Channels
+      </button>`;
+
+      channels.forEach(ch => {
+        const displayName = ch.channel_name || ch.channel_id.slice(-6);
+        const isActive = !isMemoriesView && currentChannel === ch.channel_id;
+        html += `<button class="channel-tab ${isActive ? 'active' : ''}" data-channel="${ch.channel_id}" onclick="selectChannel('${ch.channel_id}')" title="${ch.channel_id}">
+          #${escapeHtml(displayName)}<span class="count">${ch.message_count}</span>
+        </button>`;
+      });
+
+      // Add memories tab at the end
+      html += `<button class="channel-tab ${isMemoriesView ? 'active' : ''}" id="memories-tab" onclick="switchToMemoriesView()">
+        Memories
+      </button>`;
+
+      container.innerHTML = html;
+    };
 
     // Initialize
     async function init() {

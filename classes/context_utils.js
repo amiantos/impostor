@@ -16,7 +16,7 @@ class ContextUtils {
         properties: {
           tool_name: {
             type: "string",
-            enum: ["python", "web_search", "web_fetch"],
+            enum: ["python", "web_search", "web_fetch", "remember"],
             description: "Name of the tool to use"
           },
           code: {
@@ -30,6 +30,23 @@ class ContextUtils {
           url: {
             type: "string",
             description: "URL to fetch (for web_fetch tool)"
+          },
+          user_id: {
+            type: "string",
+            description: "Discord user ID (for remember tool)"
+          },
+          username: {
+            type: "string",
+            description: "Discord username (for remember tool)"
+          },
+          category: {
+            type: "string",
+            enum: ["fact", "preference", "relationship"],
+            description: "Memory category (for remember tool)"
+          },
+          content: {
+            type: "string",
+            description: "The memory to store (for remember tool)"
           },
           reason: {
             type: "string",
@@ -102,6 +119,41 @@ You have access to tools but should use them judiciously. Available tools:
 1. **python** - For precise computational needs (character counting, complex math)
 2. **web_search** - Ask a question and get an AI-powered answer with sources (via Kagi FastGPT)
 3. **web_fetch** - Load and read the content of a specific web page URL
+4. **remember** - Store important information about users for future conversations
+
+REMEMBER TOOL USAGE:
+Categories for memories:
+- "fact": Personal info (job, hobbies, location, pets, family)
+- "preference": Opinions, likes/dislikes, favorites
+- "relationship": Notes about your interactions, inside jokes, ongoing discussions
+
+When to use remember:
+- User shares something meaningful worth remembering across conversations
+- User corrects you about themselves
+- You notice a pattern in a user's interests or behavior worth noting
+
+When NOT to use remember:
+- Trivial/temporary info (what they had for lunch today)
+- Info already stored (check your memories first)
+- Sensitive data (passwords, private addresses, financial info)
+- Negative judgments about users
+
+You CAN send a message AND store a memory in the same response - just include both "message" and the tool_request.
+
+Example:
+{
+  "needs_tool": true,
+  "continue_iterating": false,
+  "tool_request": {
+    "tool_name": "remember",
+    "user_id": "123456789",
+    "username": "someuser",
+    "category": "fact",
+    "content": "Works as a software engineer at a startup",
+    "reason": "User mentioned their job"
+  },
+  "message": "A software engineer, huh? At least your suffering is well-compensated."
+}
 
 WHEN TO USE WEB TOOLS:
 - Use web_search when someone asks about current events, recent news, or information you wouldn't know
@@ -271,6 +323,12 @@ Do not include any text outside of this JSON structure. The "message" field shou
       if (toolName === 'web_fetch' && !response.tool_request.url) {
         return false;
       }
+      if (toolName === 'remember') {
+        if (!response.tool_request.user_id || !response.tool_request.username ||
+            !response.tool_request.category || !response.tool_request.content) {
+          return false;
+        }
+      }
     }
 
     return true;
@@ -386,9 +444,10 @@ Do not include any text outside of this JSON structure. The "message" field shou
    * @param {string} triggerInfo.userName - Username of the user who triggered
    * @param {string} triggerInfo.channelName - Name of the channel
    * @param {Map} imageDescriptions - Map of message ID to image descriptions
+   * @param {Map} userMemories - Map of user ID to array of memory objects
    * @returns {Array} Single-element array with consolidated user message
    */
-  buildChatMessagesConsolidated(dbMessages, clientUserId, triggerInfo, imageDescriptions = null) {
+  buildChatMessagesConsolidated(dbMessages, clientUserId, triggerInfo, imageDescriptions = null, userMemories = null) {
     // Messages already in chronological order (oldest first)
     const messages = dbMessages;
 
@@ -443,7 +502,27 @@ Do not include any text outside of this JSON structure. The "message" field shou
 
     // Build the consolidated message
     const channelName = triggerInfo.channelName || "channel";
-    let consolidatedContent = `Recent conversation in #${channelName}:\n\n${chatlogLines.join("\n")}`;
+
+    // Build memory section if we have user memories
+    let memorySection = "";
+    if (userMemories && userMemories.size > 0) {
+      let memoryLines = [];
+      for (const [userId, memories] of userMemories) {
+        if (memories && memories.length > 0) {
+          // Find username from the memories or from messages
+          const username = this.findUsernameForId(userId, dbMessages, memories);
+          memoryLines.push(`${username}:`);
+          for (const memory of memories) {
+            memoryLines.push(`  - [${memory.category}] ${memory.content}`);
+          }
+        }
+      }
+      if (memoryLines.length > 0) {
+        memorySection = `--- YOUR MEMORIES ABOUT USERS IN THIS CONVERSATION ---\n${memoryLines.join("\n")}\n--- END MEMORIES ---\n\n`;
+      }
+    }
+
+    let consolidatedContent = memorySection + `Recent conversation in #${channelName}:\n\n${chatlogLines.join("\n")}`;
 
     // Add URL summaries reference section if any links were shared
     if (allUrlSummaries.length > 0) {
@@ -488,6 +567,26 @@ Do not include any text outside of this JSON structure. The "message" field shou
     } catch (e) {
       return "??:??";
     }
+  }
+
+  /**
+   * Find username for a user ID from messages or memory records
+   * @param {string} userId - Discord user ID
+   * @param {Array} dbMessages - Database messages
+   * @param {Array} memories - Memory records (may have username from user table)
+   * @returns {string} Username or truncated ID
+   */
+  findUsernameForId(userId, dbMessages, memories) {
+    // Try to find from messages
+    if (dbMessages) {
+      for (const msg of dbMessages) {
+        if (msg.author_id === userId && msg.author_name) {
+          return msg.author_name;
+        }
+      }
+    }
+    // Fallback to truncated ID
+    return `User-${userId.slice(-6)}`;
   }
 }
 

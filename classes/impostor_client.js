@@ -3,6 +3,7 @@ const ContextUtils = require("./context_utils");
 const PythonTool = require("./python_tool");
 const WebSearchTool = require("./web_search_tool");
 const WebFetchTool = require("./web_fetch_tool");
+const MemoryTool = require("./memory_tool");
 const DatabaseManager = require("./database");
 const MessageTracker = require("./message_tracker");
 const ResponseEvaluator = require("./response_evaluator");
@@ -38,10 +39,14 @@ class ImpostorClient {
     this.pythonTool = new PythonTool(logger);
     this.webSearchTool = new WebSearchTool(logger, config);
     this.webFetchTool = new WebFetchTool(logger);
+    // Note: memoryTool is initialized after database
 
     // Initialize database
     this.db = new DatabaseManager(logger);
     this.db.initialize();
+
+    // Initialize memory tool (needs database)
+    this.memoryTool = new MemoryTool(logger, this.db);
 
     // Initialize vision service with database for caching
     this.visionService = new VisionService(logger, config, this.db);
@@ -399,10 +404,19 @@ class ImpostorClient {
     // Build URL summaries map from cached URL data
     const urlSummaries = this.urlSummarizeService.buildUrlSummariesFromDB(dbMessages);
 
+    // Extract unique non-bot user IDs and fetch their memories
+    const userIds = [...new Set(
+      dbMessages
+        .filter(msg => !msg.is_bot_message && msg.author_id)
+        .map(msg => msg.author_id)
+    )];
+    const userMemories = this.db.getMemoriesForUsers(userIds, 10);
+
     return {
       dbMessages,
       imageDescriptions,
-      urlSummaries
+      urlSummaries,
+      userMemories
     };
   }
 
@@ -418,8 +432,8 @@ class ImpostorClient {
 
     await message.channel.sendTyping();
 
-    // Build context from database (with cached vision)
-    const { dbMessages, imageDescriptions } = this.buildContextFromDatabase(message.channel.id, {
+    // Build context from database (with cached vision and user memories)
+    const { dbMessages, imageDescriptions, userMemories } = this.buildContextFromDatabase(message.channel.id, {
       fetchLimit: 50,
       contextBefore: 10  // More context for direct mentions
     });
@@ -437,6 +451,7 @@ class ImpostorClient {
       characterName: character_name,
       botUserId: this.client.user.id,
       imageDescriptions,
+      userMemories,
       useDbContext: true,
       triggerInfo,
     });
@@ -491,8 +506,8 @@ class ImpostorClient {
   async processAutonomousMessage(channel, decisionId = null) {
     await channel.sendTyping();
 
-    // Build context from database (with cached vision)
-    const { dbMessages, imageDescriptions } = this.buildContextFromDatabase(channel.id, {
+    // Build context from database (with cached vision and user memories)
+    const { dbMessages, imageDescriptions, userMemories } = this.buildContextFromDatabase(channel.id, {
       fetchLimit: 50,
       contextBefore: 5  // Match evaluation settings
     });
@@ -511,6 +526,7 @@ class ImpostorClient {
       characterName: this.client.user.username,
       botUserId: this.client.user.id,
       imageDescriptions,
+      userMemories,
       useDbContext: true,
       triggerInfo,
     });
@@ -557,6 +573,7 @@ class ImpostorClient {
     characterName,
     botUserId,
     imageDescriptions = null,
+    userMemories = null,
     useDbContext = false,
     triggerInfo = null,
   }) {
@@ -565,12 +582,13 @@ class ImpostorClient {
 
     let inputMessages;
     if (useDbContext && dbMessages && triggerInfo) {
-      // Use consolidated chatlog format with trigger info
+      // Use consolidated chatlog format with trigger info and user memories
       inputMessages = this.contextUtils.buildChatMessagesConsolidated(
         dbMessages,
         botUserId,
         triggerInfo,
-        imageDescriptions
+        imageDescriptions,
+        userMemories
       );
     } else if (useDbContext && dbMessages) {
       // Fallback to old method if no triggerInfo (shouldn't happen)
@@ -778,6 +796,18 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
     if (toolRequest.tool_name === "web_fetch") {
       const result = await this.webFetchTool.fetchPage(toolRequest.url);
       this.logger.debug("Web fetch result:", result);
+      return result;
+    }
+
+    if (toolRequest.tool_name === "remember") {
+      const result = await this.memoryTool.remember({
+        user_id: toolRequest.user_id,
+        username: toolRequest.username,
+        category: toolRequest.category,
+        content: toolRequest.content,
+        source_message_id: toolRequest.source_message_id || null
+      });
+      this.logger.debug("Memory tool result:", result);
       return result;
     }
 
