@@ -49,8 +49,22 @@ class MemoryTool {
       // Trim and normalize content
       const normalizedContent = content.trim();
 
-      // Upsert user record
-      this.db.upsertUser(user_id, username);
+      // Get the real username from the database if available
+      // (AI might misspell it, so prefer DB data)
+      let actualUsername = username;
+      const existingUser = this.db.getUser(user_id);
+      if (existingUser && existingUser.username) {
+        actualUsername = existingUser.username;
+      } else {
+        // Try to find username from recent messages
+        const userFromMessages = this.db.getUsernameFromMessages(user_id);
+        if (userFromMessages) {
+          actualUsername = userFromMessages;
+        }
+      }
+
+      // Upsert user record with the correct username
+      this.db.upsertUser(user_id, actualUsername);
 
       // Insert memory
       const memoryId = this.db.insertMemory({
@@ -60,11 +74,11 @@ class MemoryTool {
         sourceMessageId: source_message_id
       });
 
-      this.logger.info(`Stored ${category} memory for user ${username} (${user_id}): "${normalizedContent.substring(0, 50)}..."`);
+      this.logger.info(`Stored ${category} memory for user ${actualUsername} (${user_id}): "${normalizedContent.substring(0, 50)}..."`);
 
       return {
         success: true,
-        output: `Memory stored successfully for ${username}`,
+        output: `Memory stored successfully for ${actualUsername}`,
         memoryId
       };
     } catch (error) {

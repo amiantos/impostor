@@ -1110,6 +1110,22 @@ class DatabaseManager {
     return stmt.get(userId) || null;
   }
 
+  /**
+   * Get username from messages table for a user ID
+   * @param {string} userId - Discord user ID
+   * @returns {string|null} Username or null
+   */
+  getUsernameFromMessages(userId) {
+    const stmt = this.db.prepare(`
+      SELECT author_name FROM messages
+      WHERE author_id = ? AND author_name IS NOT NULL
+      ORDER BY created_at DESC
+      LIMIT 1
+    `);
+    const result = stmt.get(userId);
+    return result ? result.author_name : null;
+  }
+
   close() {
     if (this.db) {
       this.db.close();
