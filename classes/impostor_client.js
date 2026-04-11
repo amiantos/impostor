@@ -193,8 +193,17 @@ class ImpostorClient {
     // Check channel filtering
     if (!this.isAllowedChannel(event.target)) return;
 
+    // Parse bridged Discord messages: "[discord] Username: message"
+    let nick = event.nick;
+    let messageText = event.message;
+    const bridgeMatch = event.message.match(/^\[discord\] (.+?): ([\s\S]*)$/);
+    if (bridgeMatch) {
+      nick = bridgeMatch[1];
+      messageText = bridgeMatch[2];
+    }
+
     // Create normalized message object
-    const message = createIrcMessage(event.nick, event.target, event.message, {
+    const message = createIrcMessage(nick, event.target, messageText, {
       ident: event.ident,
       hostname: event.hostname,
       isBot: false,
@@ -204,9 +213,9 @@ class ImpostorClient {
     await this.messageTracker.addMessage(message, { isBotMessage: false, processVision: true });
 
     // Direct trigger - nick mentioned in message
-    if (this.isDirectTrigger(event.message)) {
+    if (this.isDirectTrigger(messageText)) {
       this.logger.info(
-        `Queuing direct message from ${event.nick}.`,
+        `Queuing direct message from ${nick}.`,
         message
       );
 
