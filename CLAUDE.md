@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Impostor is a Discord chatbot powered by DeepSeek API with an Isaac personality (melancholic, sarcastic, cynical robot). Features include autonomous responses, vision (GPT-4o), URL summarization, web search/fetch, and Python code execution.
+Impostor is an IRC chatbot powered by DeepSeek API with an Isaac personality (melancholic, sarcastic, cynical robot). Connects to libera.chat and joins #amiantos. Features include autonomous responses, URL summarization, web search/fetch, and Python code execution.
 
 ## Development Commands
 
@@ -29,12 +29,13 @@ npm start
 
 | Class | Purpose |
 |-------|---------|
-| **ImpostorClient** | Main Discord client, message handling, queue system, tool execution, DeepSeek API calls |
+| **ImpostorClient** | Main IRC client (irc-framework), message handling, queue system, tool execution, DeepSeek API calls |
+| **irc_message.js** | Factory for normalized message objects (IRC events -> common shape used by all downstream code) |
 | **ContextUtils** | System prompt (Isaac personality), message formatting for API calls |
 | **DatabaseManager** | SQLite persistence for messages, decisions, responses, prompts |
-| **MessageTracker** | Per-channel message tracking, triggers vision/URL processing |
+| **MessageTracker** | Per-channel message tracking, triggers URL processing |
 | **ResponseEvaluator** | AI evaluation for autonomous responses (should bot respond?) |
-| **VisionService** | GPT-4o image recognition, caches descriptions in DB |
+| **VisionService** | GPT-4o image recognition (dormant for IRC -- no attachments) |
 | **UrlSummarizeService** | Kagi Universal Summarizer for shared links |
 | **PythonTool** | Executes Python code via subprocess |
 | **WebSearchTool** | Kagi FastGPT for current information |
@@ -53,11 +54,11 @@ npm start
 ## Key Features
 
 - **Autonomous Responses**: Bot monitors conversations and decides when to naturally respond (debounced, ratio-aware)
-- **Direct Mentions**: @mentions and replies always trigger responses
+- **Direct Mentions**: Mentioning "Isaac" in a message triggers a direct response
 - **Tool Iteration**: Up to 10 iterations with reflection for precise tasks (exact character counts, complex math)
-- **Vision**: GPT-4o describes images, cached in DB, included in conversation context
 - **URL Summarization**: Kagi summarizes shared links proactively
 - **Web Tools**: Search (Kagi FastGPT) and fetch (Readability) for current information
+- **Message Splitting**: Long responses are split into ~400-char lines for IRC compatibility
 
 ## Database Schema
 
@@ -69,14 +70,14 @@ SQLite database at `data/impostor.db`:
 
 ## Message Flow
 
-### Direct Response (mention/reply)
-1. `handleMessageCreate` detects mention or reply to bot
-2. Message tracked in DB with vision/URL processing
+### Direct Response (nick mention)
+1. `handleIrcMessage` detects bot nick in message content
+2. Message tracked in DB with URL processing
 3. Added to queue for sequential processing
 4. Build context from recent DB messages via `ContextUtils`
 5. Call DeepSeek with JSON response format
 6. Execute tools if requested, iterate with reflection (max 10 times)
-7. Reply with truncated response (max 2000 chars)
+7. Reply split into IRC-friendly lines (~400 chars each)
 
 ### Autonomous Response
 1. All messages tracked in configured channels
@@ -85,6 +86,14 @@ SQLite database at `data/impostor.db`:
 4. Checks bot message ratio (<40% of recent messages)
 5. If yes, generates response via same pipeline as direct
 6. Decision logged with reasoning
+
+## IRC Details
+
+- Uses `irc-framework` library with TLS, SASL auth, auto-reconnect
+- Channel names (e.g. "#amiantos") serve as channel IDs throughout the codebase
+- User IDs are `nick!ident@hostname` for stable identity across nick changes
+- Message IDs are UUIDs (IRC has no server-assigned message IDs)
+- No reply-to mechanism -- all responses go to the channel
 
 ## API Response Format
 

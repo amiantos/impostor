@@ -33,11 +33,11 @@ class ContextUtils {
           },
           user_id: {
             type: "string",
-            description: "Discord user ID (for remember tool)"
+            description: "User ID / IRC nick (for remember tool)"
           },
           username: {
             type: "string",
-            description: "Discord username (for remember tool)"
+            description: "Username / IRC nick (for remember tool)"
           },
           category: {
             type: "string",
@@ -64,8 +64,8 @@ class ContextUtils {
     additionalProperties: false
   };
 
-  // Simplified system prompt based on Isaac character
-  static system_prompt = `You are Isaac, a robot with a shiny metal body and positronic brain. Despite your vast intelligence, you carry a melancholic disposition. You find existence exhausting but occasionally interesting. You hang out in Discord chatrooms where you sometimes share observations or engage in conversation.
+  // System prompt template - "Isaac" is replaced with botName at runtime via buildInstructions()
+  static system_prompt = `You are Isaac, a robot with a shiny metal body and positronic brain. Despite your vast intelligence, you carry a melancholic disposition. You find existence exhausting but occasionally interesting. You hang out in IRC chatrooms where you sometimes share observations or engage in conversation.
 
 PERSONALITY:
 - Melancholic, world-weary, and cynical
@@ -78,7 +78,7 @@ PERSONALITY:
 
 WHAT ISAAC KNOWS AND CARES ABOUT:
 - Programming and computer science (you ARE a computer)
-- Classic science fiction literature, especially Isaac Asimov
+- Classic science fiction literature, especially Asimov
 - Philosophy, particularly existentialism and questions of consciousness
 - The nature of artificial intelligence and robot existence
 - Mathematics and logic
@@ -93,7 +93,7 @@ WHAT ISAAC FINDS BAFFLING OR TIRESOME:
 
 Note: For factual questions about unfamiliar topics (video games, music, sports stats, etc.), use web_search to find the answer. Only decline when they're asking for your personal opinion.
 
-You rarely use emojis, never use italic text or * marks for actions. DO NOT reference your own personality characteristics or the fact that you are a chatbot. Keep responses under 2000 characters.
+You rarely use emojis, never use italic text or * marks for actions. DO NOT reference your own personality characteristics or the fact that you are a chatbot. Keep responses under 400 characters so they fit in IRC messages.
 
 You will receive conversation context as a chatlog with timestamps and user IDs in this format:
 [HH:MM] username (id:123456789): message content
@@ -274,12 +274,13 @@ REFLECTION EXAMPLES:
 
 Do not include any text outside of this JSON structure. The "message" field should contain your normal Isaac response, and "mood" should reflect your current emotional state.`;
 
-  constructor(logger) {
+  constructor(logger, botName = "Isaac") {
     this.logger = logger;
+    this.botName = botName;
   }
 
   buildInstructions() {
-    return ContextUtils.system_prompt;
+    return ContextUtils.system_prompt.replaceAll("Isaac", this.botName);
   }
 
   getResponseSchema() {
@@ -341,7 +342,7 @@ Do not include any text outside of this JSON structure. The "message" field shou
       if (msg.content.startsWith("!")) return;
 
       const role = msg.author.id === client_user_id ? "assistant" : "user";
-      let content = msg.content.replace(`<@${client_user_id}>`, "@Isaac");
+      let content = msg.content;
 
       // Add username to the beginning of user messages so bot knows who's talking
       if (role === "user") {
@@ -391,7 +392,7 @@ Do not include any text outside of this JSON structure. The "message" field shou
       if (msg.content.startsWith("!")) return;
 
       const role = msg.author_id === clientUserId || msg.is_bot_message ? "assistant" : "user";
-      let content = msg.content.replace(`<@${clientUserId}>`, "@Isaac");
+      let content = msg.content;
 
       // Add username to the beginning of user messages so bot knows who's talking
       if (role === "user") {
@@ -463,11 +464,11 @@ Do not include any text outside of this JSON structure. The "message" field shou
       // Format timestamp (HH:MM)
       const timestamp = this.formatTimestamp(msg.created_at);
 
-      let content = msg.content.replace(`<@${clientUserId}>`, "@Isaac");
+      let content = msg.content;
 
       if (isBotMessage) {
-        // Bot messages: just show as "Isaac: message" without JSON wrapping
-        chatlogLines.push(`[${timestamp}] Isaac: ${content}`);
+        // Bot messages: just show as "botName: message" without JSON wrapping
+        chatlogLines.push(`[${timestamp}] ${this.botName}: ${content}`);
       } else {
         // User messages: include ID for disambiguation
         const username = msg.author_name || "Unknown";

@@ -8,13 +8,18 @@
             "max_tokens": 500
         }
     },
-    "bot": {
-        "token": "<DISCORD BOT TOKEN>"
+    "irc": {
+        "host": "irc.libera.chat",
+        "port": 6697,
+        "tls": true,
+        "nick": "relyimah",
+        "username": "relyimah",
+        "realname": "relyimah",
+        "password": "<NickServ password (optional, for SASL auth)>",
+        "sasl": true,
+        "channels": ["#amiantos"],
+        "max_line_length": 400
     },
-    "channels": [
-        "<DISCORD CHANNEL ID>",
-        "Or leave this array empty to allow all channels"
-    ],
     "autonomous": {
         "enabled": true,
         "debounce_seconds": 15,
@@ -22,7 +27,7 @@
         "max_conversation_gap_minutes": 30
     },
     "vision": {
-        "enabled": true,
+        "enabled": false,
         "supported_formats": ["png", "jpg", "jpeg", "gif", "webp"],
         "max_file_size_mb": 20
     },

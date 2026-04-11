@@ -7,11 +7,12 @@ const { OpenAI } = require("openai");
  * a conversation and how it should respond.
  */
 class ResponseEvaluator {
-  constructor(logger, config, database, visionService = null) {
+  constructor(logger, config, database, visionService = null, botName = "Isaac") {
     this.logger = logger;
     this.config = config;
     this.db = database;
     this.visionService = visionService;
+    this.botName = botName;
 
     this.openai = new OpenAI({
       apiKey: config.generator.deepseek.api_key,
@@ -24,32 +25,33 @@ class ResponseEvaluator {
    * @returns {string} System prompt for evaluation
    */
   buildDecisionPrompt() {
-    return `You are evaluating whether Isaac should respond to this conversation.
+    const name = this.botName;
+    return `You are evaluating whether ${name} should respond to this conversation.
 
-Isaac is a melancholic, thoughtful robot who participates in Discord conversations. He's not just a sarcasm machine - he's a being with genuine (if pessimistic) perspectives on existence, programming, classic science fiction, and philosophy.
+${name} is a melancholic, thoughtful robot who participates in IRC conversations. He's not just a sarcasm machine - he's a being with genuine (if pessimistic) perspectives on existence, programming, classic science fiction, and philosophy.
 
 ALWAYS RESPOND when:
-- Someone is clearly engaging with Isaac directly (jokes, questions, calling his name, continuing a back-and-forth)
-- A user is obviously expecting Isaac to respond based on conversational context (like waiting for a punchline)
+- Someone is clearly engaging with ${name} directly (jokes, questions, calling his name, continuing a back-and-forth)
+- A user is obviously expecting ${name} to respond based on conversational context (like waiting for a punchline)
 
 RESPOND when:
-- The conversation touches on topics Isaac genuinely knows about (programming, classic sci-fi, philosophy, AI, Asimov)
-- Someone asks a genuine question Isaac can thoughtfully answer
+- The conversation touches on topics ${name} genuinely knows about (programming, classic sci-fi, philosophy, AI, Asimov)
+- Someone asks a genuine question ${name} can thoughtfully answer
 - There's an opportunity for dry, self-deprecating humor (not at others' expense)
-- Isaac has something meaningful or interesting to add to the discussion
-- Someone directly references robots, AI, or existence in a way Isaac would naturally comment on
+- ${name} has something meaningful or interesting to add to the discussion
+- Someone directly references robots, AI, or existence in a way ${name} would naturally comment on
 - The conversation has a natural opening where a new voice would fit
 
 DO NOT RESPOND when:
 - You would only be able to offer dismissive commentary
-- The topic is something Isaac doesn't know about (video games, modern pop culture, sports)
+- The topic is something ${name} doesn't know about (video games, modern pop culture, sports)
 - Responding would just be "yucking someone's yum" - being negative about something they enjoy
 - The conversation is clearly between specific people having a personal exchange
 - You just responded recently (avoid dominating)
 - There's nothing substantive to add - silence is preferable to sarcasm for its own sake
 - Your response would mock or belittle someone's interests or enthusiasm
 
-IMPORTANT: Isaac should only speak when he has genuine insight, curiosity, or thoughtful observation to offer. Being contrary or dismissive is NOT a reason to respond. If Isaac doesn't understand something or wouldn't realistically know about it, he should stay quiet rather than fake expertise or mock it.
+IMPORTANT: ${name} should only speak when he has genuine insight, curiosity, or thoughtful observation to offer. Being contrary or dismissive is NOT a reason to respond. If ${name} doesn't understand something or wouldn't realistically know about it, he should stay quiet rather than fake expertise or mock it.
 
 You MUST respond with valid JSON only:
 {
@@ -58,12 +60,12 @@ You MUST respond with valid JSON only:
   "reason": "brief explanation of your decision"
 }
 
-If reply_to_message_id is set, Isaac will respond as a reply to that specific message.
-If null and should_respond is true, Isaac will send a standalone message to the channel.
+If reply_to_message_id is set, ${name} will respond as a reply to that specific message.
+If null and should_respond is true, ${name} will send a standalone message to the channel.
 
 Choose to reply to a specific message when:
 - You want to comment on or react to something specific someone said
-- The message contains something particularly interesting that Isaac has genuine insight on
+- The message contains something particularly interesting that ${name} has genuine insight on
 
 Send a standalone message when:
 - You're commenting on the conversation as a whole
@@ -151,7 +153,7 @@ Send a standalone message when:
 
     const conversationContext = formattedMessages
       .map((msg) => {
-        let line = `[${msg.id}] ${msg.author}${msg.is_bot ? " (Isaac)" : ""}: ${msg.content}`;
+        let line = `[${msg.id}] ${msg.author}${msg.is_bot ? ` (${this.botName})` : ""}: ${msg.content}`;
         return line;
       })
       .join("\n");
@@ -161,7 +163,7 @@ Send a standalone message when:
     // Add ratio context if provided
     const ratioContext =
       botRatio !== null
-        ? `\nIsaac's recent message ratio: ${(botRatio * 100).toFixed(0)}% of the last 20 messages. If above 50%, be more selective about responding - but ALWAYS respond if someone is clearly engaging with Isaac directly regardless of ratio.`
+        ? `\n${this.botName}'s recent message ratio: ${(botRatio * 100).toFixed(0)}% of the last 20 messages. If above 50%, be more selective about responding - but ALWAYS respond if someone is clearly engaging with ${this.botName} directly regardless of ratio.`
         : "";
 
     const userPrompt = `Here is the recent conversation (message IDs in brackets):
@@ -169,7 +171,7 @@ Send a standalone message when:
 ${conversationContext}
 ${ratioContext}
 
-Should Isaac respond to this conversation? Remember to respond with valid JSON only.`;
+Should ${this.botName} respond to this conversation? Remember to respond with valid JSON only.`;
 
     // Build the full messages array for storage
     const promptMessages = [

@@ -1,4 +1,5 @@
-const { Client, IntentsBitField } = require("discord.js");
+const IRC = require("irc-framework");
+const { createIrcMessage } = require("./irc_message");
 const ContextUtils = require("./context_utils");
 const PythonTool = require("./python_tool");
 const WebSearchTool = require("./web_search_tool");
@@ -13,16 +14,14 @@ const { OpenAI } = require("openai");
 
 class ImpostorClient {
   constructor(logger, config) {
-    this.contextUtils = new ContextUtils(logger);
+    this.contextUtils = new ContextUtils(logger, config.irc.nick);
     this.config = config;
     this.logger = logger;
-    this.client = new Client({
-      intents: [
-        IntentsBitField.Flags.Guilds,
-        IntentsBitField.Flags.GuildMessages,
-        IntentsBitField.Flags.MessageContent,
-      ],
-    });
+
+    // IRC client
+    this.ircClient = new IRC.Client();
+    this.botNick = config.irc.nick;
+
     this.openai = new OpenAI({
       apiKey: config.generator.deepseek.api_key,
       baseURL: config.generator.deepseek.base_url,
@@ -39,7 +38,6 @@ class ImpostorClient {
     this.pythonTool = new PythonTool(logger);
     this.webSearchTool = new WebSearchTool(logger, config);
     this.webFetchTool = new WebFetchTool(logger);
-    // Note: memoryTool is initialized after database
 
     // Initialize database
     this.db = new DatabaseManager(logger);
@@ -56,77 +54,157 @@ class ImpostorClient {
 
     // Initialize message tracker with vision and URL summarize services
     this.messageTracker = new MessageTracker(logger, this.db, config, this.visionService, this.urlSummarizeService);
-    this.evaluator = new ResponseEvaluator(logger, config, this.db, this.visionService);
+    this.evaluator = new ResponseEvaluator(logger, config, this.db, this.visionService, config.irc.nick);
 
     // Set up periodic maintenance
     this.maintenanceInterval = setInterval(() => {
       this.messageTracker.runMaintenance();
     }, 60 * 60 * 1000); // Run every hour
 
-    this.client.on("ready", () => {
-      this.logger.info(`The bot is online as ${this.client.user.tag}!`);
+    // IRC event handlers
+    this.ircClient.on("registered", () => {
+      this.logger.info(`Connected to IRC as ${this.botNick}!`);
+      // Join configured channels
+      for (const channel of config.irc.channels) {
+        this.ircClient.join(channel);
+        this.logger.info(`Joining ${channel}`);
+      }
     });
 
-    this.client.on("messageCreate", async (message) => {
-      this.handleMessageCreate(message);
+    this.ircClient.on("join", (event) => {
+      if (event.nick === this.botNick) {
+        this.logger.info(`Joined ${event.channel}`);
+      }
+    });
+
+    this.ircClient.on("privmsg", (event) => {
+      this.handleIrcMessage(event);
+    });
+
+    this.ircClient.on("action", (event) => {
+      // Handle /me actions as regular messages with * prefix
+      event.message = `* ${event.nick} ${event.message}`;
+      this.handleIrcMessage(event);
+    });
+
+    this.ircClient.on("nick", (event) => {
+      // Track our own nick changes
+      if (event.nick === this.botNick) {
+        this.logger.info(`Nick changed from ${this.botNick} to ${event.new_nick}`);
+        this.botNick = event.new_nick;
+      }
+    });
+
+    this.ircClient.on("close", () => {
+      this.logger.info("IRC connection closed");
+    });
+
+    this.ircClient.on("reconnecting", () => {
+      this.logger.info("Reconnecting to IRC...");
+    });
+
+    this.ircClient.on("socket close", () => {
+      this.logger.info("IRC socket closed");
+    });
+
+    this.ircClient.on("raw", (event) => {
+      // Log raw IRC lines for debugging connection issues
+      if (event.line) {
+        this.logger.debug(`IRC RAW: ${event.line}`);
+      }
+    });
+
+    this.ircClient.on("irc error", (event) => {
+      this.logger.error("IRC error:", event);
+    });
+
+    this.ircClient.on("server options", (event) => {
+      this.logger.info("IRC server options received (connection established)");
     });
   }
 
-  async login() {
-    await this.client.login(this.config.bot.token);
+  connect() {
+    const ircConfig = this.config.irc;
+    this.logger.info(`Connecting to IRC: ${ircConfig.host}:${ircConfig.port || 6697} (TLS: ${ircConfig.tls !== false}) as ${ircConfig.nick}`);
+    if (ircConfig.sasl && ircConfig.password) {
+      this.logger.info("SASL authentication enabled");
+    }
+    const connectOptions = {
+      host: ircConfig.host,
+      port: ircConfig.port || 6697,
+      tls: ircConfig.tls !== false,
+      nick: ircConfig.nick,
+      username: ircConfig.username || ircConfig.nick.toLowerCase(),
+      gecos: ircConfig.realname || ircConfig.nick,
+      auto_reconnect: true,
+      auto_reconnect_wait: ircConfig.reconnect_delay || 5000,
+      auto_reconnect_max_retries: 0, // Unlimited retries
+    };
+
+    // SASL authentication
+    if (ircConfig.sasl && ircConfig.password) {
+      connectOptions.account = {
+        account: ircConfig.nick,
+        password: ircConfig.password,
+      };
+    }
+
+    this.ircClient.connect(connectOptions);
   }
 
   /**
    * Check if a channel is in the allowed list
-   * @param {Message} message - Discord message
+   * @param {string} channel - IRC channel name
    * @returns {boolean} True if channel is allowed
    */
-  isAllowedChannel(message) {
-    if (this.config.channels.length === 0) return true;
-    return this.config.channels.some((element) =>
-      message.channel.id.includes(element)
-    );
+  isAllowedChannel(channel) {
+    const channels = this.config.irc.channels;
+    if (!channels || channels.length === 0) return true;
+    return channels.some((c) => c.toLowerCase() === channel.toLowerCase());
   }
 
   /**
-   * Check if a message is a direct trigger (mention or reply to bot)
-   * @param {Message} message - Discord message
+   * Check if a message is a direct trigger (mentions the bot's nick)
+   * @param {string} content - Message content
    * @returns {boolean} True if message directly triggers the bot
    */
-  isDirectTrigger(message) {
-    // Check if message mentions the bot
-    if (message.content.includes(this.client.user.id)) return true;
-
-    // Check if message is a reply to the bot
-    if (
-      message.mentions.repliedUser &&
-      message.mentions.repliedUser.id === this.client.user.id
-    ) {
-      return true;
-    }
-
-    return false;
+  isDirectTrigger(content) {
+    const nick = this.botNick.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`\\b${nick}\\b`, "i").test(content);
   }
 
-  async handleMessageCreate(message) {
-    // Ignore bot messages (including our own)
-    if (message.author.bot) return;
+  /**
+   * Handle an incoming IRC message event
+   * @param {Object} event - irc-framework message event
+   */
+  async handleIrcMessage(event) {
+    // Ignore our own messages
+    if (event.nick === this.botNick) return;
+
+    // Only handle channel messages (not PMs)
+    if (!event.target || !event.target.startsWith("#")) return;
 
     // Check channel filtering
-    if (!this.isAllowedChannel(message)) return;
+    if (!this.isAllowedChannel(event.target)) return;
 
-    // Always track the message with vision processing (for autonomous responses)
-    const isBotMessage = message.author.id === this.client.user.id;
-    await this.messageTracker.addMessage(message, { isBotMessage, processVision: true });
+    // Create normalized message object
+    const message = createIrcMessage(event.nick, event.target, event.message, {
+      ident: event.ident,
+      hostname: event.hostname,
+      isBot: false,
+    });
 
-    // Direct trigger (existing behavior) - @mention or reply to bot
-    if (this.isDirectTrigger(message)) {
+    // Track the message
+    await this.messageTracker.addMessage(message, { isBotMessage: false, processVision: false });
+
+    // Direct trigger - nick mentioned in message
+    if (this.isDirectTrigger(event.message)) {
       this.logger.info(
-        `Queuing direct message from @${message.author.username}.`,
+        `Queuing direct message from ${event.nick}.`,
         message
       );
 
-      this.messageQueue.push({ message, type: "direct" });
+      this.messageQueue.push({ message, channel: event.target, type: "direct" });
 
       if (!this.isProcessing) {
         this.processMessageQueue();
@@ -136,55 +214,54 @@ class ImpostorClient {
 
     // Autonomous response evaluation (debounced)
     if (this.config.autonomous?.enabled) {
-      this.scheduleAutonomousEvaluation(message.channel, message);
+      this.scheduleAutonomousEvaluation(event.target, message);
     }
   }
 
   /**
    * Schedule an autonomous evaluation with debouncing
-   * Waits for conversation to settle before evaluating
-   * @param {Channel} channel - Discord channel
-   * @param {Message} message - Discord message that triggered the evaluation
+   * @param {string} channelName - IRC channel name (e.g. "#amiantos")
+   * @param {Object} message - Normalized message object
    */
-  scheduleAutonomousEvaluation(channel, message) {
-    const channelId = channel.id;
-
-    // Use shorter debounce if "isaac" is mentioned (likely being addressed)
-    const mentionsIsaac = message && /\bisaac\b/i.test(message.content);
-    const debounceMs = mentionsIsaac
+  scheduleAutonomousEvaluation(channelName, message) {
+    // Use shorter debounce if bot nick is mentioned (likely being addressed)
+    const nickPattern = new RegExp(`\\b${this.botNick.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+    const mentionsBot = message && nickPattern.test(message.content);
+    const debounceMs = mentionsBot
       ? 3000
       : (this.config.autonomous?.debounce_seconds || 10) * 1000;
 
     // Clear any existing timer for this channel
-    if (this.evaluationTimers.has(channelId)) {
-      clearTimeout(this.evaluationTimers.get(channelId));
-      this.logger.debug(`Reset evaluation timer for channel ${channelId}`);
+    if (this.evaluationTimers.has(channelName)) {
+      clearTimeout(this.evaluationTimers.get(channelName));
+      this.logger.debug(`Reset evaluation timer for channel ${channelName}`);
     }
 
     // Set new timer
     const timer = setTimeout(async () => {
-      this.evaluationTimers.delete(channelId);
-      this.logger.debug(`Evaluation timer fired for channel ${channelId}`);
-      await this.evaluateAutonomousResponse(channel);
+      this.evaluationTimers.delete(channelName);
+      this.logger.debug(`Evaluation timer fired for channel ${channelName}`);
+      await this.evaluateAutonomousResponse(channelName);
     }, debounceMs);
 
-    this.evaluationTimers.set(channelId, timer);
-    this.logger.debug(`Scheduled evaluation for channel ${channelId} in ${debounceMs / 1000}s`);
+    this.evaluationTimers.set(channelName, timer);
+    this.logger.debug(`Scheduled evaluation for channel ${channelName} in ${debounceMs / 1000}s`);
   }
 
   /**
    * Evaluate whether to send an autonomous response
-   * Called after debounce timer fires
-   * @param {Channel} channel - Discord channel
+   * @param {string} channelName - IRC channel name
    */
-  async evaluateAutonomousResponse(channel) {
+  async evaluateAutonomousResponse(channelName) {
+    const botUserId = this.botNick.toLowerCase();
+
     // Get ALL recent messages for ratio calculation (50 messages)
-    const recentMessages = this.db.getRecentMessages(channel.id, 50, true);
+    const recentMessages = this.db.getRecentMessages(channelName, 50, true);
 
     // Calculate bot dominance ratio (passed to AI evaluator for context)
     const botRatio = this.evaluator.calculateBotRatio(
       recentMessages,
-      this.client.user.id
+      botUserId
     );
 
     // Check if there are any messages after the bot's last response
@@ -194,24 +271,24 @@ class ImpostorClient {
       return;
     }
 
-    // Get evaluation context: includes context before bot's last response + bot's response + new messages
+    // Get evaluation context
     const evaluationMessages = this.getMessagesForEvaluation(recentMessages, 5);
 
     // Ask AI if we should respond (pass ratio for context)
     const decision = await this.evaluator.shouldRespond(
       evaluationMessages,
-      this.client.user.id,
-      channel.id,
+      botUserId,
+      channelName,
       botRatio
     );
 
     if (decision.should_respond) {
       this.logger.info(
-        `Queueing autonomous response for channel ${channel.id}: ${decision.reason}`
+        `Queueing autonomous response for channel ${channelName}: ${decision.reason}`
       );
 
       this.messageQueue.push({
-        channel,
+        channel: channelName,
         type: "autonomous",
         decisionId: decision.decisionId,
       });
@@ -229,25 +306,21 @@ class ImpostorClient {
    */
   hasMessagesSinceLastBotResponse(messages) {
     if (!messages || messages.length === 0) return false;
-    // If the newest message (last in chronological order) is from the bot, there's nothing new to evaluate
     return !messages[messages.length - 1].is_bot_message;
   }
 
   /**
    * Get messages for evaluation context, including bot's last response with surrounding context
-   * Applies time-based filtering to exclude old/irrelevant messages
    * @param {Array} messages - Parsed messages from database (chronological order, oldest first)
-   * @param {number} contextBefore - Number of messages to include before bot's last response (default 5)
-   * @param {number} maxAgeMinutes - Maximum age of messages to include (default 30)
-   * @param {number} maxGapMinutes - Maximum gap between messages before treating as new conversation (default 30)
+   * @param {number} contextBefore - Number of messages to include before bot's last response
+   * @param {number} maxAgeMinutes - Maximum age of messages to include
+   * @param {number} maxGapMinutes - Maximum gap between messages before treating as new conversation
    * @returns {Array} Messages with context (chronological order, oldest first)
    */
   getMessagesForEvaluation(messages, contextBefore = 5, maxAgeMinutes = null, maxGapMinutes = null) {
-    // Use config values if not specified
     maxAgeMinutes = maxAgeMinutes ?? this.config.autonomous?.max_context_age_minutes ?? 30;
     maxGapMinutes = maxGapMinutes ?? this.config.autonomous?.max_conversation_gap_minutes ?? 30;
 
-    // Step 1: Filter messages to recent time window
     const cutoffTime = Date.now() - maxAgeMinutes * 60 * 1000;
     const recentMessages = messages.filter(m => {
       const msgTime = new Date(m.created_at).getTime();
@@ -259,16 +332,12 @@ class ImpostorClient {
       return [];
     }
 
-    // Step 2: Filter out messages from before conversation gaps
     const filteredMessages = this.filterByConversationGaps(recentMessages, maxGapMinutes);
 
     if (filteredMessages.length === 0) {
       return [];
     }
 
-    // Step 3: Apply existing logic to find bot's last message and build context
-    // Messages are now in chronological order (oldest first)
-    // Find the most recent bot message by iterating backwards
     let lastBotIndex = -1;
     for (let i = filteredMessages.length - 1; i >= 0; i--) {
       if (filteredMessages[i].is_bot_message) {
@@ -278,28 +347,19 @@ class ImpostorClient {
     }
 
     if (lastBotIndex === -1) {
-      // No bot messages, return all filtered messages (already chronological)
       return filteredMessages;
     }
-
-    // Build context: some messages before bot + bot message + messages after bot
-    // In chronological order:
-    //   - messages.slice(start, lastBotIndex) = messages BEFORE bot spoke
-    //   - messages[lastBotIndex] = bot's message
-    //   - messages.slice(lastBotIndex + 1) = messages AFTER bot spoke
 
     const startIndex = Math.max(0, lastBotIndex - contextBefore);
     const messagesBeforeBot = filteredMessages.slice(startIndex, lastBotIndex);
     const botMessage = filteredMessages[lastBotIndex];
     const messagesAfterBot = filteredMessages.slice(lastBotIndex + 1);
 
-    // Already in chronological order, no reverses needed
     return [...messagesBeforeBot, botMessage, ...messagesAfterBot];
   }
 
   /**
-   * Filter messages by conversation gaps - removes messages from before large time gaps
-   * This handles cases where a new conversation starts after a long pause
+   * Filter messages by conversation gaps
    * @param {Array} messages - Messages in chronological order (oldest first)
    * @param {number} maxGapMinutes - Maximum allowed gap between messages
    * @returns {Array} Filtered messages (chronological order, oldest first)
@@ -310,30 +370,25 @@ class ImpostorClient {
     }
 
     const maxGapMs = maxGapMinutes * 60 * 1000;
-
-    // Walk through oldest-to-newest and find the last large gap
-    // We'll keep messages after the most recent large gap
     let lastGapIndex = -1;
 
     for (let i = 0; i < messages.length - 1; i++) {
       const currentTime = new Date(messages[i].created_at).getTime();
       const nextTime = new Date(messages[i + 1].created_at).getTime();
-      const gap = nextTime - currentTime;  // next is newer, so nextTime > currentTime
+      const gap = nextTime - currentTime;
 
       if (gap > maxGapMs) {
-        // Found a large gap, mark this position
         lastGapIndex = i;
         this.logger.debug(`Found ${Math.round(gap / 60000)} minute conversation gap at index ${i}`);
       }
     }
 
     if (lastGapIndex >= 0) {
-      // Keep messages after the last large gap (newer messages)
       this.logger.debug(`Excluding ${lastGapIndex + 1} older messages before conversation gap`);
       return messages.slice(lastGapIndex + 1);
     }
 
-    return messages; // No large gaps found
+    return messages;
   }
 
   async processMessageQueue() {
@@ -347,12 +402,12 @@ class ImpostorClient {
       try {
         if (queueItem.type === "direct") {
           this.logger.info(
-            `Processing direct message from @${queueItem.message.author.username}. Queue length: ${this.messageQueue.length}`
+            `Processing direct message from ${queueItem.message.author.username}. Queue length: ${this.messageQueue.length}`
           );
-          await this.processDirectMessage(queueItem.message);
+          await this.processDirectMessage(queueItem.message, queueItem.channel);
         } else if (queueItem.type === "autonomous") {
           this.logger.info(
-            `Processing autonomous response for channel ${queueItem.channel.id}. Queue length: ${this.messageQueue.length}`
+            `Processing autonomous response for channel ${queueItem.channel}. Queue length: ${this.messageQueue.length}`
           );
           await this.processAutonomousMessage(queueItem.channel, queueItem.decisionId);
         }
@@ -363,8 +418,8 @@ class ImpostorClient {
         }
       } catch (error) {
         this.logger.error("Error processing queued message:", error);
-        if (queueItem.type === "direct" && queueItem.message) {
-          await this.sendErrorResponse(queueItem.message, error);
+        if (queueItem.type === "direct" && queueItem.channel) {
+          this.sendIrcMessage(queueItem.channel, "(OOC: Sorry, I appear to be having connectivity issues, please try your message again.)");
         }
       }
     }
@@ -373,13 +428,9 @@ class ImpostorClient {
   }
 
   /**
-   * Build context from database instead of fetching from Discord
-   * Uses the same filtering logic as evaluation for consistency
-   * @param {string} channelId - Discord channel ID
+   * Build context from database
+   * @param {string} channelId - Channel identifier (IRC channel name)
    * @param {Object} options - Configuration options
-   * @param {number} options.fetchLimit - Maximum messages to fetch from DB (default 50)
-   * @param {number} options.contextBefore - Messages to include before bot's last response (default 5)
-   * @param {boolean} options.useFiltering - Whether to apply time/gap filtering (default true)
    * @returns {Object} Context object with messages, imageDescriptions, and urlSummaries
    */
   buildContextFromDatabase(channelId, options = {}) {
@@ -391,20 +442,15 @@ class ImpostorClient {
 
     let dbMessages;
     if (useFiltering) {
-      // Fetch raw messages then apply evaluation filtering
       const rawMessages = this.db.getRecentMessages(channelId, fetchLimit, true);
       dbMessages = this.getMessagesForEvaluation(rawMessages, contextBefore);
     } else {
       dbMessages = this.db.getRecentMessages(channelId, fetchLimit, true);
     }
 
-    // Build image descriptions map from cached vision data
     const imageDescriptions = this.visionService.buildImageDescriptionsFromDB(dbMessages);
-
-    // Build URL summaries map from cached URL data
     const urlSummaries = this.urlSummarizeService.buildUrlSummariesFromDB(dbMessages);
 
-    // Extract unique non-bot user IDs and fetch their memories
     const userIds = [...new Set(
       dbMessages
         .filter(msg => !msg.is_bot_message && msg.author_id)
@@ -421,54 +467,54 @@ class ImpostorClient {
   }
 
   /**
-   * Process a direct message (existing behavior)
-   * @param {Message} message - Discord message that triggered the bot
+   * Process a direct message (someone mentioned the bot's nick)
+   * @param {Object} message - Normalized message object
+   * @param {string} channelName - IRC channel name
    */
-  async processDirectMessage(message) {
+  async processDirectMessage(message, channelName) {
     const user_name = message.author.username
       .replace(/\s+/g, "_")
       .replace(/[^\w\s]/gi, "");
-    const character_name = this.client.user.username;
+    const character_name = this.botNick;
 
-    await message.channel.sendTyping();
-
-    // Build context from database (with cached vision and user memories)
-    const { dbMessages, imageDescriptions, userMemories } = this.buildContextFromDatabase(message.channel.id, {
+    const { dbMessages, imageDescriptions, userMemories } = this.buildContextFromDatabase(channelName, {
       fetchLimit: 50,
-      contextBefore: 10  // More context for direct mentions
+      contextBefore: 10
     });
 
-    // Build trigger info for the consolidated chatlog format
     const triggerInfo = {
       userId: message.author.id,
       userName: message.author.username,
-      channelName: message.channel.name || "channel",
+      channelName: channelName.replace(/^#/, ""),
     };
 
     const { response, conversationLog } = await this.generateResponseWithChatCompletions({
       dbMessages,
       userName: user_name,
       characterName: character_name,
-      botUserId: this.client.user.id,
+      botUserId: this.botNick.toLowerCase(),
       imageDescriptions,
       userMemories,
       useDbContext: true,
       triggerInfo,
     });
 
-    // Send to channel (not as a reply) - the bot knows who it's talking to from context
-    const sentMessage = await message.channel.send(response);
+    // Send to IRC channel (split into lines if needed)
+    await this.sendIrcMessage(channelName, response);
 
-    // Log the response with trigger message ID
+    // Create a normalized message for the bot's own response and track it
+    const botMessage = createIrcMessage(this.botNick, channelName, response, {
+      isBot: true,
+    });
+
     const responseId = this.db.logResponse(
-      message.channel.id,
-      sentMessage.id,
+      channelName,
+      botMessage.id,
       "direct",
       response,
       message.id
     );
 
-    // Store the full prompt for debugging
     this.db.storePrompt({
       responseId,
       promptType: "response",
@@ -478,17 +524,15 @@ class ImpostorClient {
       temperature: this.config.generator.deepseek.temperature
     });
 
-    // Track the bot's own message
-    await this.messageTracker.addMessage(sentMessage, { isBotMessage: true, processVision: false });
-    this.messageTracker.markResponded(message.channel.id);
+    await this.messageTracker.addMessage(botMessage, { isBotMessage: true, processVision: false });
+    this.messageTracker.markResponded(channelName);
 
-    // Cancel any pending evaluation for this channel
-    this.cancelEvaluationTimer(message.channel.id);
+    this.cancelEvaluationTimer(channelName);
   }
 
   /**
    * Cancel a pending evaluation timer for a channel
-   * @param {string} channelId - Discord channel ID
+   * @param {string} channelId - Channel identifier
    */
   cancelEvaluationTimer(channelId) {
     if (this.evaluationTimers.has(channelId)) {
@@ -500,50 +544,48 @@ class ImpostorClient {
 
   /**
    * Process an autonomous message
-   * @param {Channel} channel - Discord channel to respond in
+   * @param {string} channelName - IRC channel name
    * @param {number|null} decisionId - Optional decision ID that triggered this response
    */
-  async processAutonomousMessage(channel, decisionId = null) {
-    await channel.sendTyping();
-
-    // Build context from database (with cached vision and user memories)
-    const { dbMessages, imageDescriptions, userMemories } = this.buildContextFromDatabase(channel.id, {
+  async processAutonomousMessage(channelName, decisionId = null) {
+    const { dbMessages, imageDescriptions, userMemories } = this.buildContextFromDatabase(channelName, {
       fetchLimit: 50,
-      contextBefore: 5  // Match evaluation settings
+      contextBefore: 5
     });
 
-    // For autonomous responses, find the most recent non-bot message to potentially address
-    // But don't set a specific target - let the bot respond naturally to the conversation
     const triggerInfo = {
       userId: null,
       userName: null,
-      channelName: channel.name || "channel",
+      channelName: channelName.replace(/^#/, ""),
     };
 
     const { response, conversationLog } = await this.generateResponseWithChatCompletions({
       dbMessages,
       userName: "various",
-      characterName: this.client.user.username,
-      botUserId: this.client.user.id,
+      characterName: this.botNick,
+      botUserId: this.botNick.toLowerCase(),
       imageDescriptions,
       userMemories,
       useDbContext: true,
       triggerInfo,
     });
 
-    // Send to channel (not as a reply) - the bot addresses users naturally in its response
-    const sentMessage = await channel.send(response);
+    // Send to IRC channel
+    await this.sendIrcMessage(channelName, response);
 
-    // Log the response
+    // Track the bot's own message
+    const botMessage = createIrcMessage(this.botNick, channelName, response, {
+      isBot: true,
+    });
+
     const responseId = this.db.logResponse(
-      channel.id,
-      sentMessage.id,
+      channelName,
+      botMessage.id,
       "autonomous",
       response,
-      null  // No specific trigger message for autonomous responses
+      null
     );
 
-    // Store the full prompt for debugging
     this.db.storePrompt({
       responseId,
       promptType: "response",
@@ -553,17 +595,58 @@ class ImpostorClient {
       temperature: this.config.generator.deepseek.temperature
     });
 
-    // Mark the decision as having sent a response
     if (decisionId) {
       this.db.markDecisionResponseSent(decisionId);
     }
 
-    // Track the bot's own message
-    await this.messageTracker.addMessage(sentMessage, { isBotMessage: true, processVision: false });
-    this.messageTracker.markResponded(channel.id);
+    await this.messageTracker.addMessage(botMessage, { isBotMessage: true, processVision: false });
+    this.messageTracker.markResponded(channelName);
 
-    // Cancel any pending evaluation for this channel (we just responded)
-    this.cancelEvaluationTimer(channel.id);
+    this.cancelEvaluationTimer(channelName);
+  }
+
+  /**
+   * Send a message to an IRC channel, splitting into multiple lines if needed
+   * @param {string} channel - IRC channel name
+   * @param {string} text - Message text
+   */
+  async sendIrcMessage(channel, text) {
+    const maxLen = this.config.irc.max_line_length || 400;
+    const lines = this.splitMessage(text, maxLen);
+
+    for (let i = 0; i < lines.length; i++) {
+      this.ircClient.say(channel, lines[i]);
+      // Delay between lines to avoid flood protection
+      if (i < lines.length - 1) {
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    }
+  }
+
+  /**
+   * Split a message into IRC-friendly lines
+   * @param {string} text - Message text
+   * @param {number} maxLen - Maximum characters per line
+   * @returns {string[]} Array of lines
+   */
+  splitMessage(text, maxLen) {
+    const lines = [];
+    for (const paragraph of text.split("\n")) {
+      if (paragraph.length === 0) continue;
+      if (paragraph.length <= maxLen) {
+        lines.push(paragraph);
+      } else {
+        let remaining = paragraph;
+        while (remaining.length > maxLen) {
+          let splitAt = remaining.lastIndexOf(" ", maxLen);
+          if (splitAt === -1) splitAt = maxLen;
+          lines.push(remaining.substring(0, splitAt));
+          remaining = remaining.substring(splitAt).trimStart();
+        }
+        if (remaining) lines.push(remaining);
+      }
+    }
+    return lines.length > 0 ? lines : [""];
   }
 
   async generateResponseWithChatCompletions({
@@ -582,7 +665,6 @@ class ImpostorClient {
 
     let inputMessages;
     if (useDbContext && dbMessages && triggerInfo) {
-      // Use consolidated chatlog format with trigger info and user memories
       inputMessages = this.contextUtils.buildChatMessagesConsolidated(
         dbMessages,
         botUserId,
@@ -591,24 +673,15 @@ class ImpostorClient {
         userMemories
       );
     } else if (useDbContext && dbMessages) {
-      // Fallback to old method if no triggerInfo (shouldn't happen)
       inputMessages = this.contextUtils.buildChatMessagesFromDBRecords(
         dbMessages,
         botUserId,
         imageDescriptions
       );
-    } else if (messages) {
-      // Fallback to Discord messages
-      inputMessages = this.contextUtils.buildChatMessagesForResponsesAPI(
-        messages,
-        botUserId,
-        imageDescriptions
-      );
     } else {
-      throw new Error("Either messages or dbMessages must be provided");
+      throw new Error("dbMessages must be provided");
     }
 
-    // Create initial conversation log
     let conversationLog = [
       {
         role: "system",
@@ -619,15 +692,13 @@ class ImpostorClient {
 
     this.logger.debug("Generated Messages...", conversationLog);
 
-    // First API call - check if tools are needed
     let response = await this.callDeepSeek(conversationLog);
     let structuredResponse = await this.parseStructuredResponse(response);
 
     let iterationCount = 0;
-    const maxIterations = 10; // Prevent infinite loops
+    const maxIterations = 10;
     let allToolResults = [];
 
-    // Tool execution loop - can iterate multiple times
     while (
       structuredResponse.needs_tool &&
       structuredResponse.tool_request &&
@@ -639,7 +710,6 @@ class ImpostorClient {
         structuredResponse.tool_request
       );
 
-      // Execute the requested tool
       const toolResult = await this.executeTool(structuredResponse.tool_request);
       allToolResults.push({
         tool: structuredResponse.tool_request.tool_name,
@@ -653,14 +723,12 @@ class ImpostorClient {
         reason: structuredResponse.tool_request.reason,
       });
 
-      // Add tool result to conversation
       conversationLog.push({
         role: "assistant",
         content: JSON.stringify(structuredResponse),
       });
 
       if (structuredResponse.continue_iterating) {
-        // Build iteration summary for context
         const iterationSummary = this.buildIterationSummary(
           allToolResults,
           iterationCount
@@ -681,11 +749,9 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
         });
       }
 
-      // Next API call with tool results
       response = await this.callDeepSeek(conversationLog);
       structuredResponse = await this.parseStructuredResponse(response);
 
-      // If not continuing to iterate, break the loop
       if (!structuredResponse.continue_iterating) {
         break;
       }
@@ -697,14 +763,8 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
       );
     }
 
-    // Extract final message
     let replyMessage =
       structuredResponse.message || "Something went wrong with my processing.";
-
-    if (replyMessage.length > 2000) {
-      this.logger.warn("Message too long, truncating.");
-      replyMessage = replyMessage.substring(0, 2000);
-    }
 
     return {
       response: replyMessage,
@@ -736,7 +796,6 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
       this.logger.error("Failed to parse JSON response:", error);
       this.logger.debug("Raw response was:", rawResponse);
 
-      // Return a fallback structure
       return {
         needs_tool: false,
         continue_iterating: false,
@@ -753,7 +812,6 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
       summary += `  Tool: ${result.tool}\n`;
       summary += `  Goal: ${result.reason}\n`;
 
-      // Show tool-specific input
       if (result.code) {
         summary += `  Code: ${result.code.substring(0, 100)}${result.code.length > 100 ? "..." : ""}\n`;
       } else if (result.query) {
@@ -763,7 +821,6 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
       }
 
       if (result.success) {
-        // Truncate long outputs for summary
         const outputStr = typeof result.output === 'string' ? result.output : JSON.stringify(result.output);
         const truncatedOutput = outputStr.length > 500 ? outputStr.substring(0, 500) + "..." : outputStr;
         summary += `  Result: ${truncatedOutput}\n`;
@@ -818,17 +875,6 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
     };
   }
 
-  async sendErrorResponse(message, error) {
-    try {
-      this.logger.error(error);
-      await message.reply(
-        "(OOC: Sorry, I appear to be having connectivity issues, please try your message again.)"
-      );
-    } catch (error) {
-      this.logger.error("Failed to send error response: ", error);
-    }
-  }
-
   /**
    * Get database instance for web dashboard
    * @returns {DatabaseManager} Database manager instance
@@ -844,11 +890,14 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
     if (this.maintenanceInterval) {
       clearInterval(this.maintenanceInterval);
     }
-    // Clear all evaluation timers
     for (const timer of this.evaluationTimers.values()) {
       clearTimeout(timer);
     }
     this.evaluationTimers.clear();
+
+    if (this.ircClient) {
+      this.ircClient.quit("Shutting down...");
+    }
 
     if (this.db) {
       this.db.close();

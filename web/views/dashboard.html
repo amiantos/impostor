@@ -987,7 +987,7 @@
         // Use different endpoint based on whether a specific channel is selected
         let url;
         if (currentChannel) {
-          url = `${API_BASE}/channels/${currentChannel}/chat?limit=100`;
+          url = `${API_BASE}/channels/${encodeURIComponent(currentChannel)}/chat?limit=100`;
         } else {
           // "All Channels" - fetch from all channels
           url = `${API_BASE}/chat?limit=100`;

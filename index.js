@@ -15,7 +15,7 @@ if (config.web?.enabled) {
 }
 
 // Start the bot
-client.login();
+client.connect();
 
 // Handle graceful shutdown
 process.on("SIGINT", () => {
