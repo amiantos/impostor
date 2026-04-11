@@ -2,6 +2,7 @@ const config = require("./conf/config.json");
 const Logger = require("./classes/logger");
 const ImpostorClient = require("./classes/impostor_client");
 const WebServer = require("./web/server");
+const ChatLogUploader = require("./classes/chat_log_uploader");
 
 // Instantiate
 const logger = new Logger(true); // Enable debug mode
@@ -14,12 +15,20 @@ if (config.web?.enabled) {
   webServer.start();
 }
 
+// Start the chat log uploader if enabled
+let chatLogUploader = null;
+if (config.chat_log_upload?.enabled) {
+  chatLogUploader = new ChatLogUploader(logger, config.chat_log_upload);
+  chatLogUploader.start();
+}
+
 // Start the bot
 client.connect();
 
 // Handle graceful shutdown
 process.on("SIGINT", () => {
   logger.info("Shutting down...");
+  if (chatLogUploader) chatLogUploader.stop();
   if (webServer) webServer.stop();
   client.shutdown();
   process.exit(0);
@@ -27,6 +36,7 @@ process.on("SIGINT", () => {
 
 process.on("SIGTERM", () => {
   logger.info("Shutting down...");
+  if (chatLogUploader) chatLogUploader.stop();
   if (webServer) webServer.stop();
   client.shutdown();
   process.exit(0);
