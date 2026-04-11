@@ -1,17 +1,17 @@
-# Impostor for Discord
+# Impostor for IRC
 
-A Discord chatbot powered by DeepSeek API, featuring a built-in Isaac personality (a depressive, sarcastic, cynical robot) with autonomous responses, vision capabilities, and Python tool execution.
+An IRC chatbot powered by DeepSeek API, featuring a built-in Isaac personality (a melancholic, sarcastic, cynical robot) with autonomous responses, URL summarization, web search/fetch, and Python tool execution. Connects to libera.chat via `irc-framework`.
 
 ## Features
 
-- **Isaac Personality**: Depressive, sarcastic, and cynical robot character
-- **Autonomous Responses**: Bot naturally participates in conversations without being @mentioned
+- **Isaac Personality**: Melancholic, sarcastic, and cynical robot character
+- **Autonomous Responses**: Bot naturally participates in conversations without being mentioned
 - **Conversation Dominance Detection**: Prevents bot from dominating conversations by tracking message ratios
-- **Vision Capability**: Can see and describe images using OpenAI GPT-4o
 - **URL Summarization**: Automatically summarizes shared links using Kagi Universal Summarizer
 - **Web Search**: Answers questions about current events using Kagi FastGPT
 - **Web Fetch**: Reads and extracts content from web pages
 - **Python Tool Integration**: Executes Python code to solve problems and perform calculations
+- **GitHub Webhooks**: Receives GitHub webhook events and posts notifications to IRC
 - **Web Dashboard**: Debug interface for viewing decisions, responses, and prompts
 - **SQLite Database**: Tracks all messages, responses, and AI decisions
 
@@ -19,16 +19,10 @@ A Discord chatbot powered by DeepSeek API, featuring a built-in Isaac personalit
 
 ### Autonomous Responses
 The bot monitors conversations and decides when to naturally chime in:
-- Waits for conversation to settle (configurable debounce, default 15 seconds)
+- Waits for conversation to settle (configurable debounce)
 - Evaluates if there's something interesting to comment on
-- Tracks its own message ratio to avoid dominating (backs off if >40% of recent messages)
-- Direct @mentions always work regardless of ratio
-
-### Vision
-When images are posted, the bot can see and understand them:
-- Uses OpenAI GPT-4o for image analysis
-- Descriptions are cached in the database
-- Integrated into conversation context so the bot can reference images naturally
+- Tracks its own message ratio to avoid dominating
+- Mentioning the bot's watchword (e.g. "Isaac") or nick always triggers a response
 
 ### Python Tool Execution
 The bot can execute Python code to solve problems:
@@ -41,14 +35,17 @@ When users share links, the bot automatically summarizes them:
 - Uses Kagi Universal Summarizer for articles, YouTube videos, PDFs, and more
 - Summaries are cached in the database and included in conversation context
 - Bot can discuss shared links naturally without needing to fetch them again
-- Skips Discord CDN links, images, and GIF services
 
 ### Web Search & Fetch
 The bot can search the web and read pages for current information:
 - **Web Search**: Uses Kagi FastGPT to answer questions about current events, news, prices, etc.
 - **Web Fetch**: Reads and extracts content from specific URLs using Mozilla Readability
-- *"What's the weather in Tokyo?"* → Searches and returns current conditions
-- *"What's happening with [recent event]?"* → Gets up-to-date information
+
+### GitHub Webhooks
+The bot receives GitHub webhook events and posts formatted notifications to IRC:
+- Supports fork, issue, pull request, release, and star events
+- HMAC-SHA256 signature verification for security
+- Configurable target channel
 
 ## Requirements
 
@@ -57,8 +54,7 @@ The bot can search the web and read pages for current information:
 - **Docker** (optional, for containerized deployment)
 - **DeepSeek API Key** (for chat responses)
 - **OpenAI API Key** (optional, for vision capability)
-- **Kagi API Key** (optional, for web search - requires [Kagi subscription](https://kagi.com))
-- **Discord Bot Token**
+- **Kagi API Key** (optional, for web search and URL summarization)
 
 ## Setup
 
@@ -72,7 +68,7 @@ npm install
 2. **Configure:**
 ```sh
 cp conf/config.json.example conf/config.json
-# Edit conf/config.json with your API keys
+# Edit conf/config.json with your API keys and IRC settings
 ```
 
 3. **Run:**
@@ -84,89 +80,37 @@ npm run dev
 npm start
 
 # Docker
-./start.sh    # Start
-./stop.sh     # Stop
+docker compose up -d --build
 ```
 
 ## Configuration
 
-```json
-{
-    "generator": {
-        "deepseek": {
-            "api_key": "<DEEPSEEK API KEY>",
-            "base_url": "https://api.deepseek.com",
-            "model": "deepseek-chat",
-            "temperature": 0.9,
-            "max_tokens": 500
-        }
-    },
-    "bot": {
-        "token": "<DISCORD BOT TOKEN>"
-    },
-    "channels": ["<CHANNEL_ID>"],
-    "autonomous": {
-        "enabled": true,
-        "debounce_seconds": 15
-    },
-    "vision": {
-        "enabled": true,
-        "supported_formats": ["png", "jpg", "jpeg", "gif", "webp"],
-        "max_file_size_mb": 20
-    },
-    "openai": {
-        "api_key": "<OPENAI API KEY>",
-        "model": "gpt-4o",
-        "max_tokens": 300
-    },
-    "web": {
-        "enabled": true,
-        "port": 3000
-    },
-    "kagi": {
-        "api_key": "<KAGI API KEY>"
-    },
-    "url_summarize": {
-        "enabled": true,
-        "summary_type": "takeaway",
-        "max_urls_per_message": 3
-    }
-}
-```
+See `conf/config.json.example` for all options. Key sections:
 
-### Configuration Options
-
-| Section | Option | Description |
-|---------|--------|-------------|
-| `generator.deepseek` | | DeepSeek API settings for chat responses |
-| `bot.token` | | Discord bot token |
-| `channels` | | Channel ID whitelist (empty = all channels) |
-| `autonomous.enabled` | | Enable autonomous responses |
-| `autonomous.debounce_seconds` | | Wait time before evaluating (default: 15) |
-| `vision.enabled` | | Enable image understanding |
-| `openai` | | OpenAI API settings for vision (GPT-4o) |
-| `web.enabled` | | Enable web dashboard |
-| `web.port` | | Dashboard port (default: 3000) |
-| `kagi.api_key` | | Kagi API key for web search and URL summarization |
-| `url_summarize.enabled` | | Enable automatic URL summarization (default: true) |
-| `url_summarize.summary_type` | | "takeaway" for bullets, "summary" for paragraphs |
-| `url_summarize.max_urls_per_message` | | Max URLs to summarize per message (default: 3) |
+| Section | Description |
+|---------|-------------|
+| `generator.deepseek` | DeepSeek API settings for chat responses |
+| `irc` | IRC connection settings (host, nick, channels, SASL auth) |
+| `irc.watchword` | Word that triggers the bot (e.g. "Isaac"), separate from nick |
+| `autonomous` | Autonomous response settings (debounce, timing) |
+| `vision` | Image understanding via OpenAI GPT-4o (dormant on IRC) |
+| `openai` | OpenAI API settings for vision |
+| `web` | Web dashboard settings |
+| `kagi` | Kagi API key for web search and URL summarization |
+| `github_webhook` | GitHub webhook receiver (secret, target channel) |
+| `url_summarize` | Automatic URL summarization settings |
 
 ## Web Dashboard
 
 When enabled, access the dashboard at `http://localhost:3000` to view:
 - Recent AI decisions (should respond? why?)
 - Bot responses with full prompt history
-- Message database and vision descriptions
+- Message database
 
 ## Data Storage
 
 All data is stored in `data/impostor.db` (SQLite):
-- Message history with attachments, vision descriptions, and URL summaries
+- Message history with URL summaries
 - Bot responses and trigger messages
 - AI decision logs with reasoning
 - Full prompts for debugging
-
-## Credits
-
-Inspired by [notunderctrl/gpt-3.5-chat-bot](https://github.com/notunderctrl/gpt-3.5-chat-bot).
