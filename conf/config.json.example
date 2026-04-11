@@ -48,6 +48,15 @@
     "kagi": {
         "api_key": "<KAGI API KEY (optional, for web search and URL summarization)>"
     },
+    "discord": {
+        "enabled": false,
+        "token": "<DISCORD_BOT_TOKEN>",
+        "discord_channel": "<DISCORD_CHANNEL_ID>",
+        "irc_channel": "#amiantos",
+        "bridge_nick": "EyeBridge",
+        "bridge_password": "<NickServ password for bridge nick>",
+        "bridge_sasl": true
+    },
     "github_webhook": {
         "enabled": true,
         "secret": "<GITHUB_WEBHOOK_SECRET>",
