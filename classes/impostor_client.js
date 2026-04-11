@@ -201,7 +201,7 @@ class ImpostorClient {
     });
 
     // Track the message
-    await this.messageTracker.addMessage(message, { isBotMessage: false, processVision: false });
+    await this.messageTracker.addMessage(message, { isBotMessage: false, processVision: true });
 
     // Direct trigger - nick mentioned in message
     if (this.isDirectTrigger(event.message)) {

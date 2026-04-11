@@ -55,13 +55,13 @@ class MessageTracker {
     // Get reply_to_message_id from message reference
     const replyToMessageId = message.reference?.messageId || null;
 
-    // Process vision immediately if enabled and message has images
+    // Process vision for image URLs in message content
     let visionDescriptions = null;
-    if (processVision && this.visionService && attachments) {
-      const hasImages = attachments.some(a => a.isImage);
-      if (hasImages) {
-        this.logger.debug(`Processing vision for message ${message.id}`);
-        visionDescriptions = await this.visionService.processMessageImmediate(message);
+    if (processVision && this.visionService) {
+      const imageUrls = this.visionService.extractImageUrlsFromContent(message.content);
+      if (imageUrls.length > 0) {
+        this.logger.debug(`Processing vision for ${imageUrls.length} image URL(s) in message ${message.id}`);
+        visionDescriptions = await this.visionService.processImageUrls(message.id, imageUrls);
       }
     }
 

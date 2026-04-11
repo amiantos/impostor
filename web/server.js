@@ -20,6 +20,9 @@ class WebServer {
     // Serve static files
     this.app.use("/public", express.static(path.join(__dirname, "public")));
 
+    // Serve cached images
+    this.app.use("/images", express.static(path.join(__dirname, "..", "data", "images")));
+
     // Parse JSON bodies (capture raw body for webhook signature verification)
     this.app.use(
       express.json({
