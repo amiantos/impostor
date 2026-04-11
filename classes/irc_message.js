@@ -3,7 +3,7 @@ const { v4: uuidv4 } = require("uuid");
 /**
  * Create a normalized message object from an IRC event.
  * Matches the shape that MessageTracker, ContextUtils, and other
- * downstream code expect (originally Discord.js Message objects).
+ * downstream code expect.
  *
  * @param {string} nick - IRC nick of the message author
  * @param {string} channel - IRC channel name (e.g. "#amiantos")

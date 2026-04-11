@@ -184,7 +184,7 @@ class DatabaseManager {
       message.id,
       message.channel.id,
       message.author.id,
-      message.author.username || message.author.displayName || "Unknown",
+      message.author.username || "Unknown",
       message.content,
       message.createdAt.toISOString(),
       isBotMessage ? 1 : 0
@@ -235,7 +235,7 @@ class DatabaseManager {
 
   /**
    * Check if a message already exists in the database
-   * @param {string} messageId - Discord message ID
+   * @param {string} messageId - Message ID
    * @returns {boolean} True if message exists
    */
   messageExists(messageId) {
@@ -245,7 +245,7 @@ class DatabaseManager {
 
   /**
    * Update vision descriptions for an existing message
-   * @param {string} messageId - Discord message ID
+   * @param {string} messageId - Message ID
    * @param {string[]} visionDescriptions - Array of vision descriptions
    */
   updateMessageVision(messageId, visionDescriptions) {
@@ -257,7 +257,7 @@ class DatabaseManager {
 
   /**
    * Update URL summaries for an existing message
-   * @param {string} messageId - Discord message ID
+   * @param {string} messageId - Message ID
    * @param {Array} urlSummaries - Array of URL summary objects
    */
   updateMessageUrlSummaries(messageId, urlSummaries) {
@@ -269,7 +269,7 @@ class DatabaseManager {
 
   /**
    * Update channel name for all messages in a channel
-   * @param {string} channelId - Discord channel ID
+   * @param {string} channelId - Channel ID
    * @param {string} channelName - Channel name
    */
   updateChannelName(channelId, channelName) {
@@ -281,7 +281,7 @@ class DatabaseManager {
 
   /**
    * Get a single message by ID with parsed JSON fields
-   * @param {string} messageId - Discord message ID
+   * @param {string} messageId - Message ID
    * @returns {Object|null} Message object with parsed attachments and vision
    */
   getMessage(messageId) {
@@ -295,7 +295,7 @@ class DatabaseManager {
 
   /**
    * Get a message with all related data (decision, response, prompt)
-   * @param {string} messageId - Discord message ID
+   * @param {string} messageId - Message ID
    * @returns {Object|null} Message with relations
    */
   getMessageWithRelations(messageId) {
@@ -356,7 +356,7 @@ class DatabaseManager {
   /**
    * Get comprehensive details for a bot message
    * Returns the response, decision that led to it, prompts, and evaluated messages
-   * @param {string} messageId - Discord message ID of the bot's response
+   * @param {string} messageId - Message ID of the bot's response
    * @returns {Object|null} Bot message details
    */
   getBotMessageDetails(messageId) {
@@ -910,8 +910,8 @@ class DatabaseManager {
   // User operations
   /**
    * Create or update a user record
-   * @param {string} userId - Discord user ID
-   * @param {string} username - Discord username
+   * @param {string} userId - User ID
+   * @param {string} username - Username
    * @returns {Object} User record
    */
   upsertUser(userId, username) {
@@ -936,7 +936,7 @@ class DatabaseManager {
 
   /**
    * Get a single user by ID
-   * @param {string} userId - Discord user ID
+   * @param {string} userId - User ID
    * @returns {Object|null} User record
    */
   getUser(userId) {
@@ -978,7 +978,7 @@ class DatabaseManager {
 
   /**
    * Get memories for a single user
-   * @param {string} userId - Discord user ID
+   * @param {string} userId - User ID
    * @param {number} limit - Max memories to return
    * @returns {Array} Memory records
    */
@@ -994,7 +994,7 @@ class DatabaseManager {
 
   /**
    * Get memories for multiple users (batch fetch for context)
-   * @param {Array<string>} userIds - Array of Discord user IDs
+   * @param {Array<string>} userIds - Array of User IDs
    * @param {number} limitPerUser - Max memories per user
    * @returns {Map<string, Array>} Map of userId to memories
    */
@@ -1102,7 +1102,7 @@ class DatabaseManager {
 
   /**
    * Get user with their username from database (for memory context)
-   * @param {string} userId - Discord user ID
+   * @param {string} userId - User ID
    * @returns {Object|null} User with username
    */
   getUserWithUsername(userId) {

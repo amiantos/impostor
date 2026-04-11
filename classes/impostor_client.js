@@ -55,7 +55,7 @@ class ImpostorClient {
 
     // Initialize message tracker with vision and URL summarize services
     this.messageTracker = new MessageTracker(logger, this.db, config, this.visionService, this.urlSummarizeService);
-    this.evaluator = new ResponseEvaluator(logger, config, this.db, this.visionService, this.watchword);
+    this.evaluator = new ResponseEvaluator(logger, config, this.db, this.visionService, this.watchword, this.openai);
 
     // Set up periodic maintenance
     this.maintenanceInterval = setInterval(() => {
@@ -184,8 +184,8 @@ class ImpostorClient {
    * @param {Object} event - irc-framework message event
    */
   async handleIrcMessage(event) {
-    // Ignore our own messages
-    if (event.nick === this.botNick) return;
+    // Ignore our own messages (IRC nicks are case-insensitive)
+    if (event.nick.toLowerCase() === this.botNick.toLowerCase()) return;
 
     // Only handle channel messages (not PMs)
     if (!event.target || !event.target.startsWith("#")) return;
@@ -244,9 +244,9 @@ class ImpostorClient {
 
     // Set new timer
     const timer = setTimeout(async () => {
-      this.evaluationTimers.delete(channelName);
       this.logger.debug(`Evaluation timer fired for channel ${channelName}`);
       await this.evaluateAutonomousResponse(channelName);
+      this.evaluationTimers.delete(channelName);
     }, debounceMs);
 
     this.evaluationTimers.set(channelName, timer);
@@ -635,6 +635,7 @@ class ImpostorClient {
    * @returns {string[]} Array of lines
    */
   splitMessage(text, maxLen) {
+    const urlRegex = /https?:\/\/\S+/g;
     const lines = [];
     for (const paragraph of text.split("\n")) {
       if (paragraph.length === 0) continue;
@@ -645,6 +646,25 @@ class ImpostorClient {
         while (remaining.length > maxLen) {
           let splitAt = remaining.lastIndexOf(" ", maxLen);
           if (splitAt === -1) splitAt = maxLen;
+
+          // Check if splitting here would break a URL
+          const urlMatches = [...remaining.matchAll(urlRegex)];
+          for (const match of urlMatches) {
+            const urlStart = match.index;
+            const urlEnd = urlStart + match[0].length;
+            if (splitAt > urlStart && splitAt < urlEnd) {
+              // Split before the URL instead, or after it if it fits
+              const beforeUrl = remaining.lastIndexOf(" ", urlStart);
+              if (beforeUrl > 0) {
+                splitAt = beforeUrl;
+              } else if (urlEnd <= maxLen + 50) {
+                // Allow slightly longer line to keep URL intact
+                splitAt = urlEnd;
+              }
+              break;
+            }
+          }
+
           lines.push(remaining.substring(0, splitAt));
           remaining = remaining.substring(splitAt).trimStart();
         }
@@ -837,47 +857,42 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
     return summary.trim();
   }
 
+  /**
+   * Tool registry mapping tool names to their execution functions
+   */
+  get toolRegistry() {
+    return {
+      python: (req) => this.pythonTool.executePython(req.code),
+      web_search: (req) => this.webSearchTool.searchWeb(req.query),
+      web_fetch: (req) => this.webFetchTool.fetchPage(req.url),
+      remember: (req) => this.memoryTool.remember({
+        user_id: req.user_id,
+        username: req.username,
+        category: req.category,
+        content: req.content,
+        source_message_id: req.source_message_id || null,
+      }),
+    };
+  }
+
   async executeTool(toolRequest) {
     this.logger.info(
       `Executing ${toolRequest.tool_name} tool:`,
       toolRequest.reason
     );
 
-    if (toolRequest.tool_name === "python") {
-      const result = await this.pythonTool.executePython(toolRequest.code);
-      this.logger.debug("Python execution result:", result);
-      return result;
+    const handler = this.toolRegistry[toolRequest.tool_name];
+    if (!handler) {
+      return {
+        success: false,
+        output: "",
+        error: `Unknown tool: ${toolRequest.tool_name}`,
+      };
     }
 
-    if (toolRequest.tool_name === "web_search") {
-      const result = await this.webSearchTool.searchWeb(toolRequest.query);
-      this.logger.debug("Web search result:", result);
-      return result;
-    }
-
-    if (toolRequest.tool_name === "web_fetch") {
-      const result = await this.webFetchTool.fetchPage(toolRequest.url);
-      this.logger.debug("Web fetch result:", result);
-      return result;
-    }
-
-    if (toolRequest.tool_name === "remember") {
-      const result = await this.memoryTool.remember({
-        user_id: toolRequest.user_id,
-        username: toolRequest.username,
-        category: toolRequest.category,
-        content: toolRequest.content,
-        source_message_id: toolRequest.source_message_id || null
-      });
-      this.logger.debug("Memory tool result:", result);
-      return result;
-    }
-
-    return {
-      success: false,
-      output: "",
-      error: `Unknown tool: ${toolRequest.tool_name}`,
-    };
+    const result = await handler(toolRequest);
+    this.logger.debug(`${toolRequest.tool_name} result:`, result);
+    return result;
   }
 
   /**

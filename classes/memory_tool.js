@@ -8,8 +8,8 @@ class MemoryTool {
   /**
    * Store a memory about a user
    * @param {Object} params - Memory parameters
-   * @param {string} params.user_id - Discord user ID
-   * @param {string} params.username - Discord username
+   * @param {string} params.user_id - User ID (nick!ident@hostname)
+   * @param {string} params.username - IRC nick
    * @param {string} params.category - Memory category (fact, preference, relationship)
    * @param {string} params.content - The memory content
    * @param {string} params.source_message_id - Optional source message ID

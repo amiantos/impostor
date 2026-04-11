@@ -35,7 +35,7 @@ class MessageTracker {
 
   /**
    * Track a new message with enhanced data
-   * @param {Message} message - Discord message object
+   * @param {Object} message - Normalized message object (from createIrcMessage)
    * @param {Object} options - Options for tracking
    * @param {boolean} options.isBotMessage - Whether this message is from the bot
    * @param {boolean} options.processVision - Whether to process vision immediately (default true)
@@ -47,10 +47,8 @@ class MessageTracker {
       ? { isBotMessage: options }
       : options;
 
-    // Serialize attachments
-    const attachments = this.visionService
-      ? this.visionService.serializeAttachments(message)
-      : null;
+    // IRC has no attachments
+    const attachments = null;
 
     // Get reply_to_message_id from message reference
     const replyToMessageId = message.reference?.messageId || null;
@@ -77,7 +75,7 @@ class MessageTracker {
       channelId: message.channel.id,
       channelName: message.channel.name || null,
       authorId: message.author.id,
-      authorName: message.author.username || message.author.displayName || "Unknown",
+      authorName: message.author.username || "Unknown",
       content: message.content,
       createdAt: message.createdAt,
       isBotMessage,
@@ -103,7 +101,7 @@ class MessageTracker {
 
   /**
    * Track a message using the old simple method (backward compatible)
-   * @param {Message} message - Discord message object
+   * @param {Object} message - Normalized message object
    * @param {boolean} isBotMessage - Whether this message is from the bot
    * @deprecated Use addMessage with options object instead
    */
@@ -119,7 +117,7 @@ class MessageTracker {
 
   /**
    * Get recent messages from a channel
-   * @param {string} channelId - Discord channel ID
+   * @param {string} channelId - Channel ID
    * @param {number} limit - Maximum number of messages to retrieve
    * @returns {Array} Array of message objects from database
    */
@@ -129,7 +127,7 @@ class MessageTracker {
 
   /**
    * Get messages since the bot's last response in the channel
-   * @param {string} channelId - Discord channel ID
+   * @param {string} channelId - Channel ID
    * @returns {Array} Array of message objects
    */
   getMessagesSinceLastResponse(channelId) {
@@ -138,7 +136,7 @@ class MessageTracker {
 
   /**
    * Determine if an autonomous response evaluation should be triggered
-   * @param {string} channelId - Discord channel ID
+   * @param {string} channelId - Channel ID
    * @returns {boolean} True if evaluation should run
    */
   shouldEvaluate(channelId) {
@@ -170,7 +168,7 @@ class MessageTracker {
 
   /**
    * Mark that an evaluation has been performed for a channel
-   * @param {string} channelId - Discord channel ID
+   * @param {string} channelId - Channel ID
    */
   markEvaluated(channelId) {
     this.lastEvaluation.set(channelId, Date.now());
@@ -181,7 +179,7 @@ class MessageTracker {
   /**
    * Mark that the bot has responded in a channel
    * This resets the message counter and updates timing
-   * @param {string} channelId - Discord channel ID
+   * @param {string} channelId - Channel ID
    */
   markResponded(channelId) {
     this.messageCountSinceEval.set(channelId, 0);
@@ -190,7 +188,7 @@ class MessageTracker {
 
   /**
    * Get the count of messages since last evaluation
-   * @param {string} channelId - Discord channel ID
+   * @param {string} channelId - Channel ID
    * @returns {number} Message count
    */
   getMessageCountSinceEval(channelId) {
@@ -199,7 +197,7 @@ class MessageTracker {
 
   /**
    * Get the time of last evaluation
-   * @param {string} channelId - Discord channel ID
+   * @param {string} channelId - Channel ID
    * @returns {Date|null} Last evaluation timestamp
    */
   getLastEvaluationTime(channelId) {

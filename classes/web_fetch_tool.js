@@ -24,14 +24,34 @@ class WebFetchTool {
       };
     }
 
-    // Basic URL validation
+    // URL validation
+    let parsed;
     try {
-      new URL(url);
+      parsed = new URL(url);
     } catch (e) {
       return {
         success: false,
         output: '',
         error: `Invalid URL format: ${url}`
+      };
+    }
+
+    // Only allow http and https protocols
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return {
+        success: false,
+        output: '',
+        error: `Unsupported protocol: ${parsed.protocol}`
+      };
+    }
+
+    // Block requests to private/internal IPs
+    const hostname = parsed.hostname;
+    if (this.isPrivateHost(hostname)) {
+      return {
+        success: false,
+        output: '',
+        error: 'Requests to private/internal addresses are not allowed'
       };
     }
 
@@ -178,6 +198,30 @@ class WebFetchTool {
       this.logger.debug('Basic text extraction failed:', error.message);
       return 'Could not extract text content';
     }
+  }
+
+  /**
+   * Check if a hostname resolves to a private/internal address
+   * @param {string} hostname - Hostname to check
+   * @returns {boolean} True if the host is private/internal
+   */
+  isPrivateHost(hostname) {
+    // Block localhost variants
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '[::1]') {
+      return true;
+    }
+    // Block private IP ranges
+    const parts = hostname.split('.');
+    if (parts.length === 4 && parts.every(p => /^\d+$/.test(p))) {
+      const first = parseInt(parts[0], 10);
+      const second = parseInt(parts[1], 10);
+      if (first === 10) return true; // 10.0.0.0/8
+      if (first === 172 && second >= 16 && second <= 31) return true; // 172.16.0.0/12
+      if (first === 192 && second === 168) return true; // 192.168.0.0/16
+      if (first === 169 && second === 254) return true; // 169.254.0.0/16 (link-local)
+      if (first === 0) return true; // 0.0.0.0/8
+    }
+    return false;
   }
 
   /**

@@ -18,8 +18,6 @@ class UrlSummarizeService {
     this.summaryType = urlConfig.summary_type || 'takeaway';
     this.maxUrlsPerMessage = urlConfig.max_urls_per_message || 3;
     this.skipDomains = urlConfig.skip_domains || [
-      'cdn.discordapp.com',
-      'media.discordapp.net',
       'tenor.com',
       'giphy.com',
       'tenor.co'
@@ -79,7 +77,7 @@ class UrlSummarizeService {
       const hostname = urlObj.hostname.toLowerCase();
       const pathname = urlObj.pathname.toLowerCase();
 
-      // Skip Discord CDN and media
+      // Skip domains that don't need summarization
       for (const domain of this.skipDomains) {
         if (hostname.includes(domain)) {
           return false;
@@ -182,7 +180,7 @@ class UrlSummarizeService {
 
   /**
    * Process a message immediately and return URL summaries
-   * @param {Message} message - Discord message object
+   * @param {Object} message - Normalized message object
    * @returns {Promise<Array>} Array of URL summary objects (may be empty)
    */
   async processMessageImmediate(message) {
@@ -229,7 +227,7 @@ class UrlSummarizeService {
 
   /**
    * Get cached URL summaries for a message from database
-   * @param {string} messageId - Discord message ID
+   * @param {string} messageId - Message ID
    * @returns {Array|null} Cached summaries or null if not cached
    */
   getCachedSummaries(messageId) {
@@ -268,7 +266,7 @@ class UrlSummarizeService {
   /**
    * Process URLs from multiple messages (batch processing)
    * Checks database cache first before making API calls
-   * @param {Array} messages - Array of messages (Discord Message objects or DB records)
+   * @param {Array} messages - Array of messages (normalized message objects or DB records)
    * @param {boolean} fromDb - Whether messages are from database records
    * @returns {Promise<Map<string, Array>>} Map of message ID to summaries array
    */

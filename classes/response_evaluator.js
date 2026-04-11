@@ -1,5 +1,3 @@
-const { OpenAI } = require("openai");
-
 /**
  * ResponseEvaluator - AI-driven decision making for autonomous responses
  *
@@ -7,17 +5,22 @@ const { OpenAI } = require("openai");
  * a conversation and how it should respond.
  */
 class ResponseEvaluator {
-  constructor(logger, config, database, visionService = null, botName = "Isaac") {
+  constructor(logger, config, database, visionService = null, botName = "Isaac", openaiClient = null) {
     this.logger = logger;
     this.config = config;
     this.db = database;
     this.visionService = visionService;
     this.botName = botName;
 
-    this.openai = new OpenAI({
-      apiKey: config.generator.deepseek.api_key,
-      baseURL: config.generator.deepseek.base_url,
-    });
+    if (openaiClient) {
+      this.openai = openaiClient;
+    } else {
+      const { OpenAI } = require("openai");
+      this.openai = new OpenAI({
+        apiKey: config.generator.deepseek.api_key,
+        baseURL: config.generator.deepseek.base_url,
+      });
+    }
   }
 
   /**
@@ -105,7 +108,7 @@ Send a standalone message when:
    * Format messages from database for the AI evaluation
    * Includes vision descriptions when available
    * @param {Array} messages - Array of message objects from database (with parsed JSON)
-   * @param {string} botUserId - The bot's Discord user ID
+   * @param {string} botUserId - The bot's user ID
    * @returns {Array} Formatted messages for the API
    */
   formatMessagesForEvaluation(messages, botUserId) {
@@ -135,7 +138,7 @@ Send a standalone message when:
   /**
    * Evaluate whether the bot should respond to the conversation
    * @param {Array} messages - Array of message objects from database (with parsed JSON)
-   * @param {string} botUserId - The bot's Discord user ID
+   * @param {string} botUserId - The bot's user ID
    * @param {string} channelId - The channel ID
    * @param {number|null} botRatio - Bot's message ratio in recent history (0.0-1.0)
    * @returns {Object} Decision object { should_respond, reply_to_message_id, reason, decisionId }

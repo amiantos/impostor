@@ -9,6 +9,7 @@ services:
     volumes:
       - ./conf:/usr/src/app/conf
       - ./data:/usr/src/app/data
+      # Update this path to point to your local IRC log directory (used by chat_log_upload)
       - /Users/amiantos/Coding/thelounge/data/logs/amiantos/libera.chat-e-418e-bb47-49c542e99479:/usr/src/app/irc-logs:ro
     environment:
       - NODE_ENV=production

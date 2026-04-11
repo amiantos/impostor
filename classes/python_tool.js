@@ -16,6 +16,8 @@ class PythonTool {
   }
 
   async executePython(code, timeout = 5000) {
+    const maxOutputBytes = 100 * 1024; // 100KB max output
+
     return new Promise((resolve, reject) => {
       // Create a temporary Python file
       const timestamp = Date.now();
@@ -36,13 +38,25 @@ class PythonTool {
 
         let stdout = '';
         let stderr = '';
+        let truncated = false;
 
         pythonProcess.stdout.on('data', (data) => {
-          stdout += data.toString();
+          if (stdout.length < maxOutputBytes) {
+            stdout += data.toString();
+            if (stdout.length >= maxOutputBytes) {
+              stdout = stdout.substring(0, maxOutputBytes) + '\n[output truncated]';
+              truncated = true;
+            }
+          }
         });
 
         pythonProcess.stderr.on('data', (data) => {
-          stderr += data.toString();
+          if (stderr.length < maxOutputBytes) {
+            stderr += data.toString();
+            if (stderr.length >= maxOutputBytes) {
+              stderr = stderr.substring(0, maxOutputBytes) + '\n[output truncated]';
+            }
+          }
         });
 
         pythonProcess.on('close', (code) => {

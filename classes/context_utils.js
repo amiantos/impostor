@@ -346,7 +346,7 @@ Do not include any text outside of this JSON structure. The "message" field shou
 
       // Add username to the beginning of user messages so bot knows who's talking
       if (role === "user") {
-        const username = msg.author.username || msg.author.displayName || "Unknown";
+        const username = msg.author.username || "Unknown";
         content = `${username}: ${content}`;
 
         // Append image descriptions if available for this message
@@ -376,7 +376,7 @@ Do not include any text outside of this JSON structure. The "message" field shou
   }
 
   /**
-   * Build chat messages from database records instead of Discord.js Message objects
+   * Build chat messages from database records
    * @param {Array} dbMessages - Array of message records from database (chronological order, oldest first)
    * @param {string} clientUserId - Bot's user ID
    * @param {Map} imageDescriptions - Map of message ID to image descriptions
@@ -442,7 +442,7 @@ Do not include any text outside of this JSON structure. The "message" field shou
    * @param {Array} dbMessages - Array of message records from database (chronological order, oldest first)
    * @param {string} clientUserId - Bot's user ID
    * @param {Object} triggerInfo - Info about who triggered the response
-   * @param {string} triggerInfo.userId - Discord ID of the user who triggered
+   * @param {string} triggerInfo.userId - User ID of who triggered the response
    * @param {string} triggerInfo.userName - Username of the user who triggered
    * @param {string} triggerInfo.channelName - Name of the channel
    * @param {Map} imageDescriptions - Map of message ID to image descriptions
@@ -573,7 +573,7 @@ Do not include any text outside of this JSON structure. The "message" field shou
 
   /**
    * Find username for a user ID from messages or memory records
-   * @param {string} userId - Discord user ID
+   * @param {string} userId - User ID
    * @param {Array} dbMessages - Database messages
    * @param {Array} memories - Memory records (may have username from user table)
    * @returns {string} Username or truncated ID

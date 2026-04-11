@@ -17,12 +17,6 @@ class WebServer {
   }
 
   setupMiddleware() {
-    // Serve static files
-    this.app.use("/public", express.static(path.join(__dirname, "public")));
-
-    // Serve cached images
-    this.app.use("/images", express.static(path.join(__dirname, "..", "data", "images")));
-
     // Parse JSON bodies (capture raw body for webhook signature verification)
     this.app.use(
       express.json({
@@ -31,6 +25,38 @@ class WebServer {
         },
       })
     );
+
+    // Basic auth for dashboard (skip for webhook and health endpoints)
+    const authConfig = this.config.web?.auth;
+    if (authConfig?.username && authConfig?.password) {
+      this.app.use((req, res, next) => {
+        // Skip auth for webhook and health check
+        if (req.path.startsWith("/webhook") || req.path === "/health") {
+          return next();
+        }
+
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith("Basic ")) {
+          res.setHeader("WWW-Authenticate", 'Basic realm="Impostor Dashboard"');
+          return res.status(401).send("Authentication required");
+        }
+
+        const credentials = Buffer.from(authHeader.slice(6), "base64").toString();
+        const [username, password] = credentials.split(":");
+        if (username === authConfig.username && password === authConfig.password) {
+          return next();
+        }
+
+        res.setHeader("WWW-Authenticate", 'Basic realm="Impostor Dashboard"');
+        return res.status(401).send("Invalid credentials");
+      });
+    }
+
+    // Serve static files
+    this.app.use("/public", express.static(path.join(__dirname, "public")));
+
+    // Serve cached images
+    this.app.use("/images", express.static(path.join(__dirname, "..", "data", "images")));
 
     // Add database to request
     this.app.use((req, res, next) => {
