@@ -11,7 +11,10 @@ An IRC chatbot powered by DeepSeek API, featuring a built-in Isaac personality (
 - **Web Search**: Answers questions about current events using Kagi FastGPT
 - **Web Fetch**: Reads and extracts content from web pages
 - **Python Tool Integration**: Executes Python code to solve problems and perform calculations
+- **User Memory**: Remembers facts, preferences, and relationships about users across conversations
 - **GitHub Webhooks**: Receives GitHub webhook events and posts notifications to IRC
+- **Discord Bridge**: Bidirectional message relay between IRC and Discord channels
+- **Chat Log Upload**: Periodically uploads IRC logs to Cloudflare R2 for external display
 - **Web Dashboard**: Debug interface for viewing decisions, responses, and prompts
 - **SQLite Database**: Tracks all messages, responses, and AI decisions
 
@@ -41,11 +44,31 @@ The bot can search the web and read pages for current information:
 - **Web Search**: Uses Kagi FastGPT to answer questions about current events, news, prices, etc.
 - **Web Fetch**: Reads and extracts content from specific URLs using Mozilla Readability
 
+### User Memory
+The bot can remember things about users across conversations:
+- Stores facts (job, hobbies, location), preferences (likes/dislikes), and relationships (inside jokes, how it knows someone)
+- Memories are recalled when users appear in conversation context
+- Stored in SQLite alongside other bot data
+
 ### GitHub Webhooks
 The bot receives GitHub webhook events and posts formatted notifications to IRC:
 - Supports fork, issue, pull request, release, and star events
 - HMAC-SHA256 signature verification for security
 - Configurable target channel
+
+### Discord Bridge
+Bidirectional message relay between an IRC channel and a Discord channel:
+- Uses a separate IRC connection (configurable nick with SASL auth)
+- IRC messages appear in Discord as `[irc] **Username:** message`
+- Discord messages appear in IRC as `[discord] Username: message`
+- Isaac parses bridged messages to see the real Discord username, not the bridge nick
+- Handles Discord mentions, custom emoji, attachments, and IRC message splitting
+
+### Chat Log Upload
+Periodically uploads the tail of an IRC log file to Cloudflare R2:
+- Configurable upload interval and number of tail lines
+- Skips upload if the log file hasn't changed
+- Useful for displaying a live chat view on an external site
 
 ## Requirements
 
@@ -97,8 +120,10 @@ See `conf/config.json.example` for all options. Key sections:
 | `openai` | OpenAI API settings for vision |
 | `web` | Web dashboard settings |
 | `kagi` | Kagi API key for web search and URL summarization |
+| `discord` | Discord-IRC bridge settings (token, channels, bridge nick, SASL) |
 | `github_webhook` | GitHub webhook receiver (secret, target channel) |
 | `url_summarize` | Automatic URL summarization settings |
+| `chat_log_upload` | Chat log upload to Cloudflare R2 (interval, log path, R2 credentials) |
 
 ## Web Dashboard
 
@@ -114,3 +139,4 @@ All data is stored in `data/impostor.db` (SQLite):
 - Bot responses and trigger messages
 - AI decision logs with reasoning
 - Full prompts for debugging
+- User memories (facts, preferences, relationships)
