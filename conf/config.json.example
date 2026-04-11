@@ -12,13 +12,14 @@
         "host": "irc.libera.chat",
         "port": 6697,
         "tls": true,
-        "nick": "relyimah",
-        "username": "relyimah",
-        "realname": "relyimah",
+        "nick": "IsaacGPT",
+        "username": "IsaacGPT",
+        "realname": "Isaac the Robot",
         "password": "<NickServ password (optional, for SASL auth)>",
         "sasl": true,
         "channels": ["#amiantos"],
-        "max_line_length": 400
+        "max_line_length": 400,
+        "watchword": "Isaac"
     },
     "autonomous": {
         "enabled": true,
@@ -42,6 +43,11 @@
     },
     "kagi": {
         "api_key": "<KAGI API KEY (optional, for web search and URL summarization)>"
+    },
+    "github_webhook": {
+        "enabled": true,
+        "secret": "<GITHUB_WEBHOOK_SECRET>",
+        "channel": "#amiantos"
     },
     "url_summarize": {
         "enabled": true,

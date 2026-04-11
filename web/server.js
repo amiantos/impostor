@@ -1,12 +1,14 @@
 const express = require("express");
 const path = require("path");
 const apiRoutes = require("./routes/api");
+const { createWebhookRouter } = require("../classes/github_webhook");
 
 class WebServer {
-  constructor(logger, config, database) {
+  constructor(logger, config, database, client) {
     this.logger = logger;
     this.config = config;
     this.db = database;
+    this.client = client;
     this.app = express();
     this.server = null;
 
@@ -18,8 +20,14 @@ class WebServer {
     // Serve static files
     this.app.use("/public", express.static(path.join(__dirname, "public")));
 
-    // Parse JSON bodies
-    this.app.use(express.json());
+    // Parse JSON bodies (capture raw body for webhook signature verification)
+    this.app.use(
+      express.json({
+        verify: (req, _res, buf) => {
+          req.rawBody = buf;
+        },
+      })
+    );
 
     // Add database to request
     this.app.use((req, res, next) => {
@@ -37,6 +45,14 @@ class WebServer {
     this.app.get("/", (req, res) => {
       res.sendFile(path.join(__dirname, "views", "dashboard.html"));
     });
+
+    // GitHub webhook
+    if (this.config.github_webhook?.enabled) {
+      this.app.use(
+        "/webhook",
+        createWebhookRouter(this.client, this.config, this.logger)
+      );
+    }
 
     // Health check
     this.app.get("/health", (req, res) => {

@@ -7,8 +7,14 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - .:/usr/src/app
-      - /usr/src/app/node_modules
+      - ./conf:/usr/src/app/conf
+      - ./data:/usr/src/app/data
     environment:
       - NODE_ENV=production
     command: npm start
+    networks:
+      - proxy-network
+
+networks:
+  proxy-network:
+    external: true

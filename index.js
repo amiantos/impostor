@@ -10,7 +10,7 @@ const client = new ImpostorClient(logger, config);
 // Start the web dashboard if enabled
 let webServer = null;
 if (config.web?.enabled) {
-  webServer = new WebServer(logger, config, client.getDatabase());
+  webServer = new WebServer(logger, config, client.getDatabase(), client);
   webServer.start();
 }
 

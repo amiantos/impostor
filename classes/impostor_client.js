@@ -14,7 +14,8 @@ const { OpenAI } = require("openai");
 
 class ImpostorClient {
   constructor(logger, config) {
-    this.contextUtils = new ContextUtils(logger, config.irc.nick);
+    this.watchword = config.irc.watchword || config.irc.nick;
+    this.contextUtils = new ContextUtils(logger, this.watchword);
     this.config = config;
     this.logger = logger;
 
@@ -54,7 +55,7 @@ class ImpostorClient {
 
     // Initialize message tracker with vision and URL summarize services
     this.messageTracker = new MessageTracker(logger, this.db, config, this.visionService, this.urlSummarizeService);
-    this.evaluator = new ResponseEvaluator(logger, config, this.db, this.visionService, config.irc.nick);
+    this.evaluator = new ResponseEvaluator(logger, config, this.db, this.visionService, this.watchword);
 
     // Set up periodic maintenance
     this.maintenanceInterval = setInterval(() => {
@@ -169,8 +170,13 @@ class ImpostorClient {
    * @returns {boolean} True if message directly triggers the bot
    */
   isDirectTrigger(content) {
-    const nick = this.botNick.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return new RegExp(`\\b${nick}\\b`, "i").test(content);
+    const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const nick = escape(this.botNick);
+    const watchword = escape(this.watchword);
+    const pattern = nick === watchword
+      ? `\\b${nick}\\b`
+      : `\\b(?:${nick}|${watchword})\\b`;
+    return new RegExp(pattern, "i").test(content);
   }
 
   /**
@@ -225,8 +231,7 @@ class ImpostorClient {
    */
   scheduleAutonomousEvaluation(channelName, message) {
     // Use shorter debounce if bot nick is mentioned (likely being addressed)
-    const nickPattern = new RegExp(`\\b${this.botNick.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
-    const mentionsBot = message && nickPattern.test(message.content);
+    const mentionsBot = message && this.isDirectTrigger(message.content);
     const debounceMs = mentionsBot
       ? 3000
       : (this.config.autonomous?.debounce_seconds || 10) * 1000;
@@ -475,7 +480,7 @@ class ImpostorClient {
     const user_name = message.author.username
       .replace(/\s+/g, "_")
       .replace(/[^\w\s]/gi, "");
-    const character_name = this.botNick;
+    const character_name = this.watchword;
 
     const { dbMessages, imageDescriptions, userMemories } = this.buildContextFromDatabase(channelName, {
       fetchLimit: 50,
@@ -562,7 +567,7 @@ class ImpostorClient {
     const { response, conversationLog } = await this.generateResponseWithChatCompletions({
       dbMessages,
       userName: "various",
-      characterName: this.botNick,
+      characterName: this.watchword,
       botUserId: this.botNick.toLowerCase(),
       imageDescriptions,
       userMemories,
