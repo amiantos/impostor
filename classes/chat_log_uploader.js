@@ -20,7 +20,7 @@ class ChatLogUploader {
     this.bucket = r2.bucket;
     this.key = r2.key || "chat-log.txt";
     this.logFile = config.log_file;
-    this.tailLines = config.tail_lines || 40;
+    this.tailLines = config.tail_lines || 100;
   }
 
   start() {
@@ -85,7 +85,10 @@ class ChatLogUploader {
   tailFile(filePath, numLines) {
     const data = fs.readFileSync(filePath, "utf-8");
     const lines = data.trimEnd().split("\n");
-    const tail = lines.slice(-numLines);
+    // Strip IRC system messages (joins, parts, quits, mode changes, etc.)
+    // which the IRC client logs with a "*** " marker after the timestamp.
+    const chatOnly = lines.filter((line) => !/\] \*\*\* /.test(line));
+    const tail = chatOnly.slice(-numLines);
     return tail.join("\n");
   }
 }

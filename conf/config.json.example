@@ -75,7 +75,7 @@
         "enabled": true,
         "interval_seconds": 60,
         "log_file": "/usr/src/app/irc-logs/#amiantos.log",
-        "tail_lines": 40,
+        "tail_lines": 100,
         "r2": {
             "endpoint": "<R2_ENDPOINT_URL>",
             "bucket": "bradroot",
