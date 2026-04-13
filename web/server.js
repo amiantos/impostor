@@ -4,11 +4,12 @@ const apiRoutes = require("./routes/api");
 const { createWebhookRouter } = require("../classes/github_webhook");
 
 class WebServer {
-  constructor(logger, config, database, client) {
+  constructor(logger, config, database, client, discordBridge) {
     this.logger = logger;
     this.config = config;
     this.db = database;
     this.client = client;
+    this.discordBridge = discordBridge;
     this.app = express();
     this.server = null;
 
@@ -75,12 +76,18 @@ class WebServer {
       res.sendFile(path.join(__dirname, "views", "dashboard.html"));
     });
 
-    // GitHub webhook
+    // GitHub webhook (announced via EyeBridge to both IRC and Discord)
     if (this.config.github_webhook?.enabled) {
-      this.app.use(
-        "/webhook",
-        createWebhookRouter(this.client, this.config, this.logger)
-      );
+      if (this.discordBridge) {
+        this.app.use(
+          "/webhook",
+          createWebhookRouter(this.discordBridge, this.config, this.logger)
+        );
+      } else {
+        this.logger.warn(
+          "GitHub webhook enabled but Discord bridge unavailable; webhook route not mounted"
+        );
+      }
     }
 
     // Health check

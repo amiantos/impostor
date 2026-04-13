@@ -59,8 +59,7 @@
     },
     "github_webhook": {
         "enabled": true,
-        "secret": "<GITHUB_WEBHOOK_SECRET>",
-        "channel": "#amiantos"
+        "secret": "<GITHUB_WEBHOOK_SECRET>"
     },
     "url_summarize": {
         "enabled": true,

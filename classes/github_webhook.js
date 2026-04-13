@@ -69,10 +69,9 @@ const formatters = {
 
 // --- Router factory ---
 
-function createWebhookRouter(client, config, logger) {
+function createWebhookRouter(bridge, config, logger) {
   const router = express.Router();
   const secret = config.github_webhook.secret;
-  const channel = config.github_webhook.channel;
 
   router.post("/", async (req, res) => {
     const signature = req.headers["x-hub-signature-256"];
@@ -108,12 +107,12 @@ function createWebhookRouter(client, config, logger) {
     }
 
     try {
-      await client.sendIrcMessage(channel, message);
-      logger.info(`GitHub webhook: posted to ${channel}: ${message}`);
+      bridge.announce(message);
+      logger.info(`GitHub webhook: announced via EyeBridge: ${message}`);
       return res.json({ message: "posted" });
     } catch (err) {
-      logger.error(`GitHub webhook: failed to send to IRC: ${err.message}`);
-      return res.status(500).json({ error: "Failed to send to IRC" });
+      logger.error(`GitHub webhook: failed to announce: ${err.message}`);
+      return res.status(500).json({ error: "Failed to announce" });
     }
   });
 

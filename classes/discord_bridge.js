@@ -224,6 +224,33 @@ class DiscordBridge {
   }
 
   /**
+   * Announce a first-party message to both IRC and Discord.
+   * Used for things like GitHub webhook events.
+   */
+  announce(message) {
+    if (!message) return;
+
+    if (this.ircReady) {
+      const maxLen = this.config.irc.max_line_length || 400;
+      for (const line of this._splitMessage(message, maxLen)) {
+        this.ircClient.say(this.ircChannel, line);
+      }
+    } else {
+      this.logger.warn(
+        `Discord bridge announce: IRC not ready, skipping IRC side: ${message}`
+      );
+    }
+
+    if (this.discordReady && this.discordChannel) {
+      this._sendToDiscord(message);
+    } else {
+      this.logger.warn(
+        `Discord bridge announce: Discord not ready, skipping Discord side: ${message}`
+      );
+    }
+  }
+
+  /**
    * Send a message to Discord, truncating if needed
    */
   _sendToDiscord(text) {

@@ -9,10 +9,24 @@ const DiscordBridge = require("./classes/discord_bridge");
 const logger = new Logger(true); // Enable debug mode
 const client = new ImpostorClient(logger, config);
 
+// Start the Discord bridge if enabled (must come before WebServer so the
+// webhook router can announce via EyeBridge)
+let discordBridge = null;
+if (config.discord?.enabled) {
+  discordBridge = new DiscordBridge(logger, config);
+  discordBridge.start();
+}
+
 // Start the web dashboard if enabled
 let webServer = null;
 if (config.web?.enabled) {
-  webServer = new WebServer(logger, config, client.getDatabase(), client);
+  webServer = new WebServer(
+    logger,
+    config,
+    client.getDatabase(),
+    client,
+    discordBridge
+  );
   webServer.start();
 }
 
@@ -21,13 +35,6 @@ let chatLogUploader = null;
 if (config.chat_log_upload?.enabled) {
   chatLogUploader = new ChatLogUploader(logger, config.chat_log_upload);
   chatLogUploader.start();
-}
-
-// Start the Discord bridge if enabled
-let discordBridge = null;
-if (config.discord?.enabled) {
-  discordBridge = new DiscordBridge(logger, config);
-  discordBridge.start();
 }
 
 // Start the bot
