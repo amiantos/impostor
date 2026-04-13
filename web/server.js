@@ -2,6 +2,9 @@ const express = require("express");
 const path = require("path");
 const apiRoutes = require("./routes/api");
 const { createWebhookRouter } = require("../classes/github_webhook");
+const {
+  createDiscourseWebhookRouter,
+} = require("../classes/discourse_webhook");
 
 class WebServer {
   constructor(logger, config, database, client, discordBridge) {
@@ -32,7 +35,11 @@ class WebServer {
     if (authConfig?.username && authConfig?.password) {
       this.app.use((req, res, next) => {
         // Skip auth for webhook and health check
-        if (req.path.startsWith("/webhook") || req.path === "/health") {
+        if (
+          req.path.startsWith("/webhook") ||
+          req.path.startsWith("/discourse-webhook") ||
+          req.path === "/health"
+        ) {
           return next();
         }
 
@@ -86,6 +93,24 @@ class WebServer {
       } else {
         this.logger.warn(
           "GitHub webhook enabled but Discord bridge unavailable; webhook route not mounted"
+        );
+      }
+    }
+
+    // Discourse webhook (announced via EyeBridge to both IRC and Discord)
+    if (this.config.discourse_webhook?.enabled) {
+      if (this.discordBridge) {
+        this.app.use(
+          "/discourse-webhook",
+          createDiscourseWebhookRouter(
+            this.discordBridge,
+            this.config,
+            this.logger
+          )
+        );
+      } else {
+        this.logger.warn(
+          "Discourse webhook enabled but Discord bridge unavailable; route not mounted"
         );
       }
     }

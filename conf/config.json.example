@@ -61,6 +61,11 @@
         "enabled": true,
         "secret": "<GITHUB_WEBHOOK_SECRET>"
     },
+    "discourse_webhook": {
+        "enabled": true,
+        "secret": "<DISCOURSE_WEBHOOK_SECRET>",
+        "base_url": "https://forum.example.com"
+    },
     "url_summarize": {
         "enabled": true,
         "summary_type": "takeaway",
