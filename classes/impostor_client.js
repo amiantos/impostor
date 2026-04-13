@@ -62,8 +62,14 @@ class ImpostorClient {
       this.messageTracker.runMaintenance();
     }, 60 * 60 * 1000); // Run every hour
 
+    // Reconnect backoff state
+    this.reconnectDelay = 1000;
+    this.reconnectTimer = null;
+    this.shuttingDown = false;
+
     // IRC event handlers
     this.ircClient.on("registered", () => {
+      this.reconnectDelay = 1000;
       this.logger.info(`Connected to IRC as ${this.botNick}!`);
       // Join configured channels
       for (const channel of config.irc.channels) {
@@ -98,10 +104,7 @@ class ImpostorClient {
 
     this.ircClient.on("close", () => {
       this.logger.info("IRC connection closed");
-    });
-
-    this.ircClient.on("reconnecting", () => {
-      this.logger.info("Reconnecting to IRC...");
+      this._scheduleReconnect();
     });
 
     this.ircClient.on("socket close", () => {
@@ -137,9 +140,7 @@ class ImpostorClient {
       nick: ircConfig.nick,
       username: ircConfig.username || ircConfig.nick.toLowerCase(),
       gecos: ircConfig.realname || ircConfig.nick,
-      auto_reconnect: true,
-      auto_reconnect_wait: ircConfig.reconnect_delay || 5000,
-      auto_reconnect_max_retries: 0, // Unlimited retries
+      auto_reconnect: false, // We handle reconnection ourselves with exponential backoff
     };
 
     // SASL authentication
@@ -150,7 +151,25 @@ class ImpostorClient {
       };
     }
 
+    this.connectOptions = connectOptions;
     this.ircClient.connect(connectOptions);
+  }
+
+  _scheduleReconnect() {
+    if (this.shuttingDown) return;
+    if (this.reconnectTimer) return;
+    const delay = this.reconnectDelay;
+    this.logger.info(`Reconnecting to IRC in ${delay}ms...`);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.reconnectDelay = Math.min(this.reconnectDelay * 2, 60000);
+      try {
+        this.ircClient.connect(this.connectOptions);
+      } catch (err) {
+        this.logger.error(`IRC reconnect failed: ${err.message}`);
+        this._scheduleReconnect();
+      }
+    }, delay);
   }
 
   /**
@@ -916,6 +935,11 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
    * Cleanup resources on shutdown
    */
   shutdown() {
+    this.shuttingDown = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     if (this.maintenanceInterval) {
       clearInterval(this.maintenanceInterval);
     }

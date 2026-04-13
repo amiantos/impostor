@@ -29,6 +29,12 @@ class DiscordBridge {
     // Track readiness
     this.discordReady = false;
     this.ircReady = false;
+
+    // Reconnect backoff state
+    this.reconnectDelay = 1000;
+    this.reconnectTimer = null;
+    this.shuttingDown = false;
+    this.ircConnectOpts = null;
   }
 
   start() {
@@ -48,9 +54,7 @@ class DiscordBridge {
       nick: this.bridgeNick,
       username: this.bridgeNick.toLowerCase(),
       gecos: "Discord-IRC Bridge",
-      auto_reconnect: true,
-      auto_reconnect_wait: 5000,
-      auto_reconnect_max_retries: 0,
+      auto_reconnect: false, // We handle reconnection ourselves with exponential backoff
     };
 
     if (this.discordConfig.bridge_sasl && this.discordConfig.bridge_password) {
@@ -60,13 +64,36 @@ class DiscordBridge {
       };
     }
 
+    this.ircConnectOpts = ircConnectOpts;
     this.ircClient.connect(ircConnectOpts);
   }
 
   stop() {
     this.logger.info("Discord bridge stopping");
+    this.shuttingDown = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     this.discordClient.destroy();
     this.ircClient.quit("Bridge shutting down");
+  }
+
+  _scheduleIrcReconnect() {
+    if (this.shuttingDown) return;
+    if (this.reconnectTimer) return;
+    const delay = this.reconnectDelay;
+    this.logger.info(`Discord bridge reconnecting to IRC in ${delay}ms...`);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.reconnectDelay = Math.min(this.reconnectDelay * 2, 60000);
+      try {
+        this.ircClient.connect(this.ircConnectOpts);
+      } catch (err) {
+        this.logger.error(`Discord bridge IRC reconnect failed: ${err.message}`);
+        this._scheduleIrcReconnect();
+      }
+    }, delay);
   }
 
   _setupDiscordHandlers() {
@@ -100,6 +127,7 @@ class DiscordBridge {
 
   _setupIrcHandlers() {
     this.ircClient.on("registered", () => {
+      this.reconnectDelay = 1000;
       this.logger.info(
         `Discord bridge connected to IRC as ${this.bridgeNick}`
       );
@@ -126,10 +154,7 @@ class DiscordBridge {
     this.ircClient.on("close", () => {
       this.ircReady = false;
       this.logger.info("Discord bridge IRC connection closed");
-    });
-
-    this.ircClient.on("reconnecting", () => {
-      this.logger.info("Discord bridge reconnecting to IRC...");
+      this._scheduleIrcReconnect();
     });
   }
 
