@@ -20,9 +20,8 @@ function verifySignature(rawBody, signatureHeader, secret) {
 function formatFork(payload) {
   const user = payload.sender.login;
   const repo = payload.repository.full_name;
-  const forkName = payload.forkee.full_name;
   const url = payload.forkee.html_url;
-  return `[fork] ${user} forked ${repo} -> ${url}`;
+  return `[gh] ${repo} | ${user} forked the repo | <${url}>`;
 }
 
 function formatIssue(payload) {
@@ -31,7 +30,7 @@ function formatIssue(payload) {
   const user = payload.sender.login;
   const repo = payload.repository.full_name;
   const issue = payload.issue;
-  return `[issue] ${user} ${action} issue #${issue.number}: ${issue.title} in ${repo} -> ${issue.html_url}`;
+  return `[gh] ${repo} | ${user} ${action} issue #${issue.number}: ${issue.title} | <${issue.html_url}>`;
 }
 
 function formatPullRequest(payload) {
@@ -41,7 +40,7 @@ function formatPullRequest(payload) {
   const repo = payload.repository.full_name;
   const pr = payload.pull_request;
   const verb = action === "closed" && pr.merged ? "merged" : action;
-  return `[pr] ${user} ${verb} PR #${pr.number}: ${pr.title} in ${repo} -> ${pr.html_url}`;
+  return `[gh] ${repo} | ${user} ${verb} PR #${pr.number}: ${pr.title} | <${pr.html_url}>`;
 }
 
 function formatRelease(payload) {
@@ -49,14 +48,14 @@ function formatRelease(payload) {
   const user = payload.sender.login;
   const repo = payload.repository.full_name;
   const release = payload.release;
-  return `[release] ${release.tag_name} of ${repo} released by ${user} -> ${release.html_url}`;
+  return `[gh] ${repo} | ${user} released ${release.tag_name} | <${release.html_url}>`;
 }
 
 function formatStar(payload) {
   if (payload.action !== "started") return null;
   const user = payload.sender.login;
   const repo = payload.repository.full_name;
-  return `[star] ${user} starred ${repo} -> https://github.com/${user}`;
+  return `[gh] ${repo} | ${user} starred the repo | <https://github.com/${user}>`;
 }
 
 const formatters = {
