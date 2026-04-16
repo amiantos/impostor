@@ -184,14 +184,14 @@ class DiscordBridge {
       // Split multiline Discord messages
       for (const paragraph of content.split("\n")) {
         if (paragraph.trim()) {
-          lines.push(`[discord] ${username}: ${paragraph}`);
+          lines.push(`[discord] <${username}> ${paragraph}`);
         }
       }
     }
 
     // Append attachment URLs
     for (const attachment of message.attachments.values()) {
-      lines.push(`[discord] ${username}: ${attachment.url}`);
+      lines.push(`[discord] <${username}> ${attachment.url}`);
     }
 
     if (lines.length === 0) return;
@@ -223,7 +223,7 @@ class DiscordBridge {
     // Don't forward if Discord isn't ready
     if (!this.discordReady || !this.discordChannel) return;
 
-    const formatted = `[irc] **${event.nick}:** ${event.message}`;
+    const formatted = `[irc] **<${event.nick}>** ${event.message}`;
     this._sendToDiscord(formatted);
   }
 

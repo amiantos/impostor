@@ -56,9 +56,9 @@ function formatPost(payload, baseUrl, maxLen) {
 
   const content = stripPostContent(post.raw);
 
-  const prefix = `[eye] ${title} | ${username}: `;
+  const prefix = `[eye] ${title} <${username}> `;
   // Wrap URL in <> so Discord skips the link preview embed.
-  const suffix = ` | <${url}>`;
+  const suffix = ` <${url}>`;
 
   // irc-framework reserves room under max_line_length for the IRC line
   // prefix (:nick!user@host PRIVMSG #chan :), so the real payload is
