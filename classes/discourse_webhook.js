@@ -15,15 +15,27 @@ function verifySignature(rawBody, signatureHeader, secret) {
 
 function stripPostContent(raw) {
   if (!raw) return "";
-  return raw
+  let text = raw
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/`[^`]*`/g, " ")
     .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-    .replace(/^>.*$/gm, " ")
+    .replace(/^>.*$/gm, " ");
+
+  const urls = [];
+  text = text.replace(/https?:\/\/\S+/g, (match) => {
+    const token = `\u0000U${urls.length}\u0000`;
+    urls.push(match);
+    return token;
+  });
+
+  text = text
     .replace(/[*_~#>]/g, " ")
+    .replace(/\\([\\`*_{}\[\]()#+\-.!~|>])/g, "$1")
     .replace(/\s+/g, " ")
     .trim();
+
+  return text.replace(/\u0000U(\d+)\u0000/g, (_, i) => urls[Number(i)]);
 }
 
 function truncateByBytes(str, maxBytes) {
