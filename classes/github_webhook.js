@@ -21,7 +21,7 @@ function formatFork(payload) {
   const user = payload.sender.login;
   const repo = payload.repository.full_name;
   const url = payload.forkee.html_url;
-  return `[gh] ${repo} <${user}> forked the repo <${url}>`;
+  return `[${repo}] <${user}> forked the repo <${url}>`;
 }
 
 function formatIssue(payload) {
@@ -30,7 +30,7 @@ function formatIssue(payload) {
   const user = payload.sender.login;
   const repo = payload.repository.full_name;
   const issue = payload.issue;
-  return `[gh] ${repo} <${user}> ${action} issue #${issue.number}: ${issue.title} <${issue.html_url}>`;
+  return `[${repo}] <${user}> ${action} issue #${issue.number}: ${issue.title} <${issue.html_url}>`;
 }
 
 function formatPullRequest(payload) {
@@ -40,7 +40,7 @@ function formatPullRequest(payload) {
   const repo = payload.repository.full_name;
   const pr = payload.pull_request;
   const verb = action === "closed" && pr.merged ? "merged" : action;
-  return `[gh] ${repo} <${user}> ${verb} PR #${pr.number}: ${pr.title} <${pr.html_url}>`;
+  return `[${repo}] <${user}> ${verb} PR #${pr.number}: ${pr.title} <${pr.html_url}>`;
 }
 
 function formatRelease(payload) {
@@ -48,14 +48,14 @@ function formatRelease(payload) {
   const user = payload.sender.login;
   const repo = payload.repository.full_name;
   const release = payload.release;
-  return `[gh] ${repo} <${user}> released ${release.tag_name} <${release.html_url}>`;
+  return `[${repo}] <${user}> released ${release.tag_name} <${release.html_url}>`;
 }
 
 function formatStar(payload) {
   if (payload.action !== "started") return null;
   const user = payload.sender.login;
   const repo = payload.repository.full_name;
-  return `[gh] ${repo} <${user}> starred the repo <https://github.com/${user}>`;
+  return `[${repo}] <${user}> starred the repo <https://github.com/${user}>`;
 }
 
 const formatters = {

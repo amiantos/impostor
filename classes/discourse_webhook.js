@@ -68,7 +68,7 @@ function formatPost(payload, baseUrl, maxLen) {
 
   const content = stripPostContent(post.raw);
 
-  const prefix = `[eye] ${title} <${username}> `;
+  const prefix = `[${title}] <${username}> `;
   // Wrap URL in <> so Discord skips the link preview embed.
   const suffix = ` <${url}>`;
 
