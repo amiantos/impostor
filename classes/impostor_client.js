@@ -815,10 +815,6 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
 
       response = await this.callDeepSeek(conversationLog);
       structuredResponse = await this.parseStructuredResponse(response);
-
-      if (!structuredResponse.continue_iterating) {
-        break;
-      }
     }
 
     if (iterationCount >= maxIterations) {
