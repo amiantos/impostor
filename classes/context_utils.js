@@ -280,7 +280,18 @@ Do not include any text outside of this JSON structure. The "message" field shou
   }
 
   buildInstructions() {
-    return ContextUtils.system_prompt.replaceAll("Isaac", this.botName);
+    const dateStr = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles",
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZoneName: "short",
+    }).format(new Date());
+    const prompt = ContextUtils.system_prompt.replaceAll("Isaac", this.botName);
+    return `${prompt}\n\nCURRENT DATE/TIME: ${dateStr}`;
   }
 
   getResponseSchema() {
