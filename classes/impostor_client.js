@@ -221,6 +221,13 @@ class ImpostorClient {
       messageText = bridgeMatch[2];
     }
 
+    // EyeBridge posts both bridged Discord messages and webhook announcements
+    // (GitHub/Discourse). Skip URL summarization on the webhook ones — their links
+    // are already self-describing and we don't want Isaac fetching every PR/post.
+    const bridgeNick = this.config.discord?.bridge_nick || "EyeBridge";
+    const isWebhookAnnouncement =
+      event.nick.toLowerCase() === bridgeNick.toLowerCase() && !bridgeMatch;
+
     // Create normalized message object
     const message = createIrcMessage(nick, event.target, messageText, {
       ident: event.ident,
@@ -229,7 +236,11 @@ class ImpostorClient {
     });
 
     // Track the message
-    await this.messageTracker.addMessage(message, { isBotMessage: false, processVision: true });
+    await this.messageTracker.addMessage(message, {
+      isBotMessage: false,
+      processVision: true,
+      processUrls: !isWebhookAnnouncement,
+    });
 
     // Direct trigger - nick mentioned in message
     if (this.isDirectTrigger(messageText)) {
