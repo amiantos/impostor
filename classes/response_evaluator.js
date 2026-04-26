@@ -182,11 +182,15 @@ Should ${this.botName} respond to this conversation? Remember to respond with va
       { role: "user", content: userPrompt },
     ];
 
+    const evaluatorModel =
+      this.config.generator.deepseek.evaluator_model ||
+      this.config.generator.deepseek.model;
+
     try {
       this.logger.debug("Evaluating conversation for autonomous response...");
 
       const response = await this.openai.chat.completions.create({
-        model: this.config.generator.deepseek.model,
+        model: evaluatorModel,
         messages: promptMessages,
         max_tokens: 200,
         temperature: 0.7,
@@ -226,7 +230,7 @@ Should ${this.botName} respond to this conversation? Remember to respond with va
         promptType: "evaluation",
         systemPrompt,
         messagesJson: promptMessages,
-        model: this.config.generator.deepseek.model,
+        model: evaluatorModel,
         temperature: 0.7
       });
 

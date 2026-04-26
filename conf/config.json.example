@@ -3,7 +3,8 @@
         "deepseek": {
             "api_key": "<DEEPSEEK API KEY>",
             "base_url": "https://api.deepseek.com",
-            "model": "deepseek-chat",
+            "model": "deepseek-v4-pro",
+            "evaluator_model": "deepseek-v4-flash",
             "temperature": 0.9,
             "max_tokens": 500
         }
