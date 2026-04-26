@@ -192,7 +192,7 @@ Should ${this.botName} respond to this conversation? Remember to respond with va
       const response = await this.openai.chat.completions.create({
         model: evaluatorModel,
         messages: promptMessages,
-        max_tokens: 200,
+        max_tokens: 1000,
         temperature: 0.7,
         response_format: { type: "json_object" },
       });
@@ -243,7 +243,7 @@ Should ${this.botName} respond to this conversation? Remember to respond with va
         decisionId
       };
     } catch (error) {
-      this.logger.error("Error evaluating conversation:", error);
+      this.logger.error(`Error evaluating conversation: ${error.message}`, { stack: error.stack });
 
       // Log failed evaluation
       const decisionId = this.db.logDecision(
