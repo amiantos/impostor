@@ -20,7 +20,8 @@
         "sasl": true,
         "channels": ["#amiantos"],
         "max_line_length": 350,
-        "watchword": "Isaac"
+        "watchword": "Isaac",
+        "pm_allowed_users": []
     },
     "autonomous": {
         "enabled": true,

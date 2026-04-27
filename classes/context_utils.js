@@ -504,8 +504,13 @@ Do not include any text outside of this JSON structure. The "message" field shou
       }
     });
 
-    // Build the consolidated message
-    const channelName = triggerInfo.channelName || "channel";
+    // Build the consolidated message. The conversation key is either an IRC
+    // channel ("#amiantos") or, for DMs, the other person's nick.
+    const conversationKey = triggerInfo.channelName || "channel";
+    const isPrivate = !conversationKey.startsWith("#");
+    const conversationHeader = isPrivate
+      ? `Direct message conversation with ${conversationKey}`
+      : `Recent conversation in ${conversationKey}`;
 
     // Build memory section if we have user memories (keyed by IRC username)
     let memorySection = "";
@@ -524,7 +529,7 @@ Do not include any text outside of this JSON structure. The "message" field shou
       }
     }
 
-    let consolidatedContent = memorySection + `Recent conversation in #${channelName}:\n\n${chatlogLines.join("\n")}`;
+    let consolidatedContent = memorySection + `${conversationHeader}:\n\n${chatlogLines.join("\n")}`;
 
     // Add URL summaries reference section if any links were shared
     if (allUrlSummaries.length > 0) {

@@ -186,6 +186,18 @@ class ImpostorClient {
   }
 
   /**
+   * Whether the bot should respond to a private message from this nick.
+   * Default-deny: if irc.pm_allowed_users is unset or empty, we accept and
+   * store DMs (so the dashboard sees them) but never reply. Otherwise only
+   * the listed nicks get replies.
+   */
+  isAllowedPmSender(nick) {
+    const allowed = this.config.irc.pm_allowed_users;
+    if (!allowed || allowed.length === 0) return false;
+    return allowed.some((n) => n.toLowerCase() === nick.toLowerCase());
+  }
+
+  /**
    * Check if a message is a direct trigger (mentions the bot's nick)
    * @param {string} content - Message content
    * @returns {boolean} True if message directly triggers the bot
@@ -207,49 +219,60 @@ class ImpostorClient {
   async handleIrcMessage(event) {
     // Ignore our own messages (IRC nicks are case-insensitive)
     if (event.nick.toLowerCase() === this.botNick.toLowerCase()) return;
+    if (!event.target) return;
 
-    // Only handle channel messages (not PMs)
-    if (!event.target || !event.target.startsWith("#")) return;
+    // IRC routes channel messages and PMs through the same PRIVMSG verb. The
+    // only difference is the target: channels start with '#', everything else
+    // is a nick. Use the target verbatim as the conversation key for channels;
+    // for DMs use the sender's nick (since target is the bot itself).
+    const isPrivate = !event.target.startsWith("#");
+    const conversationId = isPrivate ? event.nick : event.target;
 
-    // Check channel filtering
-    if (!this.isAllowedChannel(event.target)) return;
+    if (!isPrivate && !this.isAllowedChannel(event.target)) return;
 
     const bridgeNick = this.config.discord?.bridge_nick || "EyeBridge";
     const { nick, message: messageText, isWebhookAnnouncement } =
       parseBridgedMessage(event.nick, event.message, bridgeNick);
 
-    // Create normalized message object
-    const message = createIrcMessage(nick, event.target, messageText, {
+    const message = createIrcMessage(nick, conversationId, messageText, {
       ident: event.ident,
       hostname: event.hostname,
       isBot: false,
     });
 
-    // Track the message
+    // Always track the message so the admin dashboard surfaces every chat,
+    // including DMs from non-allowlisted senders.
     await this.messageTracker.addMessage(message, {
       isBotMessage: false,
       processVision: true,
       processUrls: !isWebhookAnnouncement,
     });
 
-    // Direct trigger - nick mentioned in message
-    if (this.isDirectTrigger(messageText)) {
-      this.logger.info(
-        `Queuing direct message from ${nick}.`,
-        message
-      );
-
-      this.messageQueue.push({ message, channel: event.target, type: "direct" });
-
-      if (!this.isProcessing) {
-        this.processMessageQueue();
+    // DMs: every message is a direct address. Only respond if the sender is
+    // on the PM allowlist; otherwise stop here (still stored above).
+    if (isPrivate) {
+      if (!this.isAllowedPmSender(event.nick)) {
+        this.logger.info(
+          `PM from ${event.nick} stored but not responded to (not in pm_allowed_users).`
+        );
+        return;
       }
+      this.logger.info(`Queuing DM from ${nick}.`, message);
+      this.messageQueue.push({ message, channel: conversationId, type: "direct" });
+      if (!this.isProcessing) this.processMessageQueue();
       return;
     }
 
-    // Autonomous response evaluation (debounced)
+    // Channel: respond directly when nick is mentioned, otherwise debounce.
+    if (this.isDirectTrigger(messageText)) {
+      this.logger.info(`Queuing direct message from ${nick}.`, message);
+      this.messageQueue.push({ message, channel: conversationId, type: "direct" });
+      if (!this.isProcessing) this.processMessageQueue();
+      return;
+    }
+
     if (this.config.autonomous?.enabled) {
-      this.scheduleAutonomousEvaluation(event.target, message);
+      this.scheduleAutonomousEvaluation(conversationId, message);
     }
   }
 
@@ -519,7 +542,7 @@ class ImpostorClient {
     const triggerInfo = {
       userId: message.author.id,
       userName: message.author.username,
-      channelName: channelName.replace(/^#/, ""),
+      channelName: channelName,
     };
 
     const { response, conversationLog } = await this.generateResponseWithChatCompletions({
@@ -590,7 +613,7 @@ class ImpostorClient {
     const triggerInfo = {
       userId: null,
       userName: null,
-      channelName: channelName.replace(/^#/, ""),
+      channelName: channelName,
     };
 
     const { response, conversationLog } = await this.generateResponseWithChatCompletions({
@@ -646,7 +669,18 @@ class ImpostorClient {
    */
   async sendIrcMessage(channel, text) {
     const maxLen = this.config.irc.max_line_length || 350;
-    const lines = splitMessage(text, maxLen);
+
+    // Isaac is told to address users by leading with "nick: " (IRC channel
+    // convention). In a 1:1 DM that prefix is just noise, since the only
+    // other party in the conversation IS the recipient. Strip it post-hoc
+    // rather than complicating the system prompt with another conditional.
+    let payload = text;
+    if (!channel.startsWith("#")) {
+      const escaped = channel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      payload = payload.replace(new RegExp(`^${escaped}[:,]\\s+`, "i"), "");
+    }
+
+    const lines = splitMessage(payload, maxLen);
 
     for (let i = 0; i < lines.length; i++) {
       this.ircClient.say(channel, lines[i]);

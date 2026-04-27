@@ -90,10 +90,10 @@ SQLite database at `data/impostor.db`:
 ## IRC Details
 
 - Uses `irc-framework` library with TLS, SASL auth, auto-reconnect
-- Channel names (e.g. "#amiantos") serve as channel IDs throughout the codebase
+- The `messages.channel_id` column stores the IRC PRIVMSG target verbatim. For channel messages that's `#name`; for DMs it's the other party's nick (since channel and PM both go through PRIVMSG, the leading `#` is what distinguishes them). Conversation context is keyed off this column for both kinds.
 - Author IDs in the `messages` table are the IRC hostmask (`nick!ident@hostname`) for stable cross-nick-change identity. Memories, however, are keyed by IRC username (nick) only — hostmasks aren't shown to the LLM or stored in the memory table.
 - Message IDs are UUIDs (IRC has no server-assigned message IDs)
-- No reply-to mechanism -- all responses go to the channel
+- DMs are accepted from anyone (so the dashboard can monitor them) but only sent to nicks listed in `irc.pm_allowed_users`. Empty list = no DM responses.
 
 ## API Response Format
 

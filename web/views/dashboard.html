@@ -794,7 +794,7 @@
   <!-- Channel Tabs -->
   <nav class="channel-tabs" id="channel-tabs">
     <button class="channel-tab active" data-channel="">
-      All Channels
+      All Conversations
     </button>
     <!-- Memories tab will be added dynamically -->
   </nav>
@@ -956,14 +956,16 @@
       const container = document.getElementById('channel-tabs');
 
       let html = `<button class="channel-tab ${currentChannel === '' ? 'active' : ''}" data-channel="" onclick="selectChannel('')">
-        All Channels
+        All Conversations
       </button>`;
 
       channels.forEach(ch => {
-        const displayName = ch.channel_name || ch.channel_id.slice(-6);
+        // IRC channels start with '#'; DMs use the other party's nick verbatim.
+        const isChannel = ch.channel_id.startsWith('#');
+        const label = isChannel ? ch.channel_id : `@${ch.channel_id}`;
         const isActive = currentChannel === ch.channel_id;
-        html += `<button class="channel-tab ${isActive ? 'active' : ''}" data-channel="${ch.channel_id}" onclick="selectChannel('${ch.channel_id}')" title="${ch.channel_id}">
-          #${escapeHtml(displayName)}<span class="count">${ch.message_count}</span>
+        html += `<button class="channel-tab ${isActive ? 'active' : ''}" data-channel="${escapeHtml(ch.channel_id)}" onclick="selectChannel('${ch.channel_id.replace(/'/g, "\\'")}')" title="${escapeHtml(ch.channel_id)}">
+          ${escapeHtml(label)}<span class="count">${ch.message_count}</span>
         </button>`;
       });
 
@@ -1623,14 +1625,15 @@
       const container = document.getElementById('channel-tabs');
 
       let html = `<button class="channel-tab ${!isMemoriesView && currentChannel === '' ? 'active' : ''}" data-channel="" onclick="selectChannel('')">
-        All Channels
+        All Conversations
       </button>`;
 
       channels.forEach(ch => {
-        const displayName = ch.channel_name || ch.channel_id.slice(-6);
+        const isChannel = ch.channel_id.startsWith('#');
+        const label = isChannel ? ch.channel_id : `@${ch.channel_id}`;
         const isActive = !isMemoriesView && currentChannel === ch.channel_id;
-        html += `<button class="channel-tab ${isActive ? 'active' : ''}" data-channel="${ch.channel_id}" onclick="selectChannel('${ch.channel_id}')" title="${ch.channel_id}">
-          #${escapeHtml(displayName)}<span class="count">${ch.message_count}</span>
+        html += `<button class="channel-tab ${isActive ? 'active' : ''}" data-channel="${escapeHtml(ch.channel_id)}" onclick="selectChannel('${ch.channel_id.replace(/'/g, "\\'")}')" title="${escapeHtml(ch.channel_id)}">
+          ${escapeHtml(label)}<span class="count">${ch.message_count}</span>
         </button>`;
       });
 
