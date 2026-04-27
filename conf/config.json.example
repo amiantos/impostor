@@ -19,7 +19,7 @@
         "password": "<NickServ password (optional, for SASL auth)>",
         "sasl": true,
         "channels": ["#amiantos"],
-        "max_line_length": 400,
+        "max_line_length": 350,
         "watchword": "Isaac"
     },
     "autonomous": {

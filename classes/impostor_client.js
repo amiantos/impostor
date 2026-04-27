@@ -1,5 +1,6 @@
 const IRC = require("irc-framework");
 const { createIrcMessage } = require("./irc_message");
+const { splitMessage } = require("./message_splitter");
 const ContextUtils = require("./context_utils");
 const PythonTool = require("./python_tool");
 const WebSearchTool = require("./web_search_tool");
@@ -655,8 +656,8 @@ class ImpostorClient {
    * @param {string} text - Message text
    */
   async sendIrcMessage(channel, text) {
-    const maxLen = this.config.irc.max_line_length || 400;
-    const lines = this.splitMessage(text, maxLen);
+    const maxLen = this.config.irc.max_line_length || 350;
+    const lines = splitMessage(text, maxLen);
 
     for (let i = 0; i < lines.length; i++) {
       this.ircClient.say(channel, lines[i]);
@@ -665,52 +666,6 @@ class ImpostorClient {
         await new Promise((r) => setTimeout(r, 500));
       }
     }
-  }
-
-  /**
-   * Split a message into IRC-friendly lines
-   * @param {string} text - Message text
-   * @param {number} maxLen - Maximum characters per line
-   * @returns {string[]} Array of lines
-   */
-  splitMessage(text, maxLen) {
-    const urlRegex = /https?:\/\/\S+/g;
-    const lines = [];
-    for (const paragraph of text.split("\n")) {
-      if (paragraph.length === 0) continue;
-      if (paragraph.length <= maxLen) {
-        lines.push(paragraph);
-      } else {
-        let remaining = paragraph;
-        while (remaining.length > maxLen) {
-          let splitAt = remaining.lastIndexOf(" ", maxLen);
-          if (splitAt === -1) splitAt = maxLen;
-
-          // Check if splitting here would break a URL
-          const urlMatches = [...remaining.matchAll(urlRegex)];
-          for (const match of urlMatches) {
-            const urlStart = match.index;
-            const urlEnd = urlStart + match[0].length;
-            if (splitAt > urlStart && splitAt < urlEnd) {
-              // Split before the URL instead, or after it if it fits
-              const beforeUrl = remaining.lastIndexOf(" ", urlStart);
-              if (beforeUrl > 0) {
-                splitAt = beforeUrl;
-              } else if (urlEnd <= maxLen + 50) {
-                // Allow slightly longer line to keep URL intact
-                splitAt = urlEnd;
-              }
-              break;
-            }
-          }
-
-          lines.push(remaining.substring(0, splitAt));
-          remaining = remaining.substring(splitAt).trimStart();
-        }
-        if (remaining) lines.push(remaining);
-      }
-    }
-    return lines.length > 0 ? lines : [""];
   }
 
   async generateResponseWithChatCompletions({

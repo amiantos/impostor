@@ -1,5 +1,6 @@
 const { Client, GatewayIntentBits } = require("discord.js");
 const IRC = require("irc-framework");
+const { splitMessage } = require("./message_splitter");
 
 class DiscordBridge {
   constructor(logger, config) {
@@ -197,9 +198,9 @@ class DiscordBridge {
     if (lines.length === 0) return;
 
     // Split and send each line respecting IRC length limits
-    const maxLen = this.config.irc.max_line_length || 400;
+    const maxLen = this.config.irc.max_line_length || 350;
     for (const line of lines) {
-      const splitLines = this._splitMessage(line, maxLen);
+      const splitLines = splitMessage(line, maxLen);
       for (const splitLine of splitLines) {
         this.ircClient.say(this.ircChannel, splitLine);
       }
@@ -256,8 +257,8 @@ class DiscordBridge {
     if (!message) return;
 
     if (this.ircReady) {
-      const maxLen = this.config.irc.max_line_length || 400;
-      for (const line of this._splitMessage(message, maxLen)) {
+      const maxLen = this.config.irc.max_line_length || 350;
+      for (const line of splitMessage(message, maxLen)) {
         this.ircClient.say(this.ircChannel, line);
       }
     } else {
@@ -322,46 +323,6 @@ class DiscordBridge {
     content = content.replace(/<a?:(\w+):\d+>/g, ":$1:");
 
     return content;
-  }
-
-  /**
-   * Split a message into IRC-friendly lines (copied from ImpostorClient)
-   */
-  _splitMessage(text, maxLen) {
-    const urlRegex = /https?:\/\/\S+/g;
-    const lines = [];
-    for (const paragraph of text.split("\n")) {
-      if (paragraph.length === 0) continue;
-      if (paragraph.length <= maxLen) {
-        lines.push(paragraph);
-      } else {
-        let remaining = paragraph;
-        while (remaining.length > maxLen) {
-          let splitAt = remaining.lastIndexOf(" ", maxLen);
-          if (splitAt === -1) splitAt = maxLen;
-
-          const urlMatches = [...remaining.matchAll(urlRegex)];
-          for (const match of urlMatches) {
-            const urlStart = match.index;
-            const urlEnd = urlStart + match[0].length;
-            if (splitAt > urlStart && splitAt < urlEnd) {
-              const beforeUrl = remaining.lastIndexOf(" ", urlStart);
-              if (beforeUrl > 0) {
-                splitAt = beforeUrl;
-              } else if (urlEnd <= maxLen + 50) {
-                splitAt = urlEnd;
-              }
-              break;
-            }
-          }
-
-          lines.push(remaining.substring(0, splitAt));
-          remaining = remaining.substring(splitAt).trimStart();
-        }
-        if (remaining) lines.push(remaining);
-      }
-    }
-    return lines.length > 0 ? lines : [""];
   }
 }
 

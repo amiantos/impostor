@@ -75,7 +75,7 @@ function formatPost(payload, baseUrl, maxLen) {
   // irc-framework reserves room under max_line_length for the IRC line
   // prefix (:nick!user@host PRIVMSG #chan :), so the real payload is
   // ~60-80 bytes smaller. Cap aggressively so the URL stays on one line.
-  const budget = Math.min(maxLen, 400) - 90;
+  const budget = Math.min(maxLen, 350) - 90;
   const fixedBytes =
     Buffer.byteLength(prefix, "utf8") + Buffer.byteLength(suffix, "utf8");
   const room = budget - fixedBytes;
@@ -96,7 +96,7 @@ function createDiscourseWebhookRouter(bridge, config, logger) {
   const router = express.Router();
   const secret = config.discourse_webhook.secret;
   const baseUrl = config.discourse_webhook.base_url;
-  const maxLen = config.irc?.max_line_length || 400;
+  const maxLen = config.irc?.max_line_length || 350;
 
   router.post("/", async (req, res) => {
     const signature = req.headers["x-discourse-event-signature"];
