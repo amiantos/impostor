@@ -485,12 +485,12 @@ class ImpostorClient {
     const imageDescriptions = this.visionService.buildImageDescriptionsFromDB(dbMessages);
     const urlSummaries = this.urlSummarizeService.buildUrlSummariesFromDB(dbMessages);
 
-    const userIds = [...new Set(
+    const usernames = [...new Set(
       dbMessages
-        .filter(msg => !msg.is_bot_message && msg.author_id)
-        .map(msg => msg.author_id)
+        .filter(msg => !msg.is_bot_message && msg.author_name)
+        .map(msg => msg.author_name)
     )];
-    const userMemories = this.db.getMemoriesForUsers(userIds, 10);
+    const userMemories = this.db.getMemoriesForUsers(usernames, 10);
 
     return {
       dbMessages,
@@ -836,40 +836,39 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
     return summary.trim();
   }
 
-  /**
-   * Tool registry mapping tool names to their execution functions
-   */
-  get toolRegistry() {
-    return {
-      python: (req) => this.pythonTool.executePython(req.code),
-      web_search: (req) => this.webSearchTool.searchWeb(req.query),
-      web_fetch: (req) => this.webFetchTool.fetchPage(req.url),
-      remember: (req) => this.memoryTool.remember({
-        user_id: req.user_id,
-        username: req.username,
-        category: req.category,
-        content: req.content,
-        source_message_id: req.source_message_id || null,
-      }),
-    };
-  }
-
   async executeTool(toolRequest) {
     this.logger.info(
       `Executing ${toolRequest.tool_name} tool:`,
       toolRequest.reason
     );
 
-    const handler = this.toolRegistry[toolRequest.tool_name];
-    if (!handler) {
-      return {
-        success: false,
-        output: "",
-        error: `Unknown tool: ${toolRequest.tool_name}`,
-      };
+    let result;
+    switch (toolRequest.tool_name) {
+      case "python":
+        result = await this.pythonTool.executePython(toolRequest.code);
+        break;
+      case "web_search":
+        result = await this.webSearchTool.searchWeb(toolRequest.query);
+        break;
+      case "web_fetch":
+        result = await this.webFetchTool.fetchPage(toolRequest.url);
+        break;
+      case "remember":
+        result = await this.memoryTool.remember({
+          username: toolRequest.username,
+          category: toolRequest.category,
+          content: toolRequest.content,
+          source_message_id: toolRequest.source_message_id || null,
+        });
+        break;
+      default:
+        return {
+          success: false,
+          output: "",
+          error: `Unknown tool: ${toolRequest.tool_name}`,
+        };
     }
 
-    const result = await handler(toolRequest);
     this.logger.debug(`${toolRequest.tool_name} result:`, result);
     return result;
   }

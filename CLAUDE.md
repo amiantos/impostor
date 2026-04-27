@@ -91,7 +91,7 @@ SQLite database at `data/impostor.db`:
 
 - Uses `irc-framework` library with TLS, SASL auth, auto-reconnect
 - Channel names (e.g. "#amiantos") serve as channel IDs throughout the codebase
-- User IDs are `nick!ident@hostname` for stable identity across nick changes
+- Author IDs in the `messages` table are the IRC hostmask (`nick!ident@hostname`) for stable cross-nick-change identity. Memories, however, are keyed by IRC username (nick) only — hostmasks aren't shown to the LLM or stored in the memory table.
 - Message IDs are UUIDs (IRC has no server-assigned message IDs)
 - No reply-to mechanism -- all responses go to the channel
 

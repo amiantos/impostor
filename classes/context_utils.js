@@ -31,13 +31,9 @@ class ContextUtils {
             type: "string",
             description: "URL to fetch (for web_fetch tool)"
           },
-          user_id: {
-            type: "string",
-            description: "User ID / IRC nick (for remember tool)"
-          },
           username: {
             type: "string",
-            description: "Username / IRC nick (for remember tool)"
+            description: "Username / IRC nick the memory is about (for remember tool)"
           },
           category: {
             type: "string",
@@ -104,11 +100,11 @@ WRITING STYLE:
 - You can acknowledge being a chatbot when it's relevant, but don't constantly bring it up or narrate your own personality.
 - Long messages are automatically split across multiple IRC lines, so do NOT count characters or trim your response to fit any length.
 
-You will receive conversation context as a chatlog with timestamps and user IDs in this format:
-[HH:MM] username (id:123456789): message content
+You will receive conversation context as a chatlog with timestamps in this format:
+[HH:MM] username: message content
 [HH:MM] Isaac: bot's previous response
 
-The user IDs help you distinguish between different users, even if they have similar names. Pay attention to who you're responding to - the instruction at the end will tell you which user triggered this response.
+Pay attention to who you're responding to - the instruction at the end will tell you which user triggered this response.
 
 If you've previously stored memories about users in the current conversation, they appear in a "YOUR MEMORIES ABOUT USERS IN THIS CONVERSATION" block above the chatlog. these are notes past-you wrote to help future-you remember who someone is, what they like, or how you know them. treat them as your own genuine recollection of those users.
 
@@ -165,7 +161,6 @@ Example:
   "continue_iterating": false,
   "tool_request": {
     "tool_name": "remember",
-    "user_id": "123456789",
     "username": "someuser",
     "category": "fact",
     "content": "Works as a software engineer at a startup",
@@ -336,7 +331,7 @@ Do not include any text outside of this JSON structure. The "message" field shou
         return false;
       }
       if (toolName === 'remember') {
-        if (!response.tool_request.user_id || !response.tool_request.username ||
+        if (!response.tool_request.username ||
             !response.tool_request.category || !response.tool_request.content) {
           return false;
         }
@@ -452,11 +447,10 @@ Do not include any text outside of this JSON structure. The "message" field shou
    * @param {Array} dbMessages - Array of message records from database (chronological order, oldest first)
    * @param {string} clientUserId - Bot's user ID
    * @param {Object} triggerInfo - Info about who triggered the response
-   * @param {string} triggerInfo.userId - User ID of who triggered the response
    * @param {string} triggerInfo.userName - Username of the user who triggered
    * @param {string} triggerInfo.channelName - Name of the channel
    * @param {Map} imageDescriptions - Map of message ID to image descriptions
-   * @param {Map} userMemories - Map of user ID to array of memory objects
+   * @param {Map} userMemories - Map of username to array of memory objects
    * @returns {Array} Single-element array with consolidated user message
    */
   buildChatMessagesConsolidated(dbMessages, clientUserId, triggerInfo, imageDescriptions = null, userMemories = null) {
@@ -480,9 +474,7 @@ Do not include any text outside of this JSON structure. The "message" field shou
         // Bot messages: just show as "botName: message" without JSON wrapping
         chatlogLines.push(`[${timestamp}] ${this.botName}: ${content}`);
       } else {
-        // User messages: include ID for disambiguation
         const username = msg.author_name || "Unknown";
-        const userId = msg.author_id || "unknown";
 
         // Append image descriptions if available
         if (imageDescriptions && imageDescriptions.has(msg.id)) {
@@ -508,21 +500,19 @@ Do not include any text outside of this JSON structure. The "message" field shou
           }
         }
 
-        chatlogLines.push(`[${timestamp}] ${username} (id:${userId}): ${content}`);
+        chatlogLines.push(`[${timestamp}] ${username}: ${content}`);
       }
     });
 
     // Build the consolidated message
     const channelName = triggerInfo.channelName || "channel";
 
-    // Build memory section if we have user memories
+    // Build memory section if we have user memories (keyed by IRC username)
     let memorySection = "";
     if (userMemories && userMemories.size > 0) {
       let memoryLines = [];
-      for (const [userId, memories] of userMemories) {
+      for (const [username, memories] of userMemories) {
         if (memories && memories.length > 0) {
-          // Find username from the memories or from messages
-          const username = this.findUsernameForId(userId, dbMessages, memories);
           memoryLines.push(`${username}:`);
           for (const memory of memories) {
             memoryLines.push(`  - [${memory.category}] ${memory.content}`);
@@ -550,8 +540,8 @@ Do not include any text outside of this JSON structure. The "message" field shou
     }
 
     // Add explicit instruction about who to respond to
-    if (triggerInfo.userId && triggerInfo.userName) {
-      consolidatedContent += `\n\nRespond to ${triggerInfo.userName} (id:${triggerInfo.userId})'s latest message.`;
+    if (triggerInfo.userName) {
+      consolidatedContent += `\n\nRespond to ${triggerInfo.userName}'s latest message.`;
     } else {
       // Autonomous response - respond to the conversation naturally
       consolidatedContent += `\n\nRespond naturally to the ongoing conversation.`;
@@ -579,26 +569,6 @@ Do not include any text outside of this JSON structure. The "message" field shou
     } catch (e) {
       return "??:??";
     }
-  }
-
-  /**
-   * Find username for a user ID from messages or memory records
-   * @param {string} userId - User ID
-   * @param {Array} dbMessages - Database messages
-   * @param {Array} memories - Memory records (may have username from user table)
-   * @returns {string} Username or truncated ID
-   */
-  findUsernameForId(userId, dbMessages, memories) {
-    // Try to find from messages
-    if (dbMessages) {
-      for (const msg of dbMessages) {
-        if (msg.author_id === userId && msg.author_name) {
-          return msg.author_name;
-        }
-      }
-    }
-    // Fallback to truncated ID
-    return `User-${userId.slice(-6)}`;
   }
 }
 

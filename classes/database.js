@@ -25,34 +25,35 @@ class DatabaseManager {
   }
 
   runMigrations() {
-    // Migration: Create users table
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS users (
-        id TEXT PRIMARY KEY,
-        username TEXT NOT NULL,
-        first_seen DATETIME NOT NULL,
-        updated_at DATETIME NOT NULL
-      )
-    `);
+    // One-time drop: the legacy schema keyed memories by IRC hostmask
+    // (nick!ident@hostname) and kept a separate users table. We've moved to
+    // username-only keying so hostnames don't leak into prompts or logs. If
+    // we still see the old shape, drop it. The user confirmed there were no
+    // stored memories at the time of the migration, so this is non-destructive.
+    const memoryColumns = this.db.pragma("table_info(user_memories)");
+    const hasLegacyUserIdColumn = memoryColumns.some((c) => c.name === "user_id");
+    if (hasLegacyUserIdColumn) {
+      this.db.exec(`DROP TABLE IF EXISTS user_memories`);
+      this.db.exec(`DROP TABLE IF EXISTS users`);
+    }
 
-    // Migration: Create user_memories table
+    // Memories are keyed by IRC username. No separate users table — username
+    // uniqueness within a libera.chat channel is good enough for this bot.
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS user_memories (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id TEXT NOT NULL,
+        username TEXT NOT NULL,
         category TEXT NOT NULL,
         content TEXT NOT NULL,
         created_at DATETIME NOT NULL,
         updated_at DATETIME NOT NULL,
         is_active BOOLEAN DEFAULT TRUE,
-        source_message_id TEXT,
-        FOREIGN KEY (user_id) REFERENCES users(id)
+        source_message_id TEXT
       )
     `);
 
-    // Create index for efficient memory lookups
     this.db.exec(`
-      CREATE INDEX IF NOT EXISTS idx_memories_user ON user_memories(user_id, is_active)
+      CREATE INDEX IF NOT EXISTS idx_memories_username ON user_memories(username, is_active)
     `);
 
     // Migration: Add enhanced message columns
@@ -907,125 +908,117 @@ class DatabaseManager {
     };
   }
 
-  // User operations
-  /**
-   * Create or update a user record
-   * @param {string} userId - User ID
-   * @param {string} username - Username
-   * @returns {Object} User record
-   */
-  upsertUser(userId, username) {
-    const now = new Date().toISOString();
-    const existing = this.getUser(userId);
+  // Memory operations — keyed by IRC username (nick).
 
-    if (existing) {
-      const stmt = this.db.prepare(`
-        UPDATE users SET username = ?, updated_at = ? WHERE id = ?
-      `);
-      stmt.run(username, now, userId);
-    } else {
-      const stmt = this.db.prepare(`
-        INSERT INTO users (id, username, first_seen, updated_at)
-        VALUES (?, ?, ?, ?)
-      `);
-      stmt.run(userId, username, now, now);
+  /**
+   * Insert a new memory for a username.
+   * @param {Object} params
+   * @param {string} params.username - IRC nick the memory is about
+   * @param {string} params.category - Memory category
+   * @param {string} params.content - Memory body
+   * @param {string} [params.sourceMessageId]
+   * @returns {number} Inserted memory ID
+   */
+  insertMemory({ username, category, content, sourceMessageId = null }) {
+    const now = new Date().toISOString();
+    const stmt = this.db.prepare(`
+      INSERT INTO user_memories (username, category, content, created_at, updated_at, is_active, source_message_id)
+      VALUES (?, ?, ?, ?, ?, 1, ?)
+    `);
+    const result = stmt.run(username, category, content, now, now, sourceMessageId);
+    return result.lastInsertRowid;
+  }
+
+  /**
+   * Get memories for a single user.
+   * @param {string} username
+   * @param {number} limit
+   * @returns {Array}
+   */
+  getMemoriesForUser(username, limit = 50) {
+    const stmt = this.db.prepare(`
+      SELECT * FROM user_memories
+      WHERE username = ? AND is_active = 1
+      ORDER BY created_at DESC
+      LIMIT ?
+    `);
+    return stmt.all(username, limit);
+  }
+
+  /**
+   * Get memories for multiple users (batch fetch for context).
+   * @param {Array<string>} usernames
+   * @param {number} limitPerUser
+   * @returns {Map<string, Array>} Map keyed by username
+   */
+  getMemoriesForUsers(usernames, limitPerUser = 10) {
+    if (!usernames || usernames.length === 0) {
+      return new Map();
     }
 
-    return this.getUser(userId);
+    const memories = new Map();
+    for (const username of usernames) {
+      memories.set(username, []);
+    }
+
+    const stmt = this.db.prepare(`
+      SELECT * FROM user_memories
+      WHERE username = ? AND is_active = 1
+      ORDER BY created_at DESC
+      LIMIT ?
+    `);
+
+    for (const username of usernames) {
+      const userMemories = stmt.all(username, limitPerUser);
+      if (userMemories.length > 0) {
+        memories.set(username, userMemories);
+      }
+    }
+
+    return memories;
   }
 
   /**
-   * Get a single user by ID
-   * @param {string} userId - User ID
-   * @returns {Object|null} User record
-   */
-  getUser(userId) {
-    const stmt = this.db.prepare(`SELECT * FROM users WHERE id = ?`);
-    return stmt.get(userId) || null;
-  }
-
-  /**
-   * Get all users with memory counts
-   * @param {number} limit - Max users to return
-   * @returns {Array} User records with memory counts
+   * List every username we have memories for, with counts and first-seen
+   * timestamps derived from their memory rows. Used by the dashboard.
+   * @param {number} limit
+   * @returns {Array}
    */
   getAllUsers(limit = 100) {
     const stmt = this.db.prepare(`
-      SELECT u.*,
-        (SELECT COUNT(*) FROM user_memories WHERE user_id = u.id AND is_active = 1) as memory_count
-      FROM users u
-      ORDER BY u.updated_at DESC
+      SELECT
+        username AS id,
+        username,
+        COUNT(*) AS memory_count,
+        MIN(created_at) AS first_seen,
+        MAX(updated_at) AS updated_at
+      FROM user_memories
+      WHERE is_active = 1
+      GROUP BY username
+      ORDER BY updated_at DESC
       LIMIT ?
     `);
     return stmt.all(limit);
   }
 
-  // Memory operations
   /**
-   * Insert a new memory
-   * @param {Object} params - Memory parameters
-   * @returns {number} Inserted memory ID
+   * Lookup a single user (derived from their memories) for the dashboard.
+   * @param {string} username
+   * @returns {Object|null}
    */
-  insertMemory({ userId, category, content, sourceMessageId = null }) {
-    const now = new Date().toISOString();
+  getUser(username) {
     const stmt = this.db.prepare(`
-      INSERT INTO user_memories (user_id, category, content, created_at, updated_at, is_active, source_message_id)
-      VALUES (?, ?, ?, ?, ?, 1, ?)
+      SELECT
+        username AS id,
+        username,
+        COUNT(*) AS memory_count,
+        MIN(created_at) AS first_seen,
+        MAX(updated_at) AS updated_at
+      FROM user_memories
+      WHERE username = ? AND is_active = 1
+      GROUP BY username
     `);
-    const result = stmt.run(userId, category, content, now, now, sourceMessageId);
-    return result.lastInsertRowid;
-  }
-
-  /**
-   * Get memories for a single user
-   * @param {string} userId - User ID
-   * @param {number} limit - Max memories to return
-   * @returns {Array} Memory records
-   */
-  getMemoriesForUser(userId, limit = 50) {
-    const stmt = this.db.prepare(`
-      SELECT * FROM user_memories
-      WHERE user_id = ? AND is_active = 1
-      ORDER BY created_at DESC
-      LIMIT ?
-    `);
-    return stmt.all(userId, limit);
-  }
-
-  /**
-   * Get memories for multiple users (batch fetch for context)
-   * @param {Array<string>} userIds - Array of User IDs
-   * @param {number} limitPerUser - Max memories per user
-   * @returns {Map<string, Array>} Map of userId to memories
-   */
-  getMemoriesForUsers(userIds, limitPerUser = 10) {
-    if (!userIds || userIds.length === 0) {
-      return new Map();
-    }
-
-    const memories = new Map();
-
-    // Initialize map with empty arrays
-    for (const userId of userIds) {
-      memories.set(userId, []);
-    }
-
-    // Fetch memories for each user
-    const stmt = this.db.prepare(`
-      SELECT * FROM user_memories
-      WHERE user_id = ? AND is_active = 1
-      ORDER BY created_at DESC
-      LIMIT ?
-    `);
-
-    for (const userId of userIds) {
-      const userMemories = stmt.all(userId, limitPerUser);
-      if (userMemories.length > 0) {
-        memories.set(userId, userMemories);
-      }
-    }
-
-    return memories;
+    return stmt.get(username) || null;
   }
 
   /**
@@ -1074,12 +1067,8 @@ class DatabaseManager {
       SELECT COUNT(*) as count FROM user_memories WHERE is_active = 1
     `).get().count;
 
-    const totalUsers = this.db.prepare(`
-      SELECT COUNT(*) as count FROM users
-    `).get().count;
-
     const usersWithMemories = this.db.prepare(`
-      SELECT COUNT(DISTINCT user_id) as count FROM user_memories WHERE is_active = 1
+      SELECT COUNT(DISTINCT username) as count FROM user_memories WHERE is_active = 1
     `).get().count;
 
     const byCategory = this.db.prepare(`
@@ -1091,23 +1080,12 @@ class DatabaseManager {
 
     return {
       totalMemories,
-      totalUsers,
       usersWithMemories,
       byCategory: byCategory.reduce((acc, row) => {
         acc[row.category] = row.count;
         return acc;
       }, {})
     };
-  }
-
-  /**
-   * Get user with their username from database (for memory context)
-   * @param {string} userId - User ID
-   * @returns {Object|null} User with username
-   */
-  getUserWithUsername(userId) {
-    const stmt = this.db.prepare(`SELECT id, username FROM users WHERE id = ?`);
-    return stmt.get(userId) || null;
   }
 
   close() {
