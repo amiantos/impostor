@@ -118,4 +118,11 @@ function createWebhookRouter(bridge, config, logger) {
   return router;
 }
 
-module.exports = { createWebhookRouter };
+module.exports = {
+  createWebhookRouter,
+  formatFork,
+  formatIssue,
+  formatPullRequest,
+  formatRelease,
+  formatStar,
+};

@@ -140,4 +140,9 @@ function createDiscourseWebhookRouter(bridge, config, logger) {
   return router;
 }
 
-module.exports = { createDiscourseWebhookRouter };
+module.exports = {
+  createDiscourseWebhookRouter,
+  formatPost,
+  stripPostContent,
+  truncateByBytes,
+};

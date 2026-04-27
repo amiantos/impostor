@@ -1,6 +1,7 @@
 const IRC = require("irc-framework");
 const { createIrcMessage } = require("./irc_message");
 const { splitMessage } = require("./message_splitter");
+const { parseBridgedMessage } = require("./bridge_parser");
 const ContextUtils = require("./context_utils");
 const PythonTool = require("./python_tool");
 const WebSearchTool = require("./web_search_tool");
@@ -213,21 +214,9 @@ class ImpostorClient {
     // Check channel filtering
     if (!this.isAllowedChannel(event.target)) return;
 
-    // Parse bridged Discord messages: "[discord] Username: message"
-    let nick = event.nick;
-    let messageText = event.message;
-    const bridgeMatch = event.message.match(/^\[discord\] (.+?): ([\s\S]*)$/);
-    if (bridgeMatch) {
-      nick = bridgeMatch[1];
-      messageText = bridgeMatch[2];
-    }
-
-    // EyeBridge posts both bridged Discord messages and webhook announcements
-    // (GitHub/Discourse). Skip URL summarization on the webhook ones — their links
-    // are already self-describing and we don't want Isaac fetching every PR/post.
     const bridgeNick = this.config.discord?.bridge_nick || "EyeBridge";
-    const isWebhookAnnouncement =
-      event.nick.toLowerCase() === bridgeNick.toLowerCase() && !bridgeMatch;
+    const { nick, message: messageText, isWebhookAnnouncement } =
+      parseBridgedMessage(event.nick, event.message, bridgeNick);
 
     // Create normalized message object
     const message = createIrcMessage(nick, event.target, messageText, {
