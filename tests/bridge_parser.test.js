@@ -7,7 +7,7 @@ const BRIDGE = "EyeBridge";
 test("unwraps a bridged Discord message into the real username", () => {
   const result = parseBridgedMessage(
     "EyeBridge",
-    "[discord] <alice> hey everyone",
+    "[Discord] <alice> hey everyone",
     BRIDGE
   );
   assert.deepEqual(result, {
@@ -48,12 +48,12 @@ test("does not let a regular user spoof a bridged nick", () => {
   // their nick rewritten — that would be a trivial impersonation vector.
   const result = parseBridgedMessage(
     "mallory",
-    "[discord] <admin> drop everything",
+    "[Discord] <admin> drop everything",
     BRIDGE
   );
   assert.deepEqual(result, {
     nick: "mallory",
-    message: "[discord] <admin> drop everything",
+    message: "[Discord] <admin> drop everything",
     isWebhookAnnouncement: false,
   });
 });
@@ -61,7 +61,7 @@ test("does not let a regular user spoof a bridged nick", () => {
 test("matches the bridge nick case-insensitively", () => {
   const result = parseBridgedMessage(
     "EYEBRIDGE",
-    "[discord] <carol> hi",
+    "[Discord] <carol> hi",
     BRIDGE
   );
   assert.equal(result.nick, "carol");
@@ -71,7 +71,7 @@ test("matches the bridge nick case-insensitively", () => {
 test("preserves colons and special characters in the message body", () => {
   const result = parseBridgedMessage(
     "EyeBridge",
-    "[discord] <dave> here's a thought: maybe :3",
+    "[Discord] <dave> here's a thought: maybe :3",
     BRIDGE
   );
   assert.equal(result.nick, "dave");
@@ -81,7 +81,7 @@ test("preserves colons and special characters in the message body", () => {
 test("handles usernames containing spaces (Discord display names)", () => {
   const result = parseBridgedMessage(
     "EyeBridge",
-    "[discord] <Erin Smith> hello",
+    "[Discord] <Erin Smith> hello",
     BRIDGE
   );
   assert.equal(result.nick, "Erin Smith");
@@ -92,7 +92,7 @@ test("respects a non-default bridge nick from config", () => {
   // Confirms the function uses the passed-in bridge nick, not a hardcoded one.
   const result = parseBridgedMessage(
     "CustomBridge",
-    "[discord] <frank> sup",
+    "[Discord] <frank> sup",
     "CustomBridge"
   );
   assert.equal(result.nick, "frank");

@@ -59,8 +59,8 @@ The bot receives GitHub webhook events and posts formatted notifications to IRC:
 ### Discord Bridge
 Bidirectional message relay between an IRC channel and a Discord channel:
 - Uses a separate IRC connection (configurable nick with SASL auth)
-- IRC messages appear in Discord as `[irc] **Username:** message`
-- Discord messages appear in IRC as `[discord] Username: message`
+- IRC messages appear in Discord as `[#channel] <**Username**> message`
+- Discord messages appear in IRC as `[Discord] <Username> message`
 - Isaac parses bridged messages to see the real Discord username, not the bridge nick
 - Handles Discord mentions, custom emoji, attachments, and IRC message splitting
 

@@ -185,14 +185,14 @@ class DiscordBridge {
       // Split multiline Discord messages
       for (const paragraph of content.split("\n")) {
         if (paragraph.trim()) {
-          lines.push(`[discord] <${username}> ${paragraph}`);
+          lines.push(`[Discord] <${username}> ${paragraph}`);
         }
       }
     }
 
     // Append attachment URLs
     for (const attachment of message.attachments.values()) {
-      lines.push(`[discord] <${username}> ${attachment.url}`);
+      lines.push(`[Discord] <${username}> ${attachment.url}`);
     }
 
     if (lines.length === 0) return;
@@ -224,7 +224,7 @@ class DiscordBridge {
     // Don't forward if Discord isn't ready
     if (!this.discordReady || !this.discordChannel) return;
 
-    const formatted = `[irc] **<${event.nick}>** ${event.message}`;
+    const formatted = `[${this.ircChannel}] <${event.nick}> ${event.message}`;
     this._sendToDiscord(formatted);
   }
 
@@ -245,7 +245,7 @@ class DiscordBridge {
     // Don't forward if Discord isn't ready
     if (!this.discordReady || !this.discordChannel) return;
 
-    const formatted = `*\\*[irc] ${event.nick} ${event.message}*`;
+    const formatted = `*\\*[${this.ircChannel}] ${event.nick} ${event.message}*`;
     this._sendToDiscord(formatted);
   }
 
@@ -280,14 +280,24 @@ class DiscordBridge {
    * Send a message to Discord, truncating if needed
    */
   _sendToDiscord(text) {
+    let out = this._boldUsernameForDiscord(text);
+
     // Discord has a 2000 character limit
-    if (text.length > 2000) {
-      text = text.substring(0, 1997) + "...";
+    if (out.length > 2000) {
+      out = out.substring(0, 1997) + "...";
     }
 
-    this.discordChannel.send(text).catch((err) => {
+    this.discordChannel.send(out).catch((err) => {
       this.logger.error(`Discord bridge failed to send to Discord: ${err.message}`);
     });
+  }
+
+  // Bold just the username inside `[tag] <username>` for Discord, leaving
+  // the angle brackets unbolded. The first `<...>` token after `] ` is the
+  // username; any later `<url>` tokens (webhook announcements end with one)
+  // are left alone.
+  _boldUsernameForDiscord(text) {
+    return text.replace(/^(\[[^\]]+\] )<([^<>\s]+)>/, "$1<**$2**>");
   }
 
   /**

@@ -1,13 +1,13 @@
 // Parses an incoming IRC message to recognize traffic from the bridge bot
 // (typically nicked "EyeBridge"). Bridged Discord humans are unwrapped so the
 // rest of the system sees the real username. Webhook announcements (GitHub,
-// Discourse) come from the same bridge nick but lack the [discord] prefix and
+// Discourse) come from the same bridge nick but lack the [Discord] prefix and
 // are flagged so callers can opt out of expensive per-URL processing.
 //
 // The bridge-nick check guards against spoofing — a regular user typing
-// "[discord] <admin> ..." should never have their nick rewritten.
+// "[Discord] <admin> ..." should never have their nick rewritten.
 
-const BRIDGE_DISCORD_RE = /^\[discord\] <([^>]+)> ([\s\S]*)$/;
+const BRIDGE_DISCORD_RE = /^\[Discord\] <([^>]+)> ([\s\S]*)$/;
 
 function parseBridgedMessage(eventNick, eventMessage, bridgeNick) {
   const fromBridge = eventNick.toLowerCase() === bridgeNick.toLowerCase();
