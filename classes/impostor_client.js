@@ -801,8 +801,18 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
       );
     }
 
-    let replyMessage =
-      structuredResponse.message || "Something went wrong with my processing.";
+    let replyMessage = structuredResponse.message;
+    if (!replyMessage || !replyMessage.trim()) {
+      this.logger.warn(
+        "Final response has empty message field, retrying once before falling back"
+      );
+      response = await this.callDeepSeek(conversationLog);
+      structuredResponse = await this.parseStructuredResponse(response);
+      replyMessage = structuredResponse.message;
+    }
+    if (!replyMessage || !replyMessage.trim()) {
+      replyMessage = "Something went wrong with my processing.";
+    }
 
     return {
       response: replyMessage,
@@ -811,13 +821,43 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
   }
 
   async callDeepSeek(conversationLog) {
-    return await this.openai.chat.completions.create({
-      model: this.config.generator.deepseek.model,
-      messages: conversationLog,
-      max_tokens: this.config.generator.deepseek.max_tokens,
-      temperature: this.config.generator.deepseek.temperature,
-      response_format: { type: "json_object" },
-    });
+    const maxAttempts = 3;
+    let lastResponse = null;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const response = await this.openai.chat.completions.create({
+        model: this.config.generator.deepseek.model,
+        messages: conversationLog,
+        max_tokens: this.config.generator.deepseek.max_tokens,
+        temperature: this.config.generator.deepseek.temperature,
+        response_format: { type: "json_object" },
+      });
+
+      const choice = response.choices?.[0];
+      const content = choice?.message?.content;
+      const finishReason = choice?.finish_reason;
+
+      if (content && content.trim() && finishReason === "stop") {
+        return response;
+      }
+
+      lastResponse = response;
+      const reason = !content || !content.trim()
+        ? "empty content"
+        : `finish_reason=${finishReason}`;
+      this.logger.warn(
+        `DeepSeek returned bad response (${reason}), attempt ${attempt}/${maxAttempts}`
+      );
+
+      if (attempt < maxAttempts) {
+        await new Promise((r) => setTimeout(r, 500 * attempt));
+      }
+    }
+
+    this.logger.error(
+      `DeepSeek failed to return usable response after ${maxAttempts} attempts`
+    );
+    return lastResponse;
   }
 
   async parseStructuredResponse(response) {
