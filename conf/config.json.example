@@ -57,7 +57,12 @@
         "irc_channel": "#amiantos",
         "bridge_nick": "EyeBridge",
         "bridge_password": "<NickServ password for bridge nick>",
-        "bridge_sasl": true
+        "bridge_sasl": true,
+        "channel_admin": {
+            "enabled": false,
+            "channel": "#amiantos",
+            "allowed_hosts": ["user/your-cloak"]
+        }
     },
     "github_webhook": {
         "enabled": true,

@@ -13,7 +13,7 @@ const client = new ImpostorClient(logger, config);
 // webhook router can announce via EyeBridge)
 let discordBridge = null;
 if (config.discord?.enabled) {
-  discordBridge = new DiscordBridge(logger, config);
+  discordBridge = new DiscordBridge(logger, config, client.getDatabase());
   discordBridge.start();
 }
 

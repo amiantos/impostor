@@ -1,16 +1,30 @@
 const { Client, GatewayIntentBits } = require("discord.js");
 const IRC = require("irc-framework");
 const { splitMessage } = require("./message_splitter");
+const { parseAdminCommand } = require("./admin_commands");
 
 class DiscordBridge {
-  constructor(logger, config) {
+  constructor(logger, config, db = null) {
     this.logger = logger;
     this.config = config;
+    this.db = db;
     this.discordConfig = config.discord;
 
     this.bridgeNick = this.discordConfig.bridge_nick || "EyeBridge";
     this.ircChannel = this.discordConfig.irc_channel;
     this.discordChannelId = this.discordConfig.discord_channel;
+
+    // Channel-admin (operator) features. EyeBridge runs all privileged actions
+    // through ChanServ so the bridge nick never needs to be opped in-channel —
+    // it just needs ChanServ +t (topic) and +o (op) flags on the channel.
+    const adminCfg = (this.discordConfig.channel_admin) || {};
+    this.adminEnabled = adminCfg.enabled === true;
+    this.adminChannel = adminCfg.channel || this.ircChannel;
+    this.adminAllowedHosts = new Set(adminCfg.allowed_hosts || []);
+    this.adminPersistentTopic =
+      this.adminEnabled && this.db
+        ? this.db.getChannelTopic(this.adminChannel)
+        : null;
 
     // Discord client
     this.discordClient = new Client({
@@ -152,6 +166,10 @@ class DiscordBridge {
       this._onIrcAction(event);
     });
 
+    this.ircClient.on("topic", (event) => {
+      this._onTopicChange(event);
+    });
+
     this.ircClient.on("close", () => {
       this.ircReady = false;
       this.logger.info("Discord bridge IRC connection closed");
@@ -220,6 +238,9 @@ class DiscordBridge {
       event.target.toLowerCase() !== this.ircChannel.toLowerCase()
     )
       return;
+
+    // Admin commands consume the message and are not relayed to Discord.
+    if (this._maybeHandleAdminCommand(event)) return;
 
     // Don't forward if Discord isn't ready
     if (!this.discordReady || !this.discordChannel) return;
@@ -333,6 +354,114 @@ class DiscordBridge {
     content = content.replace(/<a?:(\w+):\d+>/g, ":$1:");
 
     return content;
+  }
+
+  /**
+   * Try to interpret an incoming privmsg as an admin command. Returns true if
+   * the message was a command (so the caller should not forward it to Discord),
+   * false otherwise. Authorization is checked via the libera cloak in
+   * event.hostname; unauthorized attempts are silently consumed.
+   */
+  _maybeHandleAdminCommand(event) {
+    if (!this.adminEnabled) return false;
+    if (
+      !event.target ||
+      event.target.toLowerCase() !== this.adminChannel.toLowerCase()
+    ) {
+      return false;
+    }
+
+    const parsed = parseAdminCommand(event.message);
+    if (!parsed) return false;
+
+    if (!this.adminAllowedHosts.has(event.hostname)) {
+      this.logger.info(
+        `EyeBridge admin: rejected !${parsed.command} from ${event.nick} (host not allowed)`
+      );
+      return true;
+    }
+
+    switch (parsed.command) {
+      case "topic":
+        this._handleTopicCommand(event, parsed.args);
+        return true;
+      case "op":
+        this._handleOpCommand(event, parsed.args);
+        return true;
+      default:
+        this._notice(event.nick, `Unknown command: !${parsed.command}`);
+        return true;
+    }
+  }
+
+  _handleTopicCommand(event, args) {
+    if (!args) {
+      this._notice(event.nick, "Usage: !topic <text>");
+      return;
+    }
+
+    if (!this.db) {
+      this.logger.error("EyeBridge !topic: no database available for persistence");
+      this._notice(event.nick, "Topic persistence is unavailable (no database).");
+      return;
+    }
+
+    try {
+      this.db.setChannelTopic(this.adminChannel, args);
+    } catch (err) {
+      this.logger.error(
+        `EyeBridge !topic: failed to persist topic: ${err.message}`
+      );
+      this._notice(
+        event.nick,
+        `Failed to save persistent topic: ${err.message}`
+      );
+      return;
+    }
+
+    this.adminPersistentTopic = args;
+    this.ircClient.say("ChanServ", `TOPIC ${this.adminChannel} ${args}`);
+    this.logger.info(`EyeBridge !topic by ${event.nick}: ${args}`);
+  }
+
+  _handleOpCommand(event, args) {
+    const target = (args || event.nick).split(/\s+/)[0];
+    this.ircClient.say("ChanServ", `OP ${this.adminChannel} ${target}`);
+    this.logger.info(`EyeBridge !op by ${event.nick} for target ${target}`);
+  }
+
+  /**
+   * Re-set the persistent topic if the channel topic drifts. Fires for both
+   * RPL_TOPIC (no nick — informational on JOIN, used to restore after restart)
+   * and TOPIC commands (with nick). The equality check is the loop guard:
+   * once ChanServ confirms our topic, the next event matches and we no-op.
+   */
+  _onTopicChange(event) {
+    if (!this.adminEnabled) return;
+    if (!this.adminPersistentTopic) return;
+    if (
+      !event.channel ||
+      event.channel.toLowerCase() !== this.adminChannel.toLowerCase()
+    )
+      return;
+    if ((event.topic || "") === this.adminPersistentTopic) return;
+
+    this.logger.info(
+      `EyeBridge: topic on ${this.adminChannel} drifted (set by ${event.nick || "server"}); restoring`
+    );
+    this.ircClient.say(
+      "ChanServ",
+      `TOPIC ${this.adminChannel} ${this.adminPersistentTopic}`
+    );
+  }
+
+  _notice(target, message) {
+    if (!target || !message) return;
+    try {
+      this.ircClient.notice(target, message);
+    } catch (err) {
+      this.logger.error(`EyeBridge notice failed: ${err.message}`);
+    }
   }
 }
 

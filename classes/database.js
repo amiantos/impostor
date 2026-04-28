@@ -124,6 +124,15 @@ class DatabaseManager {
       this.db.exec(`ALTER TABLE messages ADD COLUMN url_summaries TEXT`);
       this.logger.info("Migration: Added url_summaries column to messages");
     }
+
+    // Persistent channel topics managed by EyeBridge admin commands.
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS channel_topics (
+        channel TEXT PRIMARY KEY,
+        topic TEXT NOT NULL,
+        updated_at DATETIME NOT NULL
+      )
+    `);
   }
 
   createTables() {
@@ -1086,6 +1095,23 @@ class DatabaseManager {
         return acc;
       }, {})
     };
+  }
+
+  // Channel topic persistence. Channel names are normalized to lowercase
+  // because IRC channel matching is case-insensitive on libera.
+  setChannelTopic(channel, topic) {
+    const stmt = this.db.prepare(`
+      INSERT INTO channel_topics (channel, topic, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(channel) DO UPDATE SET topic = excluded.topic, updated_at = excluded.updated_at
+    `);
+    stmt.run(channel.toLowerCase(), topic, new Date().toISOString());
+  }
+
+  getChannelTopic(channel) {
+    const stmt = this.db.prepare(`SELECT topic FROM channel_topics WHERE channel = ?`);
+    const row = stmt.get(channel.toLowerCase());
+    return row ? row.topic : null;
   }
 
   close() {
