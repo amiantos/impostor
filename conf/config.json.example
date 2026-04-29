@@ -50,29 +50,6 @@
     "kagi": {
         "api_key": "<KAGI API KEY (optional, for web search and URL summarization)>"
     },
-    "discord": {
-        "enabled": false,
-        "token": "<DISCORD_BOT_TOKEN>",
-        "discord_channel": "<DISCORD_CHANNEL_ID>",
-        "irc_channel": "#amiantos",
-        "bridge_nick": "EyeBridge",
-        "bridge_password": "<NickServ password for bridge nick>",
-        "bridge_sasl": true,
-        "channel_admin": {
-            "enabled": false,
-            "channel": "#amiantos",
-            "allowed_hosts": ["user/your-cloak"]
-        }
-    },
-    "github_webhook": {
-        "enabled": true,
-        "secret": "<GITHUB_WEBHOOK_SECRET>"
-    },
-    "discourse_webhook": {
-        "enabled": true,
-        "secret": "<DISCOURSE_WEBHOOK_SECRET>",
-        "base_url": "https://forum.example.com"
-    },
     "url_summarize": {
         "enabled": true,
         "summary_type": "takeaway",

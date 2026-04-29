@@ -1,18 +1,13 @@
 const express = require("express");
 const path = require("path");
 const apiRoutes = require("./routes/api");
-const { createWebhookRouter } = require("../classes/github_webhook");
-const {
-  createDiscourseWebhookRouter,
-} = require("../classes/discourse_webhook");
 
 class WebServer {
-  constructor(logger, config, database, client, discordBridge) {
+  constructor(logger, config, database, client) {
     this.logger = logger;
     this.config = config;
     this.db = database;
     this.client = client;
-    this.discordBridge = discordBridge;
     this.app = express();
     this.server = null;
 
@@ -21,27 +16,13 @@ class WebServer {
   }
 
   setupMiddleware() {
-    // Parse JSON bodies (capture raw body for webhook signature verification)
-    this.app.use(
-      express.json({
-        verify: (req, _res, buf) => {
-          req.rawBody = buf;
-        },
-      })
-    );
+    this.app.use(express.json());
 
-    // Basic auth for dashboard (skip for webhook and health endpoints)
+    // Basic auth for dashboard (skip for health endpoint)
     const authConfig = this.config.web?.auth;
     if (authConfig?.username && authConfig?.password) {
       this.app.use((req, res, next) => {
-        // Skip auth for webhook and health check
-        if (
-          req.path.startsWith("/webhook") ||
-          req.path.startsWith("/discourse-webhook") ||
-          req.path === "/health"
-        ) {
-          return next();
-        }
+        if (req.path === "/health") return next();
 
         const authHeader = req.headers.authorization;
         if (!authHeader || !authHeader.startsWith("Basic ")) {
@@ -82,38 +63,6 @@ class WebServer {
     this.app.get("/", (req, res) => {
       res.sendFile(path.join(__dirname, "views", "dashboard.html"));
     });
-
-    // GitHub webhook (announced via EyeBridge to both IRC and Discord)
-    if (this.config.github_webhook?.enabled) {
-      if (this.discordBridge) {
-        this.app.use(
-          "/webhook",
-          createWebhookRouter(this.discordBridge, this.config, this.logger)
-        );
-      } else {
-        this.logger.warn(
-          "GitHub webhook enabled but Discord bridge unavailable; webhook route not mounted"
-        );
-      }
-    }
-
-    // Discourse webhook (announced via EyeBridge to both IRC and Discord)
-    if (this.config.discourse_webhook?.enabled) {
-      if (this.discordBridge) {
-        this.app.use(
-          "/discourse-webhook",
-          createDiscourseWebhookRouter(
-            this.discordBridge,
-            this.config,
-            this.logger
-          )
-        );
-      } else {
-        this.logger.warn(
-          "Discourse webhook enabled but Discord bridge unavailable; route not mounted"
-        );
-      }
-    }
 
     // Health check
     this.app.get("/health", (req, res) => {

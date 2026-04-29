@@ -17,7 +17,6 @@
     "axios": "^1.13.2",
     "better-sqlite3": "^11.0.0",
     "cheerio": "^1.1.2",
-    "discord.js": "^14.16.0",
     "express": "^4.21.0",
     "irc-framework": "^4.14.0",
     "jsdom": "^27.4.0",
