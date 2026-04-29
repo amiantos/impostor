@@ -9,8 +9,6 @@ services:
     volumes:
       - ./conf:/usr/src/app/conf
       - ./data:/usr/src/app/data
-      # Update this path to point to your local IRC log directory (used by chat_log_upload)
-      - /Users/amiantos/.local/share/weechat/logs:/usr/src/app/irc-logs:ro
     environment:
       - NODE_ENV=production
     command: npm start
