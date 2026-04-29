@@ -12,7 +12,6 @@ An IRC chatbot powered by DeepSeek API, featuring a built-in Isaac personality (
 - **Web Fetch**: Reads and extracts content from web pages
 - **Python Tool Integration**: Executes Python code to solve problems and perform calculations
 - **User Memory**: Remembers facts, preferences, and relationships about users across conversations
-- **Chat Log Upload**: Periodically uploads IRC logs to Cloudflare R2 for external display
 - **Web Dashboard**: Debug interface for viewing decisions, responses, and prompts
 - **SQLite Database**: Tracks all messages, responses, and AI decisions
 
@@ -49,13 +48,7 @@ The bot can remember things about users across conversations:
 - Stored in SQLite alongside other bot data
 
 ### Bridged Discord messages
-The Discord ↔ IRC bridge lives in a separate project ([snitch](../snitch)) and connects to #amiantos as `EyeBridge`. Isaac sees Snitch's bridged lines as regular IRC messages and uses `classes/bridge_parser.js` to extract the real Discord username, so responses address the human, not the bridge nick.
-
-### Chat Log Upload
-Periodically uploads the tail of an IRC log file to Cloudflare R2:
-- Configurable upload interval and number of tail lines
-- Skips upload if the log file hasn't changed
-- Useful for displaying a live chat view on an external site
+The Discord ↔ IRC bridge lives in a separate project ([snitch](../snitch)) and connects to #amiantos as `EyeBridge`. Isaac sees Snitch's bridged lines as regular IRC messages and uses `classes/bridge_parser.js` to extract the real Discord username, so responses address the human, not the bridge nick. Snitch also owns the channel-log archive and the R2 upload that feeds the live chat view on bradroot.me.
 
 ## Requirements
 
@@ -108,7 +101,6 @@ See `conf/config.json.example` for all options. Key sections:
 | `web` | Web dashboard settings |
 | `kagi` | Kagi API key for web search and URL summarization |
 | `url_summarize` | Automatic URL summarization settings |
-| `chat_log_upload` | Chat log upload to Cloudflare R2 (interval, log path, R2 credentials) |
 
 ## Web Dashboard
 

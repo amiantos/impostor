@@ -54,18 +54,5 @@
         "enabled": true,
         "summary_type": "takeaway",
         "max_urls_per_message": 3
-    },
-    "chat_log_upload": {
-        "enabled": true,
-        "interval_seconds": 60,
-        "log_file": "/Users/yourname/.local/share/weechat/logs/irc.libera.#yourchannel.weechatlog",
-        "tail_lines": 100,
-        "r2": {
-            "endpoint": "<R2_ENDPOINT_URL>",
-            "bucket": "bradroot",
-            "access_key_id": "<R2_ACCESS_KEY_ID>",
-            "secret_access_key": "<R2_SECRET_ACCESS_KEY>",
-            "key": "chat-log.txt"
-        }
     }
 }

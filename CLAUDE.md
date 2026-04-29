@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Impostor is an IRC chatbot powered by DeepSeek API with an Isaac personality (melancholic, sarcastic, cynical robot). Connects to libera.chat and joins #amiantos. Features include autonomous responses, URL summarization, web search/fetch, and Python code execution.
 
-The Discord ↔ IRC bridge and the GitHub/Discourse webhook receivers live in a separate project ([`~/Coding/snitch`](../snitch)). They were extracted because they don't need any of Isaac's DeepSeek/tools/dashboard infrastructure and have an independent lifecycle. Isaac still parses bridged IRC messages of the form `[Discord] <Username> message` via `classes/bridge_parser.js` so it can address the real Discord user — that's the only contract between the two projects.
+The Discord ↔ IRC bridge, the GitHub/Discourse webhook receivers, and the channel-log archive (which feeds the chat-log feed on bradroot.me) all live in a separate project ([`~/Coding/snitch`](../snitch)). They were extracted because they don't need any of Isaac's DeepSeek/tools/dashboard infrastructure and have an independent lifecycle. Isaac still parses bridged IRC messages of the form `[Discord] <Username> message` via `classes/bridge_parser.js` so it can address the real Discord user — that's the only contract between the two projects.
 
 ## Development Commands
 
