@@ -85,9 +85,23 @@ class ChatLogUploader {
   tailFile(filePath, numLines) {
     const data = fs.readFileSync(filePath, "utf-8");
     const lines = data.trimEnd().split("\n");
-    // Strip IRC system messages (joins, parts, quits, mode changes, etc.)
-    // which the IRC client logs with a "*** " marker after the timestamp.
-    const chatOnly = lines.filter((line) => !/\] \*\*\* /.test(line));
+    // Weechat log format is `<ts>\t<nick>\t<message>` where <nick> is one of
+    // the system markers (`--`, `-->`, `<--`, ` *`) for non-chat events.
+    // Reformat surviving chat lines into The Lounge's `[ISO] <nick> message`
+    // shape so downstream consumers (e.g. bradroot.me) don't need to change.
+    const SYSTEM_MARKERS = new Set(["--", "-->", "<--", " *"]);
+    const TS_RE = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})\.(\d{3})\d*Z$/;
+    const chatOnly = [];
+    for (const line of lines) {
+      const cols = line.split("\t");
+      if (cols.length < 3) continue;
+      const [ts, nick, ...rest] = cols;
+      if (SYSTEM_MARKERS.has(nick)) continue;
+      const m = ts.match(TS_RE);
+      if (!m) continue;
+      const isoTs = `${m[1]}T${m[2]}.${m[3]}Z`;
+      chatOnly.push(`[${isoTs}] <${nick}> ${rest.join("\t")}`);
+    }
     const tail = chatOnly.slice(-numLines);
     return tail.join("\n");
   }
