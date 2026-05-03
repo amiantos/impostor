@@ -7,6 +7,7 @@ An IRC chatbot powered by DeepSeek API, featuring a built-in Isaac personality (
 - **Isaac Personality**: Melancholic, sarcastic, and cynical robot character
 - **Autonomous Responses**: Bot naturally participates in conversations without being mentioned
 - **Conversation Dominance Detection**: Prevents bot from dominating conversations by tracking message ratios
+- **Typing Indicator**: Sends IRCv3 `+typing` tags while composing, so modern clients show "Isaac is typing…" during slow responses
 - **URL Summarization**: Automatically summarizes shared links using Kagi Universal Summarizer
 - **Web Search**: Answers questions about current events using Kagi FastGPT
 - **Web Fetch**: Reads and extracts content from web pages
