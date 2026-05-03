@@ -21,7 +21,11 @@
         "channels": ["#amiantos"],
         "max_line_length": 350,
         "watchword": "Isaac",
-        "pm_allowed_users": []
+        "pm_allowed_users": [],
+        "typing_notifications": {
+            "enabled": true,
+            "refresh_seconds": 3
+        }
     },
     "autonomous": {
         "enabled": true,

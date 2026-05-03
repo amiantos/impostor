@@ -69,6 +69,17 @@ class ImpostorClient {
     this.reconnectTimer = null;
     this.shuttingDown = false;
 
+    // IRCv3 message-tags cap is required for +typing client tags. Must be
+    // requested before connect — the registration handler reads
+    // request_extra_caps during CAP negotiation. Server silently drops it if
+    // unsupported, so this is safe on networks without IRCv3 support.
+    if (config.irc.typing_notifications?.enabled !== false) {
+      this.ircClient.requestCap("message-tags");
+    }
+
+    // Per-target typing refresh timers (PRIVMSG target -> setInterval id)
+    this.typingTimers = new Map();
+
     // IRC event handlers
     this.ircClient.on("registered", () => {
       this.reconnectDelay = 1000;
@@ -475,6 +486,12 @@ class ImpostorClient {
         }
       } catch (error) {
         this.logger.error("Error processing queued message:", error);
+        if (queueItem.channel) {
+          // Belt-and-suspenders: inner try/finally already sends done on
+          // generation failures, but if the throw happened earlier this
+          // ensures no typing indicator is left hanging.
+          this.stopTyping(queueItem.channel, "done");
+        }
         if (queueItem.type === "direct" && queueItem.channel) {
           this.sendIrcMessage(queueItem.channel, "(OOC: Sorry, I appear to be having connectivity issues, please try your message again.)");
         }
@@ -545,16 +562,24 @@ class ImpostorClient {
       channelName: channelName,
     };
 
-    const { response, conversationLog } = await this.generateResponseWithChatCompletions({
-      dbMessages,
-      userName: user_name,
-      characterName: character_name,
-      botUserId: this.botNick.toLowerCase(),
-      imageDescriptions,
-      userMemories,
-      useDbContext: true,
-      triggerInfo,
-    });
+    this.startTyping(channelName);
+    let response, conversationLog;
+    try {
+      ({ response, conversationLog } = await this.generateResponseWithChatCompletions({
+        dbMessages,
+        userName: user_name,
+        characterName: character_name,
+        botUserId: this.botNick.toLowerCase(),
+        imageDescriptions,
+        userMemories,
+        useDbContext: true,
+        triggerInfo,
+      }));
+      this.stopTyping(channelName, null); // PRIVMSG below implicitly clears it
+    } catch (err) {
+      this.stopTyping(channelName, "done");
+      throw err;
+    }
 
     // Send to IRC channel (split into lines if needed)
     await this.sendIrcMessage(channelName, response);
@@ -600,6 +625,54 @@ class ImpostorClient {
   }
 
   /**
+   * Begin sending IRCv3 +typing=active TAGMSGs to a target. Sends one
+   * immediately, then refreshes every refresh_seconds (the active state
+   * expires client-side after ~6s without renewal). Safe to call repeatedly
+   * — restarts the timer.
+   * @param {string} target - PRIVMSG target (channel name or nick)
+   */
+  startTyping(target) {
+    const cfg = this.config.irc.typing_notifications;
+    if (cfg?.enabled === false) return;
+    const refreshMs = (cfg?.refresh_seconds || 3) * 1000;
+
+    this.stopTyping(target, null); // clear any prior timer without sending done
+
+    const send = () => {
+      try {
+        this.ircClient.tagmsg(target, { "+typing": "active" });
+      } catch (err) {
+        this.logger.debug(`tagmsg(active) failed for ${target}: ${err.message}`);
+      }
+    };
+    send();
+    const id = setInterval(send, refreshMs);
+    this.typingTimers.set(target, id);
+  }
+
+  /**
+   * Stop the typing refresh timer. If status is "done" or "paused", also
+   * sends one final TAGMSG. Pass null to suppress the final send (e.g. when
+   * about to send the actual PRIVMSG, which implicitly stops the indicator).
+   * @param {string} target - PRIVMSG target (channel name or nick)
+   * @param {string|null} status - "done", "paused", or null
+   */
+  stopTyping(target, status = "done") {
+    const id = this.typingTimers.get(target);
+    if (id) {
+      clearInterval(id);
+      this.typingTimers.delete(target);
+    }
+    if (status && this.config.irc.typing_notifications?.enabled !== false) {
+      try {
+        this.ircClient.tagmsg(target, { "+typing": status });
+      } catch (err) {
+        this.logger.debug(`tagmsg(${status}) failed for ${target}: ${err.message}`);
+      }
+    }
+  }
+
+  /**
    * Process an autonomous message
    * @param {string} channelName - IRC channel name
    * @param {number|null} decisionId - Optional decision ID that triggered this response
@@ -616,16 +689,24 @@ class ImpostorClient {
       channelName: channelName,
     };
 
-    const { response, conversationLog } = await this.generateResponseWithChatCompletions({
-      dbMessages,
-      userName: "various",
-      characterName: this.watchword,
-      botUserId: this.botNick.toLowerCase(),
-      imageDescriptions,
-      userMemories,
-      useDbContext: true,
-      triggerInfo,
-    });
+    this.startTyping(channelName);
+    let response, conversationLog;
+    try {
+      ({ response, conversationLog } = await this.generateResponseWithChatCompletions({
+        dbMessages,
+        userName: "various",
+        characterName: this.watchword,
+        botUserId: this.botNick.toLowerCase(),
+        imageDescriptions,
+        userMemories,
+        useDbContext: true,
+        triggerInfo,
+      }));
+      this.stopTyping(channelName, null); // PRIVMSG below implicitly clears it
+    } catch (err) {
+      this.stopTyping(channelName, "done");
+      throw err;
+    }
 
     // Send to IRC channel
     await this.sendIrcMessage(channelName, response);
@@ -971,6 +1052,10 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
       clearTimeout(timer);
     }
     this.evaluationTimers.clear();
+
+    for (const target of [...this.typingTimers.keys()]) {
+      this.stopTyping(target, "done");
+    }
 
     if (this.ircClient) {
       this.ircClient.quit("Shutting down...");
