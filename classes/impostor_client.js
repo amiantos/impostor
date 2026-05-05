@@ -209,21 +209,6 @@ class ImpostorClient {
   }
 
   /**
-   * Check if a message is a direct trigger (mentions the bot's nick)
-   * @param {string} content - Message content
-   * @returns {boolean} True if message directly triggers the bot
-   */
-  isDirectTrigger(content) {
-    const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const nick = escape(this.botNick);
-    const watchword = escape(this.watchword);
-    const pattern = nick === watchword
-      ? `\\b${nick}\\b`
-      : `\\b(?:${nick}|${watchword})\\b`;
-    return new RegExp(pattern, "i").test(content);
-  }
-
-  /**
    * Handle an incoming IRC message event
    * @param {Object} event - irc-framework message event
    */
@@ -274,30 +259,20 @@ class ImpostorClient {
       return;
     }
 
-    // Channel: respond directly when nick is mentioned, otherwise debounce.
-    if (this.isDirectTrigger(messageText)) {
-      this.logger.info(`Queuing direct message from ${nick}.`, message);
-      this.messageQueue.push({ message, channel: conversationId, type: "direct" });
-      if (!this.isProcessing) this.processMessageQueue();
-      return;
-    }
-
+    // Channel: route every message through the evaluator. Direct mentions
+    // used to short-circuit straight to a response, but that bypassed the
+    // react/ignore branches — now the evaluator decides for everything.
     if (this.config.autonomous?.enabled) {
-      this.scheduleAutonomousEvaluation(conversationId, message);
+      this.scheduleAutonomousEvaluation(conversationId);
     }
   }
 
   /**
    * Schedule an autonomous evaluation with debouncing
    * @param {string} channelName - IRC channel name (e.g. "#amiantos")
-   * @param {Object} message - Normalized message object
    */
-  scheduleAutonomousEvaluation(channelName, message) {
-    // Use shorter debounce if bot nick is mentioned (likely being addressed)
-    const mentionsBot = message && this.isDirectTrigger(message.content);
-    const debounceMs = mentionsBot
-      ? 3000
-      : (this.config.autonomous?.debounce_seconds || 3) * 1000;
+  scheduleAutonomousEvaluation(channelName) {
+    const debounceMs = (this.config.autonomous?.debounce_seconds || 3) * 1000;
 
     // Clear any existing timer for this channel
     if (this.evaluationTimers.has(channelName)) {
