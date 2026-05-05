@@ -19,7 +19,7 @@
         "password": "<NickServ password (optional, for SASL auth)>",
         "sasl": true,
         "channels": ["#amiantos"],
-        "max_line_length": 350,
+        "max_line_length": 340,
         "watchword": "Isaac",
         "pm_allowed_users": [],
         "typing_notifications": {
@@ -29,7 +29,7 @@
     },
     "autonomous": {
         "enabled": true,
-        "debounce_seconds": 15,
+        "debounce_seconds": 3,
         "max_context_age_minutes": 30,
         "max_conversation_gap_minutes": 30
     },

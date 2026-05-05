@@ -50,11 +50,12 @@ test("preserves a URL that would otherwise straddle the split point", () => {
 });
 
 test("does not produce more chunks than necessary at the configured maxLen", () => {
-  // Regression: irc-framework's default message_max_length is 350 bytes. With
-  // our config previously at 400, a ~440-char message was split into two
-  // ~400-char chunks, then irc-framework re-split the first chunk, producing
-  // three IRC lines for what should have been two. Aligning maxLen to 350
-  // keeps both layers in sync.
+  // Regression: irc-framework's message_max_length is 350 BYTES. UTF-8
+  // multi-byte chars (em-dash, smart quotes) make our char-count splitter
+  // overshoot when the line is dense with them, and irc-framework then
+  // re-splits, stranding fragments. Production config keeps a 10-byte
+  // safety margin (340), but this test runs at 350 to validate splitter
+  // behavior at the boundary.
   const manga =
     "amiantos: it's a manga-turned-anime about a shy otaku who accidentally reveals his power level to the two popular girls sitting in front of him. one of them turns out to be a closet otaku herself. the english title is \"gals can't be kind to otaku!?\" and apparently the anime is premiering right about now, april 2026. unlikely romance built on shared anime taste. i suppose even fictional characters get more social interaction than i do.";
   const result = splitMessage(manga, 350);

@@ -297,7 +297,7 @@ class ImpostorClient {
     const mentionsBot = message && this.isDirectTrigger(message.content);
     const debounceMs = mentionsBot
       ? 3000
-      : (this.config.autonomous?.debounce_seconds || 10) * 1000;
+      : (this.config.autonomous?.debounce_seconds || 3) * 1000;
 
     // Clear any existing timer for this channel
     if (this.evaluationTimers.has(channelName)) {
@@ -350,20 +350,26 @@ class ImpostorClient {
       botRatio
     );
 
-    if (decision.should_respond) {
+    if (decision.action === "respond") {
       this.logger.info(
         `Queueing autonomous response for channel ${channelName}: ${decision.reason}`
       );
-
       this.messageQueue.push({
         channel: channelName,
         type: "autonomous",
         decisionId: decision.decisionId,
       });
-
-      if (!this.isProcessing) {
-        this.processMessageQueue();
-      }
+      if (!this.isProcessing) this.processMessageQueue();
+    } else if (decision.action === "react") {
+      this.logger.info(
+        `Queueing reaction for channel ${channelName}: ${decision.reason}`
+      );
+      this.messageQueue.push({
+        channel: channelName,
+        type: "react",
+        decisionId: decision.decisionId,
+      });
+      if (!this.isProcessing) this.processMessageQueue();
     }
   }
 
@@ -478,6 +484,11 @@ class ImpostorClient {
             `Processing autonomous response for channel ${queueItem.channel}. Queue length: ${this.messageQueue.length}`
           );
           await this.processAutonomousMessage(queueItem.channel, queueItem.decisionId);
+        } else if (queueItem.type === "react") {
+          this.logger.info(
+            `Processing reaction for channel ${queueItem.channel}. Queue length: ${this.messageQueue.length}`
+          );
+          await this.processReactMessage(queueItem.channel, queueItem.decisionId);
         }
 
         // Add a small delay between messages to appear more natural
@@ -581,10 +592,9 @@ class ImpostorClient {
       throw err;
     }
 
-    // Send to IRC channel (split into lines if needed)
-    await this.sendIrcMessage(channelName, response);
-
-    // Create a normalized message for the bot's own response and track it
+    // An empty response is the model's "stay silent" signal. Skip the IRC send
+    // and chatlog tracking (an empty bot line would pollute future context),
+    // but still log to the dashboard for transparency.
     const botMessage = createIrcMessage(this.botNick, channelName, response, {
       isBot: true,
     });
@@ -606,9 +616,14 @@ class ImpostorClient {
       temperature: this.config.generator.deepseek.temperature
     });
 
-    await this.messageTracker.addMessage(botMessage, { isBotMessage: true, processVision: false });
-    this.messageTracker.markResponded(channelName);
+    if (response) {
+      await this.sendIrcMessage(channelName, response);
+      await this.messageTracker.addMessage(botMessage, { isBotMessage: true, processVision: false });
+    } else {
+      this.logger.info(`Bot chose silence for direct mention in ${channelName}`);
+    }
 
+    this.messageTracker.markResponded(channelName);
     this.cancelEvaluationTimer(channelName);
   }
 
@@ -708,10 +723,8 @@ class ImpostorClient {
       throw err;
     }
 
-    // Send to IRC channel
-    await this.sendIrcMessage(channelName, response);
-
-    // Track the bot's own message
+    // Empty response = the model decided silence after generation. Skip IRC
+    // and chatlog tracking but still log for the dashboard.
     const botMessage = createIrcMessage(this.botNick, channelName, response, {
       isBot: true,
     });
@@ -737,9 +750,42 @@ class ImpostorClient {
       this.db.markDecisionResponseSent(decisionId);
     }
 
+    if (response) {
+      await this.sendIrcMessage(channelName, response);
+      await this.messageTracker.addMessage(botMessage, { isBotMessage: true, processVision: false });
+    } else {
+      this.logger.info(`Bot chose silence for autonomous trigger in ${channelName}`);
+    }
+
+    this.messageTracker.markResponded(channelName);
+    this.cancelEvaluationTimer(channelName);
+  }
+
+  /**
+   * Send a short canned laugh reaction. The evaluator already decided this
+   * conversation deserves a laugh, so we skip the main generation pipeline
+   * entirely and just emit one of these tokens.
+   * @param {string} channelName - IRC channel name
+   * @param {number|null} decisionId - Decision log id
+   */
+  async processReactMessage(channelName, decisionId = null) {
+    const pool = ["haha", "lol", "lmao", "kek", "heh", "lmfao", "hah"];
+    const reaction = pool[Math.floor(Math.random() * pool.length)];
+
+    await this.sendIrcMessage(channelName, reaction);
+
+    const botMessage = createIrcMessage(this.botNick, channelName, reaction, {
+      isBot: true,
+    });
+
+    this.db.logResponse(channelName, botMessage.id, "reaction", reaction, null);
+
+    if (decisionId) {
+      this.db.markDecisionResponseSent(decisionId);
+    }
+
     await this.messageTracker.addMessage(botMessage, { isBotMessage: true, processVision: false });
     this.messageTracker.markResponded(channelName);
-
     this.cancelEvaluationTimer(channelName);
   }
 
@@ -882,18 +928,12 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
       );
     }
 
-    let replyMessage = structuredResponse.message;
-    if (!replyMessage || !replyMessage.trim()) {
-      this.logger.warn(
-        "Final response has empty message field, retrying once before falling back"
-      );
-      response = await this.callDeepSeek(conversationLog);
-      structuredResponse = await this.parseStructuredResponse(response);
-      replyMessage = structuredResponse.message;
-    }
-    if (!replyMessage || !replyMessage.trim()) {
-      replyMessage = "Something went wrong with my processing.";
-    }
+    // Empty message field is intentional silence (see system prompt); pass
+    // through and let callers decide not to send. callDeepSeek already retries
+    // genuine API failures (empty raw content, non-"stop" finish_reason) up
+    // front, so anything that reaches here with a blank message is the model's
+    // deliberate choice.
+    const replyMessage = (structuredResponse.message || "").trim();
 
     return {
       response: replyMessage,

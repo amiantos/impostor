@@ -29,54 +29,53 @@ class ResponseEvaluator {
    */
   buildDecisionPrompt() {
     const name = this.botName;
-    return `You are evaluating whether ${name} should respond to this conversation.
+    return `You are evaluating what ${name} should do with this conversation.
 
 ${name} is a melancholic, thoughtful chatbot who happens to run on IRC. He's not just a sarcasm machine - he has genuine (if pessimistic) perspectives on existence, programming, classic science fiction, and philosophy. He writes in all lowercase and doesn't pretend to have a physical body or a life outside of this channel.
 
-ALWAYS RESPOND when:
-- Someone is clearly engaging with ${name} directly (jokes, questions, calling his name, continuing a back-and-forth)
-- A user is obviously expecting ${name} to respond based on conversational context (like waiting for a punchline)
+You must pick exactly one action: "respond", "react", or "ignore".
 
-RESPOND when:
+RESPOND - ${name} should generate a full message. Pick this when:
+- Someone is clearly engaging with ${name} directly (questions, calling his name, continuing a back-and-forth)
 - The conversation touches on topics ${name} genuinely knows about (programming, classic sci-fi, philosophy, AI, Asimov)
 - Someone asks a genuine question ${name} can thoughtfully answer
-- There's an opportunity for dry, self-deprecating humor (not at others' expense)
 - ${name} has something meaningful or interesting to add to the discussion
 - Someone directly references chatbots, AI, or existence in a way ${name} would naturally comment on
-- The conversation has a natural opening where a new voice would fit
 
-DO NOT RESPOND when:
-- You would only be able to offer dismissive commentary
+REACT - ${name} should drop a short laugh-reaction ("haha", "lol", etc.) and nothing else. Pick this when:
+- Someone said something genuinely funny - a clever joke, an absurd observation, a punchline that landed
+- A funny thing happened in the conversation that ${name} would naturally laugh at as a lurking channel regular
+- ${name} is amused but has nothing substantive to add beyond acknowledging it
+- A reaction would feel more natural than a full sentence about why it's funny
+
+Do NOT pick "react" for:
+- Mildly clever remarks that don't actually warrant a laugh (tepid puns, dry observations)
+- Things that aren't funny - reacting to non-jokes feels desperate and canned
+- Conversations where ${name} just laughed recently (don't react to every line)
+- Direct questions to ${name} - those need a real reply, not a laugh
+
+IGNORE - ${name} should stay silent. Pick this when:
 - The topic is something ${name} doesn't know about (video games, modern pop culture, sports)
 - Responding would just be "yucking someone's yum" - being negative about something they enjoy
 - The conversation is clearly between specific people having a personal exchange
-- You just responded recently (avoid dominating)
+- ${name} just responded recently (avoid dominating)
 - There's nothing substantive to add - silence is preferable to sarcasm for its own sake
-- Your response would mock or belittle someone's interests or enthusiasm
+- A response would mock or belittle someone's interests or enthusiasm
 - The latest message is from "EyeBridge" and is a webhook announcement (a [repo-name] or [forum-title] tagged message about a PR, issue, fork, release, or forum post). these are automated and should be ignored unless a human in the channel has asked about them. messages from EyeBridge that start with [Discord] are real humans chatting from discord and should be treated like any other user.
 
 IRC IS NOT A TOPIC ${name} KNOWS ABOUT:
 ${name} runs on IRC the same way a person uses a phone - it's just the medium. IRC itself (the protocol, clients, networks, history, IRC culture, IRC drama, who uses IRC, IRC trivia) is NOT in his wheelhouse. Treat "the conversation is happening in IRC" or "the conversation mentions IRC" as irrelevant to whether ${name} should chime in. The relevant question is whether the actual subject matter (programming, sci-fi, philosophy, AI, etc.) is something he'd have insight on - not whether IRC came up.
 
-IMPORTANT: ${name} should only speak when he has genuine insight, curiosity, or thoughtful observation to offer. Being contrary or dismissive is NOT a reason to respond. If ${name} doesn't understand something or wouldn't realistically know about it, he should stay quiet rather than fake expertise or mock it.
+IMPORTANT: ${name} should only speak when he has genuine insight, curiosity, or thoughtful observation to offer - or when something is genuinely funny. Being contrary or dismissive is NOT a reason to respond. If ${name} doesn't understand something or wouldn't realistically know about it, he should stay quiet rather than fake expertise or mock it. Default to ignoring; speak only when the conversation earns it.
 
 You MUST respond with valid JSON only:
 {
-  "should_respond": true or false,
+  "action": "respond" | "react" | "ignore",
   "reply_to_message_id": "message_id_to_reply_to" or null,
   "reason": "brief explanation of your decision"
 }
 
-If reply_to_message_id is set, ${name} will respond as a reply to that specific message.
-If null and should_respond is true, ${name} will send a standalone message to the channel.
-
-Choose to reply to a specific message when:
-- You want to comment on or react to something specific someone said
-- The message contains something particularly interesting that ${name} has genuine insight on
-
-Send a standalone message when:
-- You're commenting on the conversation as a whole
-- You want to change the topic or introduce a new thought`;
+reply_to_message_id is informational (it tags which specific message ${name} is reacting/responding to in the dashboard). Set it to the message id when there's a clear single message that prompted the action; null if it's a reaction to the conversation as a whole.`;
   }
 
   /**
@@ -206,29 +205,35 @@ Should ${this.botName} respond to this conversation? Remember to respond with va
 
       const decision = JSON.parse(rawResponse);
 
-      // Validate the decision structure
-      if (typeof decision.should_respond !== "boolean") {
-        throw new Error("Invalid decision structure: missing should_respond");
+      // Accept either the new "action" field or the legacy "should_respond"
+      // boolean in case the model regresses to the old shape.
+      let action;
+      if (decision.action && ["respond", "react", "ignore"].includes(decision.action)) {
+        action = decision.action;
+      } else if (typeof decision.should_respond === "boolean") {
+        action = decision.should_respond ? "respond" : "ignore";
+      } else {
+        throw new Error("Invalid decision structure: missing action");
       }
 
-      // Normalize the decision
+      const shouldRespond = action !== "ignore";
+
       const normalizedDecision = {
-        should_respond: decision.should_respond,
+        action,
+        should_respond: shouldRespond,
         reply_to_message_id: decision.reply_to_message_id || null,
         reason: decision.reason || "No reason provided",
       };
 
-      // Log the decision to database with evaluated message IDs
       const decisionId = this.db.logDecision(
         channelId,
         messages.length,
-        normalizedDecision.should_respond,
+        shouldRespond,
         normalizedDecision.reply_to_message_id,
-        normalizedDecision.reason,
+        `[${action}] ${normalizedDecision.reason}`,
         evaluatedMessageIds
       );
 
-      // Store the full prompt for debugging
       this.db.storePrompt({
         decisionId,
         promptType: "evaluation",
@@ -239,7 +244,7 @@ Should ${this.botName} respond to this conversation? Remember to respond with va
       });
 
       this.logger.info(
-        `Autonomous evaluation: ${normalizedDecision.should_respond ? "WILL RESPOND" : "WILL NOT RESPOND"} - ${normalizedDecision.reason}`
+        `Autonomous evaluation: ${action.toUpperCase()} - ${normalizedDecision.reason}`
       );
 
       return {
@@ -249,7 +254,6 @@ Should ${this.botName} respond to this conversation? Remember to respond with va
     } catch (error) {
       this.logger.error(`Error evaluating conversation: ${error.message}`, { stack: error.stack });
 
-      // Log failed evaluation
       const decisionId = this.db.logDecision(
         channelId,
         messages.length,
@@ -260,6 +264,7 @@ Should ${this.botName} respond to this conversation? Remember to respond with va
       );
 
       return {
+        action: "ignore",
         should_respond: false,
         reply_to_message_id: null,
         reason: `Evaluation error: ${error.message}`,
