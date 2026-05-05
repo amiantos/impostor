@@ -28,14 +28,16 @@ test("hard-cuts when a single token exceeds maxLen and has no space within windo
   assert.equal(result.join(""), text);
 });
 
-test("treats embedded newlines as paragraph breaks", () => {
+test("collapses embedded newlines into spaces (IRC has no paragraph rendering)", () => {
+  // Regression: a stray model-emitted newline used to strand single words like
+  // "broken" on their own IRC line. Newlines are now treated as whitespace.
   const result = splitMessage("first paragraph\nsecond paragraph\nthird", 100);
-  assert.deepEqual(result, ["first paragraph", "second paragraph", "third"]);
+  assert.deepEqual(result, ["first paragraph second paragraph third"]);
 });
 
-test("drops empty paragraphs from consecutive newlines", () => {
+test("collapses runs of whitespace including consecutive newlines", () => {
   const result = splitMessage("one\n\ntwo", 100);
-  assert.deepEqual(result, ["one", "two"]);
+  assert.deepEqual(result, ["one two"]);
 });
 
 test("preserves a URL that would otherwise straddle the split point", () => {
