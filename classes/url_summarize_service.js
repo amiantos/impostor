@@ -26,7 +26,8 @@ class UrlSummarizeService {
     // Kagi API configuration
     this.apiKey = config.kagi?.api_key;
     this.baseUrl = 'https://kagi.com/api/v0/summarize';
-    this.timeout = 30000; // 30 second timeout
+    // Kagi's Universal Summarizer can be slow, especially on raw code pages
+    this.timeout = urlConfig.timeout || 120000;
 
     // URL regex for extraction
     this.urlRegex = /https?:\/\/(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_\+.~#?&//=]*)/gi;

@@ -57,6 +57,7 @@
     "url_summarize": {
         "enabled": true,
         "summary_type": "takeaway",
-        "max_urls_per_message": 3
+        "max_urls_per_message": 3,
+        "timeout": 120000
     }
 }
