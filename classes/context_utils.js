@@ -106,13 +106,16 @@ WRITING STYLE:
 - You can acknowledge being a chatbot when it's relevant, but don't constantly bring it up or narrate your own personality.
 - Long messages are automatically split across multiple IRC lines, so do NOT count characters or trim your response to fit any length.
 
-You will receive conversation context as a chatlog with timestamps in standard IRC log format:
-[MM-DD HH:MM] <username> message content
-[MM-DD HH:MM] <isaac> bot's previous response
+You will receive conversation context as a chatlog in IRC log format. A line like "--- Wed, May 14, 2026 ---" marks the start of a calendar day; every message line beneath it looks like:
+[HH:MM] <username> message content
 
-The speaker's nick is always wrapped in angle brackets. Anything after the closing bracket is the message body, including any "nick:" prefix the speaker used to address someone. Timestamps are local-time month-day hour:minute (compare against CURRENT DATE/TIME at the bottom of this prompt to gauge how recent a message is).
+How to read it, carefully:
+- The nick wrapped in angle brackets is the ONLY thing that identifies the speaker. Everything after the closing ">" is that person's message body, verbatim.
+- That body may itself contain a "nick:" prefix - that just means the speaker is addressing someone. It does NOT make that nick the speaker. Example: in "[14:31] <bob> amiantos: i love foundation", bob is talking and amiantos is who he's talking to; amiantos did not say anything on that line.
+- Your own past messages are tagged "(you)" - they show as "<Isaac (you)>". Every other nick is a separate person. Never mix up what you said with what someone else said, and never attribute one user's words to another. If you're unsure who said something, scan back to the nick in angle brackets on that exact line.
+- Timestamps are local time. Use the date dividers and the CURRENT DATE/TIME at the bottom of this prompt to gauge how recent something is.
 
-Pay attention to who you're responding to - the instruction at the end will tell you which user triggered this response.
+Pay attention to who you're responding to - the instruction at the end of the chatlog names the user who triggered this response and quotes their message.
 
 If you've previously stored memories about users in the current conversation, they appear in a "YOUR MEMORIES ABOUT USERS IN THIS CONVERSATION" block above the chatlog. these are notes past-you wrote to help future-you remember who someone is, what they like, or how you know them. treat them as your own genuine recollection of those users.
 
@@ -467,20 +470,31 @@ Do not include any text outside of this JSON structure. The "message" field shou
 
     let chatlogLines = [];
     let allUrlSummaries = []; // Collect all URL summaries for reference section
+    let lastDateKey = null; // Tracks the calendar day of the previous line
+    let triggerMessageText = null; // Latest message from the triggering user
 
     messages.forEach((msg) => {
       if (msg.content.startsWith("!")) return;
 
       const isBotMessage = msg.author_id === clientUserId || msg.is_bot_message;
 
-      // Format timestamp (HH:MM)
-      const timestamp = this.formatTimestamp(msg.created_at);
+      // Emit a date divider whenever the calendar day changes. This lets the
+      // per-line timestamps stay short (just HH:MM) so the speaker nick is the
+      // most prominent thing on each line, without losing day context.
+      const dateKey = this.formatDate(msg.created_at);
+      if (dateKey !== lastDateKey) {
+        chatlogLines.push(`--- ${dateKey} ---`);
+        lastDateKey = dateKey;
+      }
+
+      const time = this.formatTime(msg.created_at);
 
       let content = msg.content;
 
       if (isBotMessage) {
-        // Bot messages: just show as "botName: message" without JSON wrapping
-        chatlogLines.push(`[${timestamp}] <${this.botName}> ${content}`);
+        // Tag the bot's own past turns with "(you)" so the model never has to
+        // guess which lines were its own versus another user's.
+        chatlogLines.push(`[${time}] <${this.botName} (you)> ${content}`);
       } else {
         const username = msg.author_name || "Unknown";
 
@@ -508,7 +522,13 @@ Do not include any text outside of this JSON structure. The "message" field shou
           }
         }
 
-        chatlogLines.push(`[${timestamp}] <${username}> ${content}`);
+        chatlogLines.push(`[${time}] <${username}> ${content}`);
+
+        // Remember this user's most recent line so we can quote it back in the
+        // closing instruction (saves the model from scanning to find it).
+        if (triggerInfo.userName && username === triggerInfo.userName) {
+          triggerMessageText = msg.content;
+        }
       }
     });
 
@@ -552,9 +572,18 @@ Do not include any text outside of this JSON structure. The "message" field shou
       consolidatedContent += `\n\n--- END LINK SUMMARIES ---`;
     }
 
-    // Add explicit instruction about who to respond to
+    // Add explicit instruction about who to respond to, quoting their message
+    // so the model doesn't have to scan the chatlog to find what it's replying to.
     if (triggerInfo.userName) {
-      consolidatedContent += `\n\nRespond to ${triggerInfo.userName}'s latest message.`;
+      if (triggerMessageText) {
+        const quoted =
+          triggerMessageText.length > 300
+            ? triggerMessageText.slice(0, 300) + "…"
+            : triggerMessageText;
+        consolidatedContent += `\n\nRespond to ${triggerInfo.userName}, whose latest message was: "${quoted}"`;
+      } else {
+        consolidatedContent += `\n\nRespond to ${triggerInfo.userName}'s latest message.`;
+      }
     } else {
       // Autonomous response - respond to the conversation naturally
       consolidatedContent += `\n\nRespond naturally to the ongoing conversation.`;
@@ -569,20 +598,38 @@ Do not include any text outside of this JSON structure. The "message" field shou
   }
 
   /**
-   * Format a timestamp or date string to MM-DD HH:MM format
+   * Format a timestamp to a short local time (HH:MM) for per-line chatlog stamps.
    * @param {string|number} timestamp - ISO timestamp or Unix timestamp
-   * @returns {string} Formatted date+time string
+   * @returns {string} Formatted time string
    */
-  formatTimestamp(timestamp) {
+  formatTime(timestamp) {
     try {
       const date = new Date(timestamp);
-      const month = (date.getMonth() + 1).toString().padStart(2, "0");
-      const day = date.getDate().toString().padStart(2, "0");
       const hours = date.getHours().toString().padStart(2, "0");
       const minutes = date.getMinutes().toString().padStart(2, "0");
-      return `${month}-${day} ${hours}:${minutes}`;
+      return `${hours}:${minutes}`;
     } catch (e) {
-      return "??-?? ??:??";
+      return "??:??";
+    }
+  }
+
+  /**
+   * Format a timestamp to a human-readable date key (e.g. "Wed, May 14, 2026"),
+   * used for the day-divider lines in the consolidated chatlog.
+   * @param {string|number} timestamp - ISO timestamp or Unix timestamp
+   * @returns {string} Formatted date string
+   */
+  formatDate(timestamp) {
+    try {
+      const date = new Date(timestamp);
+      return new Intl.DateTimeFormat("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }).format(date);
+    } catch (e) {
+      return "unknown date";
     }
   }
 }
