@@ -37,6 +37,13 @@ class ImpostorClient {
     // Debounce timers for autonomous evaluation (channelId -> timer)
     this.evaluationTimers = new Map();
 
+    // Channels with an in-flight autonomous generation. We suppress new
+    // evaluations for these channels because the eval would be deciding
+    // whether to respond to messages we're already responding to, and any
+    // "respond" decision it made would land in the queue as a duplicate of
+    // the in-flight one once the latter finished.
+    this.generatingChannels = new Set();
+
     // Initialize tools
     this.pythonTool = new PythonTool(logger);
     this.webSearchTool = new WebSearchTool(logger, config);
@@ -272,6 +279,13 @@ class ImpostorClient {
    * @param {string} channelName - IRC channel name (e.g. "#amiantos")
    */
   scheduleAutonomousEvaluation(channelName) {
+    if (this.generatingChannels.has(channelName)) {
+      this.logger.debug(
+        `Skipped scheduling evaluation for ${channelName} — generation in flight`
+      );
+      return;
+    }
+
     const debounceMs = (this.config.autonomous?.debounce_seconds || 3) * 1000;
 
     // Clear any existing timer for this channel
@@ -296,6 +310,13 @@ class ImpostorClient {
    * @param {string} channelName - IRC channel name
    */
   async evaluateAutonomousResponse(channelName) {
+    if (this.generatingChannels.has(channelName)) {
+      this.logger.debug(
+        `Skipped autonomous eval for ${channelName} — generation in flight`
+      );
+      return;
+    }
+
     const botUserId = this.botNick.toLowerCase();
 
     // Get ALL recent messages for ratio calculation (50 messages)
@@ -333,6 +354,7 @@ class ImpostorClient {
         channel: channelName,
         type: "autonomous",
         decisionId: decision.decisionId,
+        enqueuedAt: Date.now(),
       });
       if (!this.isProcessing) this.processMessageQueue();
     } else if (decision.action === "react") {
@@ -343,6 +365,7 @@ class ImpostorClient {
         channel: channelName,
         type: "react",
         decisionId: decision.decisionId,
+        enqueuedAt: Date.now(),
       });
       if (!this.isProcessing) this.processMessageQueue();
     }
@@ -454,16 +477,47 @@ class ImpostorClient {
             `Processing direct message from ${queueItem.message.author.username}. Queue length: ${this.messageQueue.length}`
           );
           await this.processDirectMessage(queueItem.message, queueItem.channel);
-        } else if (queueItem.type === "autonomous") {
-          this.logger.info(
-            `Processing autonomous response for channel ${queueItem.channel}. Queue length: ${this.messageQueue.length}`
-          );
-          await this.processAutonomousMessage(queueItem.channel, queueItem.decisionId);
-        } else if (queueItem.type === "react") {
-          this.logger.info(
-            `Processing reaction for channel ${queueItem.channel}. Queue length: ${this.messageQueue.length}`
-          );
-          await this.processReactMessage(queueItem.channel, queueItem.decisionId);
+        } else if (queueItem.type === "autonomous" || queueItem.type === "react") {
+          // A decision can sit in the queue while an earlier in-flight
+          // generation is still running. If the bot has already spoken in
+          // this channel since this decision was enqueued, the decision is
+          // stale — the question it was meant to address has likely already
+          // been answered by the in-flight response.
+          if (queueItem.enqueuedAt) {
+            const lastBotTime = this.db.getLastBotResponseTime(queueItem.channel);
+            if (lastBotTime && lastBotTime.getTime() > queueItem.enqueuedAt) {
+              this.logger.info(
+                `Dropping stale ${queueItem.type} for ${queueItem.channel} — bot already responded since this decision was enqueued`
+              );
+              if (queueItem.decisionId) {
+                this.db.markDecisionResponseSent(queueItem.decisionId);
+              }
+              continue;
+            }
+          }
+
+          this.generatingChannels.add(queueItem.channel);
+          try {
+            if (queueItem.type === "autonomous") {
+              this.logger.info(
+                `Processing autonomous response for channel ${queueItem.channel}. Queue length: ${this.messageQueue.length}`
+              );
+              await this.processAutonomousMessage(queueItem.channel, queueItem.decisionId);
+            } else {
+              this.logger.info(
+                `Processing reaction for channel ${queueItem.channel}. Queue length: ${this.messageQueue.length}`
+              );
+              await this.processReactMessage(queueItem.channel, queueItem.decisionId);
+            }
+          } finally {
+            this.generatingChannels.delete(queueItem.channel);
+          }
+          // Catch up on messages that arrived during generation (their evals
+          // were suppressed by the in-flight flag). The eval bails cheaply if
+          // there's nothing post-bot-response to react to.
+          if (this.config.autonomous?.enabled) {
+            this.scheduleAutonomousEvaluation(queueItem.channel);
+          }
         }
 
         // Add a small delay between messages to appear more natural
