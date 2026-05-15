@@ -580,13 +580,13 @@ Do not include any text outside of this JSON structure. The "message" field shou
           triggerMessageText.length > 300
             ? triggerMessageText.slice(0, 300) + "…"
             : triggerMessageText;
-        consolidatedContent += `\n\nRespond to ${triggerInfo.userName}, whose latest message was: "${quoted}"`;
+        consolidatedContent += `\n\nRespond to ${triggerInfo.userName}, whose latest message was: "${quoted}". Reply with valid JSON in the format described above.`;
       } else {
-        consolidatedContent += `\n\nRespond to ${triggerInfo.userName}'s latest message.`;
+        consolidatedContent += `\n\nRespond to ${triggerInfo.userName}'s latest message. Reply with valid JSON in the format described above.`;
       }
     } else {
       // Autonomous response - respond to the conversation naturally
-      consolidatedContent += `\n\nRespond naturally to the ongoing conversation.`;
+      consolidatedContent += `\n\nRespond naturally to the ongoing conversation. Reply with valid JSON in the format described above.`;
     }
 
     return [

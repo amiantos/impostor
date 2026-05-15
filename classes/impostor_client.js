@@ -884,12 +884,14 @@ class ImpostorClient {
 ITERATION HISTORY:
 ${iterationSummary}
 
-REFLECTION: Look at your previous attempts above. What worked? What didn't? How can you adjust your approach based on the results? If you're close to the target (like 1-2 characters off), make small adjustments. Continue iterating to refine your approach, or provide your final response if satisfied.`,
+REFLECTION: Look at your previous attempts above. What worked? What didn't? How can you adjust your approach based on the results? If you're close to the target (like 1-2 characters off), make small adjustments. Continue iterating to refine your approach, or provide your final response if satisfied.
+
+Reply with valid JSON in the format described above.`,
         });
       } else {
         conversationLog.push({
           role: "user",
-          content: `Tool execution result: ${JSON.stringify(toolResult)}. Now provide your final response with the actual message.`,
+          content: `Tool execution result: ${JSON.stringify(toolResult)}. Now provide your final response with the actual message. Reply with valid JSON in the format described above.`,
         });
       }
 
@@ -944,6 +946,20 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
       this.logger.warn(
         `DeepSeek returned bad response (${reason}), attempt ${attempt}/${maxAttempts}`
       );
+      // Dump enough detail to diagnose: whitespace-only content looks identical
+      // to truly-empty content in plain logs, and DeepSeek sometimes spends all
+      // its budget on reasoning_content while emitting blanks for content.
+      const reasoningContent = choice?.message?.reasoning_content;
+      this.logger.debug("Bad response diagnostics:", {
+        id: response.id,
+        finish_reason: finishReason,
+        content_type: content === null ? "null" : typeof content,
+        content_length: typeof content === "string" ? content.length : null,
+        content_trimmed_length: typeof content === "string" ? content.trim().length : null,
+        content_raw: typeof content === "string" ? JSON.stringify(content) : content,
+        reasoning_content_length: typeof reasoningContent === "string" ? reasoningContent.length : null,
+        usage: response.usage,
+      });
 
       if (attempt < maxAttempts) {
         await new Promise((r) => setTimeout(r, 500 * attempt));
@@ -951,7 +967,16 @@ REFLECTION: Look at your previous attempts above. What worked? What didn't? How 
     }
 
     this.logger.error(
-      `DeepSeek failed to return usable response after ${maxAttempts} attempts`
+      `DeepSeek failed to return usable response after ${maxAttempts} attempts`,
+      {
+        last_response_id: lastResponse?.id,
+        last_finish_reason: lastResponse?.choices?.[0]?.finish_reason,
+        conversation_length: conversationLog.length,
+        last_user_message_preview:
+          typeof conversationLog[conversationLog.length - 1]?.content === "string"
+            ? conversationLog[conversationLog.length - 1].content.slice(0, 300)
+            : null,
+      }
     );
     return lastResponse;
   }
