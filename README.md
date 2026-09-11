@@ -94,6 +94,8 @@ See `conf/config.json.example` for all options. Key sections:
 | Section | Description |
 |---------|-------------|
 | `generator.deepseek` | DeepSeek API settings for chat responses |
+| `generator.deepseek.thinking` | Let the model reason before replying (default `true`) |
+| `generator.deepseek.evaluator_thinking` | Same, for the should-I-respond evaluator (default `false`) |
 | `irc` | IRC connection settings (host, nick, channels, SASL auth) |
 | `irc.watchword` | Word that triggers the bot (e.g. "Isaac"), separate from nick |
 | `autonomous` | Autonomous response settings (debounce, timing) |

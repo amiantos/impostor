@@ -983,6 +983,12 @@ Reply with valid JSON in the format described above.`,
         max_tokens: this.config.generator.deepseek.max_tokens,
         temperature: this.config.generator.deepseek.temperature,
         response_format: { type: "json_object" },
+        // Flash thinks by default and its reasoning tokens are drawn from the
+        // same max_tokens budget as the JSON reply, so a long think can starve
+        // the answer. Only send the param when explicitly turned off.
+        ...(this.config.generator.deepseek.thinking === false
+          ? { thinking: { type: "disabled" } }
+          : {}),
       });
 
       const choice = response.choices?.[0];

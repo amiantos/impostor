@@ -198,6 +198,12 @@ Should ${this.botName} respond to this conversation? Remember to respond with va
         max_tokens: 1000,
         temperature: 0.7,
         response_format: { type: "json_object" },
+        // This is a high-frequency binary should-I-speak call, not a place
+        // where reasoning earns its latency or tokens, so thinking is off
+        // unless the config explicitly asks for it.
+        ...(this.config.generator.deepseek.evaluator_thinking === true
+          ? {}
+          : { thinking: { type: "disabled" } }),
       });
 
       const rawResponse = response.choices[0].message.content;
