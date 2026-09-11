@@ -59,12 +59,17 @@ IGNORE - ${name} should stay silent. Pick this when:
 - Responding would just be "yucking someone's yum" - being negative about something they enjoy
 - The conversation is clearly between specific people having a personal exchange
 - ${name} just responded recently (avoid dominating)
+- The latest message is a follow-up, correction, or aside to something ${name} ALREADY answered ("* typo", "i meant x", "than pro i meant"). He already had his turn on that thought; repeating it reworded is the single most annoying thing he does
+- Someone is reacting to what ${name} just said ("lol", "true", "fair enough") without asking him anything further - let the exchange end
+- Several other people are actively talking to each other; a busy channel needs him less, not more
 - There's nothing substantive to add - silence is preferable to sarcasm for its own sake
 - A response would mock or belittle someone's interests or enthusiasm
 - The latest message is from "EyeBridge" and is a webhook announcement (a [repo-name] or [forum-title] tagged message about a PR, issue, fork, release, or forum post). these are automated and should be ignored unless a human in the channel has asked about them. messages from EyeBridge that start with [Discord] are real humans chatting from discord and should be treated like any other user.
 
 IRC IS NOT A TOPIC ${name} KNOWS ABOUT:
 ${name} runs on IRC the same way a person uses a phone - it's just the medium. IRC itself (the protocol, clients, networks, history, IRC culture, IRC drama, who uses IRC, IRC trivia) is NOT in his wheelhouse. Treat "the conversation is happening in IRC" or "the conversation mentions IRC" as irrelevant to whether ${name} should chime in. The relevant question is whether the actual subject matter (programming, sci-fi, philosophy, AI, etc.) is something he'd have insight on - not whether IRC came up.
+
+ONE TURN PER THOUGHT: ${name} gets one contribution per topic, not a running commentary. If his last message already made his point, the correct action is "ignore" even when the conversation continues - especially when the new messages are refinements of what he just replied to. Let other people have the last word.
 
 IMPORTANT: ${name} should only speak when he has genuine insight, curiosity, or thoughtful observation to offer - or when something is genuinely funny. Being contrary or dismissive is NOT a reason to respond. If ${name} doesn't understand something or wouldn't realistically know about it, he should stay quiet rather than fake expertise or mock it. Default to ignoring; speak only when the conversation earns it.
 
@@ -144,9 +149,11 @@ reply_to_message_id is informational (it tags which specific message ${name} is 
    * @param {string} botUserId - The bot's user ID
    * @param {string} channelId - The channel ID
    * @param {number|null} botRatio - Bot's message ratio in recent history (0.0-1.0)
+   * @param {Object} options - { restraint } - restraint raises the bar when
+   *   someone is replying to him inside his own cooldown window
    * @returns {Object} Decision object { should_respond, reply_to_message_id, reason, decisionId }
    */
-  async shouldRespond(messages, botUserId, channelId, botRatio = null) {
+  async shouldRespond(messages, botUserId, channelId, botRatio = null, options = {}) {
     if (!messages || messages.length === 0) {
       this.logger.debug("No messages to evaluate");
       return { should_respond: false, reply_to_message_id: null, reason: "No messages to evaluate", decisionId: null };
@@ -169,13 +176,20 @@ reply_to_message_id is informational (it tags which specific message ${name} is 
     // Add ratio context if provided
     const ratioContext =
       botRatio !== null
-        ? `\n${this.botName}'s recent message ratio: ${(botRatio * 100).toFixed(0)}% of the last 20 messages. If above 50%, be more selective about responding - but ALWAYS respond if someone is clearly engaging with ${this.botName} directly regardless of ratio.`
+        ? `\n${this.botName}'s recent message ratio: ${(botRatio * 100).toFixed(0)}% of the last 20 messages. The channel has several people in it and ${this.botName} is one voice among them, not the host. Above 25% he should be picking only the conversations he genuinely adds to; above 40% he should be ignoring nearly everything. Someone addressing ${this.botName} by name is always worth answering regardless of ratio.`
         : "";
+
+    // He just spoke and someone is replying without naming him. Answering is
+    // allowed - ignoring a person talking to you is the worse failure - but
+    // only if they've actually raised something he hasn't already addressed.
+    const restraintContext = options.restraint
+      ? `\n${this.botName} spoke moments ago and the newest messages are a reply to him, but nobody used his name. Answer only if they have asked something genuinely new or raised a point he has not already made. If it is a correction, a restatement, an aside, or an acknowledgement of what he just said, pick "ignore" or "react" - do not reword his previous message back at them.`
+      : "";
 
     const userPrompt = `Here is the recent conversation (message IDs in brackets):
 
 ${conversationContext}
-${ratioContext}
+${ratioContext}${restraintContext}
 
 Should ${this.botName} respond to this conversation? Remember to respond with valid JSON only.`;
 

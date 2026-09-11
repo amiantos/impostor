@@ -55,7 +55,7 @@ npm start
 
 ## Key Features
 
-- **Autonomous Responses**: Bot monitors conversations and decides when to naturally respond (debounced, ratio-aware)
+- **Autonomous Responses**: Bot monitors conversations and decides when to naturally respond (debounced, cooldown- and ratio-gated)
 - **Direct Mentions**: Mentioning "Isaac" in a message triggers a direct response
 - **Tool Iteration**: Up to 10 iterations with reflection for precise tasks (exact character counts, complex math)
 - **URL Summarization**: Kagi summarizes shared links proactively
@@ -83,11 +83,19 @@ SQLite database at `data/impostor.db`:
 
 ### Autonomous Response
 1. All messages tracked in configured channels
-2. Debounce timer (default 15s) waits for conversation to settle
-3. `ResponseEvaluator` asks DeepSeek if bot should respond
-4. Checks bot message ratio (<40% of recent messages)
-5. If yes, generates response via same pipeline as direct
-6. Decision logged with reasoning
+2. Debounce timer (`autonomous.debounce_seconds`, default 20s) waits for conversation to settle
+3. `addressSinceLastBotMessage` classifies who, if anyone, is talking to him. IRC has no reply threading, so this is inferred:
+   - **`named`** — someone used his name/nick. Straight to the evaluator, no dampers.
+   - **`reply`** — nobody named him, but within `reply_window_seconds` (180) of his last message a human used second person, asked a question, *or* was the only person speaking (a 1:1 exchange). Also goes to the evaluator.
+   - **`none`** — he'd be volunteering into a conversation that moved on without him.
+4. Only `none` hits the hard local gates, which run *before* the model is asked anything so a burst can't talk its way past them:
+   - **Cooldown** — after speaking he needs `cooldown_messages` (3) new messages *and* `cooldown_seconds` (45) of wall clock
+   - **Ratio ceiling** — blocked when he's already `max_bot_ratio` (0.4) of the last `ratio_window` (10) messages
+5. `ResponseEvaluator` asks DeepSeek for `respond` / `react` / `ignore`. A `reply` that arrives inside the cooldown window passes `restraint: true`, which tells the evaluator to answer only if something genuinely new was raised.
+6. If `respond`, generates via the same pipeline as a direct mention
+7. Decision logged with reasoning — suppressions land in `decision_log` as `[ignore] cooldown: …` / `[ignore] bot ratio …`
+
+His problem was never total volume (~11% of channel messages) but clustering: he'd answer a message, then answer the two-word correction that followed it. The split matters — **hard-blocking is reserved for the unaddressed case**, because going silent on someone plainly talking to you is a worse failure than being a little chatty. Everything else is handled by the evaluator prompt's "one turn per thought" rule. Tune `cooldown_messages`/`cooldown_seconds` to trade responsiveness against chattiness.
 
 ## IRC Details
 

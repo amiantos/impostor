@@ -135,38 +135,6 @@ class MessageTracker {
   }
 
   /**
-   * Determine if an autonomous response evaluation should be triggered
-   * @param {string} channelId - Channel ID
-   * @returns {boolean} True if evaluation should run
-   */
-  shouldEvaluate(channelId) {
-    const messagesThreshold = this.config.messages_before_evaluation || 5;
-    const secondsThreshold = this.config.seconds_before_evaluation || 60;
-
-    // Check message count threshold
-    const messageCount = this.messageCountSinceEval.get(channelId) || 0;
-    const hasEnoughMessages = messageCount >= messagesThreshold;
-
-    // Check time threshold
-    const lastEvalTime = this.lastEvaluation.get(channelId);
-    const now = Date.now();
-    const timeSinceLastEval = lastEvalTime ? (now - lastEvalTime) / 1000 : Infinity;
-    const hasEnoughTimePassed = timeSinceLastEval >= secondsThreshold;
-
-    if (hasEnoughMessages) {
-      this.logger.debug(`Channel ${channelId}: Triggering eval - ${messageCount} messages (threshold: ${messagesThreshold})`);
-      return true;
-    }
-
-    if (hasEnoughTimePassed && messageCount > 0) {
-      this.logger.debug(`Channel ${channelId}: Triggering eval - ${timeSinceLastEval.toFixed(0)}s since last eval (threshold: ${secondsThreshold}s)`);
-      return true;
-    }
-
-    return false;
-  }
-
-  /**
    * Mark that an evaluation has been performed for a channel
    * @param {string} channelId - Channel ID
    */

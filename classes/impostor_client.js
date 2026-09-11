@@ -335,15 +335,73 @@ class ImpostorClient {
       return;
     }
 
+    // How (and whether) anyone is actually talking to him decides which of
+    // the dampers below apply.
+    const address = this.addressSinceLastBotMessage(recentMessages);
+    const addressed = address !== "none";
+
+    // The complaint was never total volume (he's ~11% of the channel), it's
+    // clustering: he'd answer a message, then answer the two-word correction
+    // that followed it, then answer the reaction to that. Once he's spoken,
+    // make him wait for the conversation to actually move before speaking
+    // again unprompted.
+    if (!addressed) {
+      const cooldown = this.autonomousCooldown(recentMessages);
+      if (cooldown.blocked) {
+        this.logger.info(`Holding back in ${channelName} — ${cooldown.reason}`);
+        this.db.logDecision(
+          channelName,
+          recentMessages.length,
+          false,
+          null,
+          `[ignore] cooldown: ${cooldown.reason}`,
+          []
+        );
+        return;
+      }
+
+      // A hard ceiling on how much of the recent conversation can be him.
+      // The evaluator gets told the ratio too, but advice in a prompt is not
+      // a limit, and in a burst the model kept talking itself past it.
+      const maxRatio = this.config.autonomous?.max_bot_ratio ?? 0.4;
+      const shortRatio = this.evaluator.calculateBotRatio(
+        recentMessages,
+        botUserId,
+        this.config.autonomous?.ratio_window ?? 10
+      );
+      if (shortRatio >= maxRatio) {
+        const pct = (shortRatio * 100).toFixed(0);
+        this.logger.info(
+          `Holding back in ${channelName} — ${pct}% of recent messages are his (max ${(maxRatio * 100).toFixed(0)}%)`
+        );
+        this.db.logDecision(
+          channelName,
+          recentMessages.length,
+          false,
+          null,
+          `[ignore] bot ratio ${pct}% >= ${(maxRatio * 100).toFixed(0)}% ceiling`,
+          []
+        );
+        return;
+      }
+    }
+
     // Get evaluation context
     const evaluationMessages = this.getMessagesForEvaluation(recentMessages, 5);
+
+    // Someone is talking to him without naming him, and he only just spoke.
+    // He's allowed to answer, but the evaluator is told to hold a high bar so
+    // a fast back-and-forth doesn't turn into him narrating every beat.
+    const inCooldown =
+      address === "reply" && this.autonomousCooldown(recentMessages).blocked;
 
     // Ask AI if we should respond (pass ratio for context)
     const decision = await this.evaluator.shouldRespond(
       evaluationMessages,
       botUserId,
       channelName,
-      botRatio
+      botRatio,
+      { restraint: inCooldown }
     );
 
     if (decision.action === "respond") {
@@ -379,6 +437,124 @@ class ImpostorClient {
   hasMessagesSinceLastBotResponse(messages) {
     if (!messages || messages.length === 0) return false;
     return !messages[messages.length - 1].is_bot_message;
+  }
+
+  /**
+   * Messages posted since the bot last spoke, oldest first.
+   * @param {Array} messages - Recent messages, chronological
+   * @returns {Array} Messages newer than the bot's last message
+   */
+  messagesSinceBotSpoke(messages) {
+    if (!messages || messages.length === 0) return [];
+    let lastBotIndex = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].is_bot_message) {
+        lastBotIndex = i;
+        break;
+      }
+    }
+    return messages.slice(lastBotIndex + 1);
+  }
+
+  /**
+   * Classify how (or whether) someone is addressing the bot since he last
+   * spoke. IRC has no reply threading, so this leans on two signals:
+   *
+   *   "named"  - someone used his name or nick. Unambiguous; he answers.
+   *   "reply"  - nobody named him, but a human answered into the gap right
+   *              after he spoke using second person or a question. On IRC
+   *              that's someone talking *to* him even though they didn't
+   *              bother typing his name.
+   *   "none"   - he'd be volunteering into a conversation that isn't his.
+   *
+   * Only "none" gets hard-blocked. "reply" still reaches the evaluator,
+   * because refusing to answer someone plainly talking to you is worse than
+   * being a little chatty.
+   *
+   * @param {Array} messages - Recent messages, chronological
+   * @returns {"named"|"reply"|"none"}
+   */
+  addressSinceLastBotMessage(messages) {
+    const since = this.messagesSinceBotSpoke(messages);
+    if (since.length === 0) return "none";
+
+    const names = [this.watchword, this.botNick]
+      .filter(Boolean)
+      .map((n) => n.toLowerCase());
+    const named = since.some((m) => {
+      const content = (m.content || "").toLowerCase();
+      return names.some((n) => content.includes(n));
+    });
+    if (named) return "named";
+
+    // Nothing he said to reply to yet.
+    if (since.length === messages.length) return "none";
+
+    const lastBot = messages[messages.length - since.length - 1];
+    const lastBotTime = new Date(lastBot.created_at).getTime();
+    const windowMs =
+      (this.config.autonomous?.reply_window_seconds ?? 180) * 1000;
+
+    const inWindow = since.filter(
+      (m) =>
+        !m.is_bot_message &&
+        new Date(m.created_at).getTime() - lastBotTime <= windowMs
+    );
+    if (inWindow.length === 0) return "none";
+
+    // Explicit second person or a question aimed into the gap he left.
+    const secondPerson = /\b(you|you're|youre|your|yours|yer|u|ur)\b/i;
+    const speaksToHim = inWindow.some((m) => {
+      const content = (m.content || "").trim();
+      return secondPerson.test(content) || content.endsWith("?");
+    });
+    if (speaksToHim) return "reply";
+
+    // Nobody else is talking, so he and this person are the only two in the
+    // room. Short conversational turns like "okay sorry" or "kinda
+    // anticlimatic" carry no pronoun but are plainly meant for him, and
+    // going quiet on someone mid-exchange reads as sulking rather than
+    // restraint. "reply" only buys a hearing from the evaluator, not a
+    // guaranteed answer, so it's safe to be generous here.
+    const speakers = new Set(inWindow.map((m) => m.author_id));
+    if (speakers.size === 1) return "reply";
+
+    return "none";
+  }
+
+  /**
+   * Decide whether the bot is still inside his post-speech quiet period.
+   * He has to see both a few new messages and some wall-clock time before
+   * volunteering again, so a rapid-fire exchange counts as one turn rather
+   * than four.
+   * @param {Array} messages - Recent messages, chronological
+   * @returns {{blocked: boolean, reason: string}}
+   */
+  autonomousCooldown(messages) {
+    const minMessages = this.config.autonomous?.cooldown_messages ?? 3;
+    const minSeconds = this.config.autonomous?.cooldown_seconds ?? 45;
+
+    const since = this.messagesSinceBotSpoke(messages);
+    // He has never spoken here, so there is nothing to cool down from.
+    if (since.length === messages.length) return { blocked: false, reason: "" };
+
+    if (since.length < minMessages) {
+      return {
+        blocked: true,
+        reason: `only ${since.length} message(s) since he last spoke (needs ${minMessages})`,
+      };
+    }
+
+    const lastBot = messages[messages.length - since.length - 1];
+    const elapsed = (Date.now() - new Date(lastBot.created_at).getTime()) / 1000;
+    if (elapsed < minSeconds) {
+      return {
+        blocked: true,
+        reason: `only ${elapsed.toFixed(0)}s since he last spoke (needs ${minSeconds}s)`,
+      };
+    }
+
+    return { blocked: false, reason: "" };
   }
 
   /**

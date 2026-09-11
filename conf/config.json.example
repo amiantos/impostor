@@ -31,7 +31,12 @@
     },
     "autonomous": {
         "enabled": true,
-        "debounce_seconds": 3,
+        "debounce_seconds": 20,
+        "cooldown_messages": 3,
+        "cooldown_seconds": 45,
+        "reply_window_seconds": 180,
+        "max_bot_ratio": 0.4,
+        "ratio_window": 10,
         "max_context_age_minutes": 30,
         "max_conversation_gap_minutes": 30
     },

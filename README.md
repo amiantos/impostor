@@ -22,7 +22,7 @@ An IRC chatbot powered by DeepSeek API, featuring a built-in Isaac personality (
 The bot monitors conversations and decides when to naturally chime in:
 - Waits for conversation to settle (configurable debounce)
 - Evaluates if there's something interesting to comment on
-- Tracks its own message ratio to avoid dominating
+- Tracks its own message ratio to avoid dominating, and holds a cooldown after each message so a fast exchange counts as one turn rather than four
 - Mentioning the bot's watchword (e.g. "Isaac") or nick always triggers a response
 
 ### Python Tool Execution
@@ -99,6 +99,9 @@ See `conf/config.json.example` for all options. Key sections:
 | `irc` | IRC connection settings (host, nick, channels, SASL auth) |
 | `irc.watchword` | Word that triggers the bot (e.g. "Isaac"), separate from nick |
 | `autonomous` | Autonomous response settings (debounce, timing) |
+| `autonomous.cooldown_messages` / `cooldown_seconds` | Quiet period after the bot speaks, before it will volunteer again (3 msgs / 45s) |
+| `autonomous.reply_window_seconds` | How long after speaking a human turn still counts as a reply to him (180s) |
+| `autonomous.max_bot_ratio` / `ratio_window` | Hard ceiling on the bot's share of the last N messages (0.4 of 10) |
 | `vision` | Image understanding via OpenAI GPT-4o (dormant on IRC) |
 | `openai` | OpenAI API settings for vision |
 | `web` | Web dashboard settings |
