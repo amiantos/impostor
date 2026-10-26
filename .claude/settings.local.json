@@ -7,7 +7,17 @@
       "Bash(./start.sh)",
       "Bash(git add:*)",
       "Bash(tree:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(node scripts/build.js)",
+      "Bash(node -c classes/impostor_client.js)",
+      "Bash(node -c classes/discord_bridge.js)",
+      "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('/Users/amiantos/Coding/impostor/conf/config.json', 'utf8'\\)\\)\")",
+      "Bash(chmod +x /Users/amiantos/Coding/impostor/add-webhook.sh /Users/amiantos/Coding/impostor/add-webhook-all.sh)",
+      "Bash(/opt/homebrew/bin/node *)",
+      "Bash(cp /Users/amiantos/Coding/impostor/scripts/me.bradroot.impostor-chat-log.plist ~/Library/LaunchAgents/)",
+      "Bash(launchctl unload *)",
+      "Bash(launchctl load *)",
+      "Bash(launchctl list *)"
     ]
   }
 }
