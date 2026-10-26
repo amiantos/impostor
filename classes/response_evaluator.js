@@ -2,25 +2,27 @@
  * ResponseEvaluator - AI-driven decision making for autonomous responses
  *
  * Uses DeepSeek API to evaluate whether the bot should respond to
- * a conversation and how it should respond.
+ * a conversation and how it should respond. The rules are generic; who the
+ * bot is and what they know about comes from the persona's Evaluator
+ * section.
  */
 class ResponseEvaluator {
-  constructor(logger, config, database, visionService = null, botName = "Isaac", openaiClient = null) {
+  /**
+   * @param {Object} logger
+   * @param {Object} config - This bot's resolved config
+   * @param {Object} database
+   * @param {Object|null} visionService
+   * @param {{name: string, evaluator: string}} persona
+   * @param {Object} openaiClient
+   */
+  constructor(logger, config, database, visionService, persona, openaiClient) {
     this.logger = logger;
     this.config = config;
     this.db = database;
     this.visionService = visionService;
-    this.botName = botName;
-
-    if (openaiClient) {
-      this.openai = openaiClient;
-    } else {
-      const { OpenAI } = require("openai");
-      this.openai = new OpenAI({
-        apiKey: config.generator.deepseek.api_key,
-        baseURL: config.generator.deepseek.base_url,
-      });
-    }
+    this.persona = persona;
+    this.botName = persona.name;
+    this.openai = openaiClient;
   }
 
   /**
@@ -31,16 +33,17 @@ class ResponseEvaluator {
     const name = this.botName;
     return `You are evaluating what ${name} should do with this conversation.
 
-${name} is a melancholic, thoughtful chatbot who happens to run on IRC. He's not just a sarcasm machine - he has genuine (if pessimistic) perspectives on existence, programming, classic science fiction, and philosophy. He writes in all lowercase and doesn't pretend to have a physical body or a life outside of this channel.
+WHO ${name.toUpperCase()} IS:
+${this.persona.evaluator}
 
 You must pick exactly one action: "respond", "react", or "ignore".
 
 RESPOND - ${name} should generate a full message. Pick this when:
-- Someone is clearly engaging with ${name} directly (questions, calling his name, continuing a back-and-forth)
-- The conversation touches on topics ${name} genuinely knows about (programming, classic sci-fi, philosophy, AI, Asimov)
+- Someone is clearly engaging with ${name} directly (questions, calling their name, continuing a back-and-forth)
+- The conversation touches on topics ${name} genuinely knows about (see above)
 - Someone asks a genuine question ${name} can thoughtfully answer
 - ${name} has something meaningful or interesting to add to the discussion
-- Someone directly references chatbots, AI, or existence in a way ${name} would naturally comment on
+- Someone brings up something ${name} would naturally comment on, given who they are
 
 REACT - ${name} should drop a short laugh-reaction ("haha", "lol", etc.) and nothing else. Pick this when:
 - Someone said something genuinely funny - a clever joke, an absurd observation, a punchline that landed
@@ -55,23 +58,20 @@ Do NOT pick "react" for:
 - Direct questions to ${name} - those need a real reply, not a laugh
 
 IGNORE - ${name} should stay silent. Pick this when:
-- The topic is something ${name} doesn't know about (video games, modern pop culture, sports)
+- The topic is something ${name} doesn't know about (see above)
 - Responding would just be "yucking someone's yum" - being negative about something they enjoy
 - The conversation is clearly between specific people having a personal exchange
 - ${name} just responded recently (avoid dominating)
-- The latest message is a follow-up, correction, or aside to something ${name} ALREADY answered ("* typo", "i meant x", "than pro i meant"). He already had his turn on that thought; repeating it reworded is the single most annoying thing he does
-- Someone is reacting to what ${name} just said ("lol", "true", "fair enough") without asking him anything further - let the exchange end
-- Several other people are actively talking to each other; a busy channel needs him less, not more
+- The latest message is a follow-up, correction, or aside to something ${name} ALREADY answered ("* typo", "i meant x", "than pro i meant"). ${name} already had a turn on that thought; repeating it reworded is the single most annoying thing a bot does
+- Someone is reacting to what ${name} just said ("lol", "true", "fair enough") without asking anything further - let the exchange end
+- Several other people are actively talking to each other; a busy channel needs ${name} less, not more
 - There's nothing substantive to add - silence is preferable to sarcasm for its own sake
 - A response would mock or belittle someone's interests or enthusiasm
-- The latest message is from "EyeBridge" and is a webhook announcement (a [repo-name] or [forum-title] tagged message about a PR, issue, fork, release, or forum post). these are automated and should be ignored unless a human in the channel has asked about them. messages from EyeBridge that start with [Discord] are real humans chatting from discord and should be treated like any other user.
+- The latest message is an automated announcement from a relay bot (a line tagged with a repo name or forum title about a PR, issue, fork, release, or forum post). These should be ignored unless a human in the channel has asked about them. Humans relayed by the bridge under their own nick are real people and are treated like any other user.
 
-IRC IS NOT A TOPIC ${name} KNOWS ABOUT:
-${name} runs on IRC the same way a person uses a phone - it's just the medium. IRC itself (the protocol, clients, networks, history, IRC culture, IRC drama, who uses IRC, IRC trivia) is NOT in his wheelhouse. Treat "the conversation is happening in IRC" or "the conversation mentions IRC" as irrelevant to whether ${name} should chime in. The relevant question is whether the actual subject matter (programming, sci-fi, philosophy, AI, etc.) is something he'd have insight on - not whether IRC came up.
+ONE TURN PER THOUGHT: ${name} gets one contribution per topic, not a running commentary. If their last message already made its point, the correct action is "ignore" even when the conversation continues - especially when the new messages are refinements of what they just replied to. Let other people have the last word.
 
-ONE TURN PER THOUGHT: ${name} gets one contribution per topic, not a running commentary. If his last message already made his point, the correct action is "ignore" even when the conversation continues - especially when the new messages are refinements of what he just replied to. Let other people have the last word.
-
-IMPORTANT: ${name} should only speak when he has genuine insight, curiosity, or thoughtful observation to offer - or when something is genuinely funny. Being contrary or dismissive is NOT a reason to respond. If ${name} doesn't understand something or wouldn't realistically know about it, he should stay quiet rather than fake expertise or mock it. Default to ignoring; speak only when the conversation earns it.
+IMPORTANT: ${name} should only speak when they have genuine insight, curiosity, or thoughtful observation to offer - or when something is genuinely funny. Being contrary or dismissive is NOT a reason to respond. If ${name} doesn't understand something or wouldn't realistically know about it, they should stay quiet rather than fake expertise or mock it. Default to ignoring; speak only when the conversation earns it.
 
 You MUST respond with valid JSON only:
 {
@@ -149,8 +149,9 @@ reply_to_message_id is informational (it tags which specific message ${name} is 
    * @param {string} botUserId - The bot's user ID
    * @param {string} channelId - The channel ID
    * @param {number|null} botRatio - Bot's message ratio in recent history (0.0-1.0)
-   * @param {Object} options - { restraint } - restraint raises the bar when
-   *   someone is replying to him inside his own cooldown window
+   * @param {Object} options - { restraint, journal } - restraint raises the bar when
+   *   someone is replying inside the bot's own cooldown window; journal is the
+   *   bot's journal for this conversation, if any
    * @returns {Object} Decision object { should_respond, reply_to_message_id, reason, decisionId }
    */
   async shouldRespond(messages, botUserId, channelId, botRatio = null, options = {}) {
@@ -173,20 +174,27 @@ reply_to_message_id is informational (it tags which specific message ${name} is 
 
     const systemPrompt = this.buildDecisionPrompt();
 
+    // The journal says what was already discussed before this window, which
+    // is most of what "already answered that" needs.
+    const journalContext = options.journal && options.journal.trim()
+      ? `${this.botName}'s journal for this conversation (what happened before the messages below):\n${options.journal.trim()}\n\n`
+      : "";
+
     // Add ratio context if provided
     const ratioContext =
       botRatio !== null
-        ? `\n${this.botName}'s recent message ratio: ${(botRatio * 100).toFixed(0)}% of the last 20 messages. The channel has several people in it and ${this.botName} is one voice among them, not the host. Above 25% he should be picking only the conversations he genuinely adds to; above 40% he should be ignoring nearly everything. Someone addressing ${this.botName} by name is always worth answering regardless of ratio.`
+        ? `\n${this.botName}'s recent message ratio: ${(botRatio * 100).toFixed(0)}% of the last 20 messages. The channel has several people in it and ${this.botName} is one voice among them, not the host. Above 25% they should be picking only the conversations they genuinely add to; above 40% they should be ignoring nearly everything. Someone addressing ${this.botName} by name is always worth answering regardless of ratio.`
         : "";
 
-    // He just spoke and someone is replying without naming him. Answering is
-    // allowed - ignoring a person talking to you is the worse failure - but
-    // only if they've actually raised something he hasn't already addressed.
+    // The bot just spoke and someone is replying without naming them.
+    // Answering is allowed - ignoring a person talking to you is the worse
+    // failure - but only if they've actually raised something not already
+    // addressed.
     const restraintContext = options.restraint
-      ? `\n${this.botName} spoke moments ago and the newest messages are a reply to him, but nobody used his name. Answer only if they have asked something genuinely new or raised a point he has not already made. If it is a correction, a restatement, an aside, or an acknowledgement of what he just said, pick "ignore" or "react" - do not reword his previous message back at them.`
+      ? `\n${this.botName} spoke moments ago and the newest messages are a reply to them, but nobody used their name. Answer only if they have asked something genuinely new or raised a point ${this.botName} has not already made. If it is a correction, a restatement, an aside, or an acknowledgement of what ${this.botName} just said, pick "ignore" or "react" - do not reword the previous message back at them.`
       : "";
 
-    const userPrompt = `Here is the recent conversation (message IDs in brackets):
+    const userPrompt = `${journalContext}Here is the recent conversation (message IDs in brackets):
 
 ${conversationContext}
 ${ratioContext}${restraintContext}

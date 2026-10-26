@@ -98,3 +98,36 @@ test("respects a non-default bridge nick from config", () => {
   assert.equal(result.nick, "frank");
   assert.equal(result.isWebhookAnnouncement, false);
 });
+
+test("unwraps any listed relay tag, such as snitch's [libera] on irc.lurker.chat", () => {
+  const result = parseBridgedMessage(
+    "EyeBridge",
+    "[libera] <bob> hi from libera",
+    BRIDGE,
+    ["Discord", "libera", "mansion"]
+  );
+  assert.deepEqual(result, { nick: "bob", message: "hi from libera", isWebhookAnnouncement: false });
+});
+
+test("a tag that is not listed is a webhook announcement even in envelope shape", () => {
+  // GitHub announcements look like "[repo] <user> opened ...", so the tag
+  // list is what separates a relayed human from an automated line.
+  const result = parseBridgedMessage(
+    "EyeBridge",
+    "[lurker] <amiantos> opened PR #1: thing <https://example.com>",
+    BRIDGE,
+    ["Discord", "libera"]
+  );
+  assert.equal(result.nick, "EyeBridge");
+  assert.equal(result.isWebhookAnnouncement, true);
+});
+
+test("tags match case-insensitively", () => {
+  const result = parseBridgedMessage("EyeBridge", "[DISCORD] <eve> yo", BRIDGE, ["discord"]);
+  assert.equal(result.nick, "eve");
+});
+
+test("without a bridge nick nothing is unwrapped", () => {
+  const result = parseBridgedMessage("EyeBridge", "[Discord] <eve> yo", null);
+  assert.deepEqual(result, { nick: "EyeBridge", message: "[Discord] <eve> yo", isWebhookAnnouncement: false });
+});

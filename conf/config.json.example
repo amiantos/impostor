@@ -12,18 +12,12 @@
         }
     },
     "irc": {
-        "host": "irc.libera.chat",
+        "host": "irc.lurker.chat",
         "port": 6697,
         "tls": true,
-        "nick": "IsaacGPT",
-        "username": "IsaacGPT",
-        "realname": "Isaac the Robot",
-        "password": "<NickServ password (optional, for SASL auth)>",
-        "sasl": true,
-        "channels": ["#amiantos"],
         "max_line_length": 340,
-        "watchword": "Isaac",
-        "pm_allowed_users": [],
+        "bridge_nick": "EyeBridge",
+        "bridge_tags": ["Discord", "libera", "mansion"],
         "typing_notifications": {
             "enabled": true,
             "refresh_seconds": 3
@@ -40,6 +34,31 @@
         "max_context_age_minutes": 30,
         "max_conversation_gap_minutes": 30
     },
+    "journal": {
+        "enabled": true,
+        "messages_per_pass": 40,
+        "quiet_minutes": 20,
+        "min_messages": 5,
+        "max_messages_per_pass": 200,
+        "journal_max_chars": 1500,
+        "note_max_chars": 600
+    },
+    "bots": [
+        {
+            "id": "isaac",
+            "nick": "Isaac",
+            "realname": "Isaac the Robot",
+            "persona": "conf/personas/isaac.md",
+            "account": {
+                "name": "Isaac",
+                "password": "<NickServ password for this bot's account>"
+            },
+            "channels": ["#lurker"],
+            "pm_allowed_users": [],
+            "generator": { "temperature": 0.9 },
+            "autonomous": { "cooldown_seconds": 45 }
+        }
+    ],
     "vision": {
         "enabled": false,
         "supported_formats": ["png", "jpg", "jpeg", "gif", "webp"],

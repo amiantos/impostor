@@ -2,12 +2,20 @@ const express = require("express");
 const path = require("path");
 const apiRoutes = require("./routes/api");
 
+/**
+ * One dashboard for every bot. Each API request names a bot with `?bot=<id>`
+ * (the first bot when omitted) and reads that bot's database.
+ */
 class WebServer {
-  constructor(logger, config, database, client) {
+  /**
+   * @param {Object} logger
+   * @param {Object} config - The shared config
+   * @param {Map<string, Object>} clients - Bot id -> ImpostorClient
+   */
+  constructor(logger, config, clients) {
     this.logger = logger;
     this.config = config;
-    this.db = database;
-    this.client = client;
+    this.clients = clients;
     this.app = express();
     this.server = null;
 
@@ -47,10 +55,18 @@ class WebServer {
     // Serve cached images
     this.app.use("/images", express.static(path.join(__dirname, "..", "data", "images")));
 
-    // Add database to request
-    this.app.use((req, res, next) => {
-      req.db = this.db;
+    // Resolve the bot a request is about, and hand its database to the route.
+    this.app.use("/api", (req, res, next) => {
       req.logger = this.logger;
+      req.clients = this.clients;
+      if (req.path === "/bots") return next();
+      const id = typeof req.query.bot === "string" ? req.query.bot : null;
+      const client = id ? this.clients.get(id) : this.clients.values().next().value;
+      if (!client) {
+        return res.status(404).json({ error: id ? `No bot "${id}"` : "No bots configured" });
+      }
+      req.client = client;
+      req.db = client.getDatabase();
       next();
     });
   }

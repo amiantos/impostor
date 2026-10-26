@@ -112,7 +112,7 @@ class VisionService {
     try {
       const response = await fetch(imageUrl, {
         headers: {
-          "User-Agent": "Mozilla/5.0 (compatible; IsaacBot/1.0)",
+          "User-Agent": "Mozilla/5.0 (compatible; ImpostorBot/1.0)",
         },
         signal: AbortSignal.timeout(15000),
       });

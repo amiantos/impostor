@@ -1,22 +1,30 @@
 // Parses an incoming IRC message to recognize traffic from the bridge bot
-// (typically nicked "EyeBridge"). Bridged Discord humans are unwrapped so the
-// rest of the system sees the real username. Webhook announcements (GitHub,
-// Discourse) come from the same bridge nick but lack the [Discord] prefix and
-// are flagged so callers can opt out of expensive per-URL processing.
+// (snitch, typically nicked "EyeBridge"). Bridged humans arrive as
+// "[Tag] <nick> text", where Tag names where they are chatting from
+// (Discord, libera, mansion, ...); they are unwrapped so the rest of the
+// system sees the real person. Webhook announcements (GitHub, Discourse)
+// come from the same bridge nick in the same shape, "[repo-name] <user>
+// opened ...", so only tags listed in `bridgeTags` count as humans; every
+// other line from the bridge nick is flagged as an announcement.
 //
 // The bridge-nick check guards against spoofing — a regular user typing
 // "[Discord] <admin> ..." should never have their nick rewritten.
 
-const BRIDGE_DISCORD_RE = /^\[Discord\] <([^>]+)> ([\s\S]*)$/;
+const ENVELOPE_RE = /^\[([^\]\s]+)\] <([^>]+)> ([\s\S]*)$/;
+const DEFAULT_TAGS = ["Discord"];
 
-function parseBridgedMessage(eventNick, eventMessage, bridgeNick) {
-  const fromBridge = eventNick.toLowerCase() === bridgeNick.toLowerCase();
-  const bridgeMatch = fromBridge ? eventMessage.match(BRIDGE_DISCORD_RE) : null;
+function parseBridgedMessage(eventNick, eventMessage, bridgeNick, bridgeTags = DEFAULT_TAGS) {
+  const fromBridge =
+    Boolean(bridgeNick) && eventNick.toLowerCase() === bridgeNick.toLowerCase();
+  const match = fromBridge ? eventMessage.match(ENVELOPE_RE) : null;
+  const tags = (bridgeTags && bridgeTags.length > 0 ? bridgeTags : DEFAULT_TAGS).map((t) =>
+    t.toLowerCase()
+  );
 
-  if (bridgeMatch) {
+  if (match && tags.includes(match[1].toLowerCase())) {
     return {
-      nick: bridgeMatch[1],
-      message: bridgeMatch[2],
+      nick: match[2],
+      message: match[3],
       isWebhookAnnouncement: false,
     };
   }
@@ -28,4 +36,4 @@ function parseBridgedMessage(eventNick, eventMessage, bridgeNick) {
   };
 }
 
-module.exports = { parseBridgedMessage };
+module.exports = { parseBridgedMessage, DEFAULT_TAGS };

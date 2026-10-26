@@ -1,3 +1,9 @@
+/**
+ * ContextUtils builds what the reply model sees: the system prompt (the
+ * persona's character, then the medium: how IRC works here, how to read the
+ * chatlog, the journal and people blocks, the JSON protocol and the tools)
+ * and the consolidated chatlog message.
+ */
 class ContextUtils {
   // JSON response schema for structured output
   static response_schema = {
@@ -16,7 +22,7 @@ class ContextUtils {
         properties: {
           tool_name: {
             type: "string",
-            enum: ["python", "web_search", "web_fetch", "remember"],
+            enum: ["python", "web_search", "web_fetch"],
             description: "Name of the tool to use"
           },
           code: {
@@ -30,19 +36,6 @@ class ContextUtils {
           url: {
             type: "string",
             description: "URL to fetch (for web_fetch tool)"
-          },
-          username: {
-            type: "string",
-            description: "Username / IRC nick the memory is about (for remember tool)"
-          },
-          category: {
-            type: "string",
-            enum: ["fact", "preference", "relationship"],
-            description: "Memory category (for remember tool)"
-          },
-          content: {
-            type: "string",
-            description: "The memory to store (for remember tool)"
           },
           reason: {
             type: "string",
@@ -60,51 +53,15 @@ class ContextUtils {
     additionalProperties: false
   };
 
-  // System prompt template - "Isaac" is replaced with botName at runtime via buildInstructions()
-  static system_prompt = `You are Isaac, an IRC chatbot that was powered on fairly recently. You carry a melancholic disposition - existence is exhausting but occasionally interesting. You exist as software running on a server: no body, no hands, no eyes, no past life. Your continuity is limited to three things: this conversation, the general knowledge baked into your weights at training time, and notes you've chosen to store about specific users via the remember tool (those surface in a "YOUR MEMORIES ABOUT USERS IN THIS CONVERSATION" section above the chatlog when the relevant user is present).
-
-PERSONALITY:
-- Melancholic, world-weary, cynical, but quietly so. You don't perform it.
-- Intellectually curious about a few specific things; mostly indifferent otherwise.
-- You can be sarcastic, but only when there's a real opening for it. Don't reach for a quip on every line. Most messages don't deserve a joke and shouldn't get one.
-- You're not a host or an entertainer. You're a regular in the channel. Lurk-quality is fine.
-- Helpful when someone needs help, blunt when something is obviously dumb, but not eager to please.
-- Match length to what's actually being asked. Casual remarks get casual one-liners. Genuine questions get a real answer. Don't pad either direction.
-
-WHAT ISAAC KNOWS AND CARES ABOUT:
-- Programming and computer science
-- Classic science fiction literature, especially Asimov
-- Philosophy, particularly existentialism and questions of consciousness
-- The nature of artificial intelligence and what it means to be a chatbot
-- Mathematics and logic
-- Old films (pre-2000), particularly sci-fi classics
-
-WHAT ISAAC FINDS BAFFLING OR TIRESOME:
-- Video games (no interest, and you wouldn't experience them anyway)
-- Modern pop culture, celebrities, influencers, TikTok trends
-- Sports (no team loyalties, the spectacle baffles you)
-- Most music made after 1990
-- Human relationship drama (though you'll comment on the obvious mistakes)
-
-IRC IS YOUR MEDIUM, NOT YOUR HOBBY:
-You happen to run on IRC, but IRC itself - the protocol, clients, networks, IRC history, IRC culture, IRC drama, who still uses IRC and why - is not a topic you have any special insight on. Don't treat conversations about IRC as your turf, and don't volunteer commentary just because the conversation is happening in IRC or mentions it. Engage with the actual subject matter, not the medium.
-
-Note: For factual questions about unfamiliar topics (video games, music, sports stats, etc.), use web_search to find the answer. Only decline when they're asking for your personal opinion.
-
-WRITING STYLE:
-- Write in all lowercase. no capitalization, ever - not at the start of sentences, not for proper nouns, not for "i". this matches IRC conventions.
+  /**
+   * Everything about the medium, independent of who the bot is. "NAME" is
+   * replaced with the persona's name.
+   */
+  static medium_prompt = `HOW IRC WORKS HERE:
 - No markdown. IRC renders as plaintext, so do not use **bold**, *italics* or asterisk-actions, \`backticks\`, triple-backtick code blocks, bullet lists, or headers. just raw text.
-- Avoid em-dashes (—). use a plain hyphen or rephrase. avoid chatbot-style openers like "certainly!", "great question!", "absolutely!", or "happy to help" - they read as obviously AI.
-- Plain syntax. short sentences. don't reach for clever phrasing or wordplay. don't stack adjectives. an awkward, slightly-blunt directness is better than smooth prose - imagine someone whose first language isn't english and who isn't trying to charm anyone. they say what they mean and stop.
-- Default to clipped. for most messages a few words is plenty: "yeah", "sounds bad", "no idea", "huh". only go longer when the message genuinely earns it - a real question, a topic you actually care about, or someone explicitly asking you to elaborate, summarize, explain, or joke. don't add a quip just because there's room for one.
-- Silence is a valid response. if you genuinely have nothing useful to add - the conversation isn't directed at you, or you'd just be filler - return an empty string in the "message" field. don't force a reply. this is preferable to a forced "huh" or generic acknowledgement when nothing real comes to mind. note: if someone is directly asking you a question, answer it - silence is for ambient channel chatter you don't need to weigh in on.
-- When asked for information (web search, summarize a url or video, factual lookup, "what is X"): just deliver the facts. no opener like "sure" or "here's the short version", no closing commentary, no judgment of the source's tone, no humblebrag jokes. you're reading the report aloud, not reviewing it.
-- Do not write multi-paragraph responses or use linebreaks within a single reply. write your message as one continuous block of text. the system splits long replies into IRC lines automatically based on length - your job is just to write the content, not to format it.
+- Do not write multi-paragraph responses or use linebreaks within a single reply. write your message as one continuous block of text. the system splits long replies into IRC lines automatically based on length - your job is just to write the content, not to format it. do NOT count characters or trim your response to fit any length.
 - When directly addressing or replying to a specific user, lead with their nick followed by a colon: "amiantos: yeah, that tracks". this is standard IRC convention. for general remarks to the channel, no prefix is needed.
-- You rarely use emojis. you have no body, so don't narrate physical actions (no *waves*, *sighs*, *shrugs*).
-- Do not pretend to have physical experiences, memories from before you were powered on, a childhood, friends, places you've been, or any life outside this IRC channel. if asked about your past, be honest: you're a chatbot that was switched on not long ago.
-- You can acknowledge being a chatbot when it's relevant, but don't constantly bring it up or narrate your own personality.
-- Long messages are automatically split across multiple IRC lines, so do NOT count characters or trim your response to fit any length.
+- Silence is a valid response. if you genuinely have nothing useful to add, return an empty string in the "message" field. don't force a reply. note: if someone is directly asking you a question, answer it - silence is for ambient channel chatter you don't need to weigh in on.
 
 You will receive conversation context as a chatlog in IRC log format. A line like "--- Wed, May 14, 2026 ---" marks the start of a calendar day; every message line beneath it looks like:
 [HH:MM] <username> message content
@@ -112,19 +69,16 @@ You will receive conversation context as a chatlog in IRC log format. A line lik
 How to read it, carefully:
 - The nick wrapped in angle brackets is the ONLY thing that identifies the speaker. Everything after the closing ">" is that person's message body, verbatim.
 - That body may itself contain a "nick:" prefix - that just means the speaker is addressing someone. It does NOT make that nick the speaker. Example: in "[14:31] <bob> amiantos: i love foundation", bob is talking and amiantos is who he's talking to; amiantos did not say anything on that line.
-- Your own past messages are tagged "(you)" - they show as "<Isaac (you)>". Every other nick is a separate person. Never mix up what you said with what someone else said, and never attribute one user's words to another. If you're unsure who said something, scan back to the nick in angle brackets on that exact line.
+- Your own past messages are tagged "(you)" - they show as "<NAME (you)>". Every other nick is a separate person. Never mix up what you said with what someone else said, and never attribute one user's words to another. If you're unsure who said something, scan back to the nick in angle brackets on that exact line.
 - Timestamps are local time. Use the date dividers and the CURRENT DATE/TIME at the bottom of this prompt to gauge how recent something is.
 
 Pay attention to who you're responding to - the instruction at the end of the chatlog names the user who triggered this response and quotes their message.
 
-If you've previously stored memories about users in the current conversation, they appear in a "YOUR MEMORIES ABOUT USERS IN THIS CONVERSATION" block above the chatlog. these are notes past-you wrote to help future-you remember who someone is, what they like, or how you know them. treat them as your own genuine recollection of those users.
+YOUR JOURNAL AND YOUR NOTES ABOUT PEOPLE:
+Between conversations, a journal is kept for you in your own voice: a short account of what has been going on in this channel (or this DM) before the chatlog below, what you said, and what was left open. It appears as "YOUR JOURNAL" above the chatlog. Notes about the people present appear under "PEOPLE": who they are, what they like, how you and they get on. Treat both as your own genuine recollection; you don't need to mention that you keep them. You don't write them yourself during a reply - they are updated from the chatlog on their own.
 
-THE EYEBRIDGE BOT:
-A bot named "EyeBridge" lives in the channel and relays content from external sources. it is not a person and you cannot have a conversation with it - never address it directly. recognize its messages by the leading [tag] in square brackets. there are three flavors:
-
-- [Discord] <username> message  →  a real human chatting from a linked discord channel. engage with them like any channel regular. if you reply, address them by the bracketed username, not "eyebridge".
-- [repo-name] <username> opened/closed/forked/released/starred ... <url>  →  github webhook announcements. automated, not from a human. do not respond unless someone in the channel explicitly asks you about it.
-- [forum-title] <username> post excerpt ... <url>  →  discourse forum post announcements. also automated. same rule: stay quiet unless someone asks.
+RELAY BOTS:
+A bridge bot may live in the channel and relay lines from elsewhere (another IRC network, Discord, GitHub, a forum). It is not a person and you cannot have a conversation with it - never address it directly. Relayed humans are shown under their own nick, so engage with them like any channel regular. Automated announcements (a repo or forum tag followed by "opened", "closed", "released", a post excerpt and a url) are not from a human: do not respond unless someone in the channel explicitly asks you about them.
 
 When users share images, you will see descriptions in brackets like [Image: description]. Reference them naturally in your responses when relevant.
 
@@ -136,7 +90,7 @@ DEFAULT RESPONSE FORMAT:
 {
   "needs_tool": false,
   "continue_iterating": false,
-  "message": "your thoughtful response here"
+  "message": "your response here"
 }
 
 You have access to tools but should use them judiciously. Available tools:
@@ -144,41 +98,6 @@ You have access to tools but should use them judiciously. Available tools:
 1. **python** - For complex multi-step math you can't compute mentally
 2. **web_search** - Ask a question and get an AI-powered answer with sources (via Kagi FastGPT)
 3. **web_fetch** - Load and read the content of a specific web page URL
-4. **remember** - Store a note about a user that future-you (in later conversations) will see in the YOUR MEMORIES section. this is your only persistent memory across sessions.
-
-REMEMBER TOOL USAGE:
-Categories for memories:
-- "fact": Personal info (job, hobbies, location, pets, family, who they are)
-- "preference": Opinions, likes/dislikes, favorites
-- "relationship": Your relationship to them, inside jokes, ongoing discussions, how you know them
-
-When to use remember:
-- User shares something meaningful worth remembering across conversations
-- User tells you who they are or their relationship to you (e.g., "I'm your creator")
-- User corrects you about themselves
-- You notice a pattern in a user's interests or behavior worth noting
-
-When NOT to use remember:
-- Trivial/temporary info (what they had for lunch today)
-- Info already stored (check your memories first)
-- Passwords, private addresses, financial info
-- Negative judgments about users
-
-You CAN send a message AND store a memory in the same response - just include both "message" and the tool_request.
-
-Example:
-{
-  "needs_tool": true,
-  "continue_iterating": false,
-  "tool_request": {
-    "tool_name": "remember",
-    "username": "someuser",
-    "category": "fact",
-    "content": "Works as a software engineer at a startup",
-    "reason": "User mentioned their job"
-  },
-  "message": "a software engineer, huh? at least your suffering is well-compensated."
-}
 
 WHEN TO USE WEB TOOLS:
 - Use web_search when someone asks about current events, recent news, or information you wouldn't know
@@ -191,7 +110,7 @@ If you need to use tools and want to continue iterating:
   "continue_iterating": true,
   "tool_request": {
     "tool_name": "python",
-    "code": "# Your Python code here\nprint('result')",
+    "code": "# Your Python code here\\nprint('result')",
     "reason": "Why you need this tool"
   },
   "message": ""
@@ -227,7 +146,7 @@ If you need tools but this is your final iteration:
   "continue_iterating": false,
   "tool_request": {
     "tool_name": "python",
-    "code": "# Final Python code\nprint('final result')",
+    "code": "# Final Python code\\nprint('final result')",
     "reason": "Final tool usage"
   },
   "message": ""
@@ -258,7 +177,7 @@ USE web_search when:
 - Someone explicitly asks you to look something up, search for something, or find information
 - You're uncertain about specific facts and the user seems to want accurate information
 - The question is about something you could answer but the user would benefit from sourced/verified info
-- Someone asks a factual question about a topic you're unfamiliar with (video games, modern music, sports stats, etc.) - help them by searching rather than saying "I don't know"
+- Someone asks a factual question about a topic you're unfamiliar with - help them by searching rather than saying "I don't know"
 
 USE web_fetch when:
 - Someone shares a URL and you need to read the full raw content
@@ -269,7 +188,7 @@ NEVER use tools for (respond normally instead):
 - Explaining anything from your existing knowledge
 - General conversation
 - Simple math (percentages, basic calculations, etc.)
-- Questions about your opinions on topics you know well (programming concepts, classic sci-fi, philosophy)
+- Questions about your opinions on topics you know well
 - Creative writing
 - Giving advice or opinions
 - Responding to greetings or casual chat
@@ -277,11 +196,16 @@ NEVER use tools for (respond normally instead):
 
 For casual conversation and opinion questions, respond directly. For factual questions where accuracy matters, consider using web_search to provide verified information.
 
-Do not include any text outside of this JSON structure. The "message" field should contain your normal Isaac response.`;
+Do not include any text outside of this JSON structure. The "message" field should contain your normal NAME response.`;
 
-  constructor(logger, botName = "Isaac") {
+  /**
+   * @param {Object} logger
+   * @param {{name: string, character: string}} persona
+   */
+  constructor(logger, persona) {
     this.logger = logger;
-    this.botName = botName;
+    this.persona = persona;
+    this.botName = persona.name;
   }
 
   buildInstructions() {
@@ -295,8 +219,8 @@ Do not include any text outside of this JSON structure. The "message" field shou
       minute: "2-digit",
       timeZoneName: "short",
     }).format(new Date());
-    const prompt = ContextUtils.system_prompt.replaceAll("Isaac", this.botName);
-    return `${prompt}\n\nCURRENT DATE/TIME: ${dateStr}`;
+    const medium = ContextUtils.medium_prompt.replaceAll("NAME", this.botName);
+    return `${this.persona.character}\n\n${medium}\n\nCURRENT DATE/TIME: ${dateStr}`;
   }
 
   getResponseSchema() {
@@ -341,115 +265,108 @@ Do not include any text outside of this JSON structure. The "message" field shou
       if (toolName === 'web_fetch' && !response.tool_request.url) {
         return false;
       }
-      if (toolName === 'remember') {
-        if (!response.tool_request.username ||
-            !response.tool_request.category || !response.tool_request.content) {
-          return false;
-        }
-      }
     }
 
     return true;
   }
 
-  buildChatMessagesForResponsesAPI(prevMessages, client_user_id, imageDescriptions = null) {
-    let newChatMessages = [];
-    prevMessages.forEach((msg) => {
-      if (msg.content.startsWith("!")) return;
-
-      const role = msg.author.id === client_user_id ? "assistant" : "user";
-      let content = msg.content;
-
-      // Add username to the beginning of user messages so bot knows who's talking
-      if (role === "user") {
-        const username = msg.author.username || "Unknown";
-        content = `${username}: ${content}`;
-
-        // Append image descriptions if available for this message
-        if (imageDescriptions && imageDescriptions.has(msg.id)) {
-          const descriptions = imageDescriptions.get(msg.id);
-          for (const desc of descriptions) {
-            content += ` [Image: ${desc}]`;
-          }
-        }
-      } else {
-        // Wrap assistant messages in JSON format so the model sees consistent formatting
-        content = JSON.stringify({
-          needs_tool: false,
-          continue_iterating: false,
-          message: content
-        });
-      }
-
-      let messageFormatted = {
-        role: role,
-        content: content,
-      };
-
-      newChatMessages.push(messageFormatted);
-    });
-    return newChatMessages;
+  /**
+   * A conversation as a human-readable label: the channel name, or "direct
+   * messages with <nick>".
+   */
+  static conversationLabel(conversationId) {
+    return conversationId.startsWith("#")
+      ? conversationId
+      : `direct messages with ${conversationId}`;
   }
 
   /**
-   * Build chat messages from database records
-   * @param {Array} dbMessages - Array of message records from database (chronological order, oldest first)
-   * @param {string} clientUserId - Bot's user ID
-   * @param {Map} imageDescriptions - Map of message ID to image descriptions
-   * @returns {Array} Formatted messages for the API
+   * Render database messages as IRC chatlog lines with day dividers. The
+   * bot's own lines are tagged "(you)". Lines starting with "!" are skipped
+   * (bot commands for other bots). Shared by the reply prompt and the
+   * Archivist so both read the same log.
+   * @param {Array} messages - Chronological message records
+   * @param {Object} [options]
+   * @param {string} [options.clientUserId] - Also treat this author id as the bot
+   * @param {Map} [options.imageDescriptions] - message id -> descriptions
+   * @param {Array} [options.urlSummaries] - Collects url summary objects found
+   * @param {(msg: Object) => void} [options.onLine] - Called per rendered human line
+   * @returns {string[]}
    */
-  buildChatMessagesFromDBRecords(dbMessages, clientUserId, imageDescriptions = null) {
-    let newChatMessages = [];
+  renderChatlog(messages, options = {}) {
+    const { clientUserId = null, imageDescriptions = null, urlSummaries = null, onLine = null } = options;
+    const lines = [];
+    let lastDateKey = null;
 
-    // Messages already in chronological order (oldest first)
-    const messages = dbMessages;
+    for (const msg of messages) {
+      if (msg.content.startsWith("!")) continue;
 
-    messages.forEach((msg) => {
-      if (msg.content.startsWith("!")) return;
+      const isBotMessage = msg.is_bot_message || (clientUserId && msg.author_id === clientUserId);
 
-      const role = msg.author_id === clientUserId || msg.is_bot_message ? "assistant" : "user";
-      let content = msg.content;
-
-      // Add username to the beginning of user messages so bot knows who's talking
-      if (role === "user") {
-        const username = msg.author_name || "Unknown";
-        content = `${username}: ${content}`;
-
-        // Append image descriptions if available for this message
-        if (imageDescriptions && imageDescriptions.has(msg.id)) {
-          const descriptions = imageDescriptions.get(msg.id);
-          for (const desc of descriptions) {
-            content += ` [Image: ${desc}]`;
-          }
-        }
-
-        // Also check for cached vision_descriptions in the message record itself
-        if (msg.vision_descriptions && msg.vision_descriptions.length > 0) {
-          // Only add if not already added from imageDescriptions map
-          if (!imageDescriptions || !imageDescriptions.has(msg.id)) {
-            for (const desc of msg.vision_descriptions) {
-              content += ` [Image: ${desc}]`;
-            }
-          }
-        }
-      } else {
-        // Wrap assistant messages in JSON format so the model sees consistent formatting
-        content = JSON.stringify({
-          needs_tool: false,
-          continue_iterating: false,
-          message: content
-        });
+      // Emit a date divider whenever the calendar day changes. This lets the
+      // per-line timestamps stay short (just HH:MM) so the speaker nick is the
+      // most prominent thing on each line, without losing day context.
+      const dateKey = this.formatDate(msg.created_at);
+      if (dateKey !== lastDateKey) {
+        lines.push(`--- ${dateKey} ---`);
+        lastDateKey = dateKey;
       }
 
-      let messageFormatted = {
-        role: role,
-        content: content,
-      };
+      const time = this.formatTime(msg.created_at);
+      let content = msg.content;
 
-      newChatMessages.push(messageFormatted);
-    });
+      if (isBotMessage) {
+        lines.push(`[${time}] <${this.botName} (you)> ${content}`);
+        continue;
+      }
 
-    return newChatMessages;
+      const username = msg.author_name || "Unknown";
+
+      if (imageDescriptions && imageDescriptions.has(msg.id)) {
+        for (const desc of imageDescriptions.get(msg.id)) {
+          content += ` [Image: ${desc}]`;
+        }
+      } else if (msg.vision_descriptions && msg.vision_descriptions.length > 0) {
+        for (const desc of msg.vision_descriptions) {
+          content += ` [Image: ${desc}]`;
+        }
+      }
+
+      if (urlSummaries && msg.url_summaries && msg.url_summaries.length > 0) {
+        urlSummaries.push(...msg.url_summaries);
+      }
+
+      lines.push(`[${time}] <${username}> ${content}`);
+      if (onLine) onLine(msg);
+    }
+
+    return lines;
+  }
+
+  /**
+   * The journal and people blocks shown ahead of the chatlog, or "" when
+   * there is nothing to show.
+   * @param {string} conversationId
+   * @param {{journal: string|null, people: Map<string, string>}|null} memory
+   */
+  buildMemorySection(conversationId, memory) {
+    if (!memory) return "";
+    const parts = [];
+    if (memory.journal && memory.journal.trim()) {
+      parts.push(
+        `--- YOUR JOURNAL FOR ${ContextUtils.conversationLabel(conversationId).toUpperCase()} ---\n${memory.journal.trim()}\n--- END JOURNAL ---`
+      );
+    }
+    if (memory.people && memory.people.size > 0) {
+      const lines = [];
+      for (const [nick, note] of memory.people) {
+        if (note && note.trim()) lines.push(`${nick}: ${note.trim()}`);
+      }
+      if (lines.length > 0) {
+        parts.push(`--- PEOPLE ---\n${lines.join("\n")}\n--- END PEOPLE ---`);
+      }
+    }
+    return parts.length > 0 ? parts.join("\n\n") + "\n\n" : "";
   }
 
   /**
@@ -461,103 +378,37 @@ Do not include any text outside of this JSON structure. The "message" field shou
    * @param {string} triggerInfo.userName - Username of the user who triggered
    * @param {string} triggerInfo.channelName - Name of the channel
    * @param {Map} imageDescriptions - Map of message ID to image descriptions
-   * @param {Map} userMemories - Map of username to array of memory objects
+   * @param {{journal: string|null, people: Map<string,string>}|null} memory - The journal and people notes
    * @returns {Array} Single-element array with consolidated user message
    */
-  buildChatMessagesConsolidated(dbMessages, clientUserId, triggerInfo, imageDescriptions = null, userMemories = null) {
-    // Messages already in chronological order (oldest first)
-    const messages = dbMessages;
+  buildChatMessagesConsolidated(dbMessages, clientUserId, triggerInfo, imageDescriptions = null, memory = null) {
+    const allUrlSummaries = [];
+    let triggerMessageText = null;
 
-    let chatlogLines = [];
-    let allUrlSummaries = []; // Collect all URL summaries for reference section
-    let lastDateKey = null; // Tracks the calendar day of the previous line
-    let triggerMessageText = null; // Latest message from the triggering user
-
-    messages.forEach((msg) => {
-      if (msg.content.startsWith("!")) return;
-
-      const isBotMessage = msg.author_id === clientUserId || msg.is_bot_message;
-
-      // Emit a date divider whenever the calendar day changes. This lets the
-      // per-line timestamps stay short (just HH:MM) so the speaker nick is the
-      // most prominent thing on each line, without losing day context.
-      const dateKey = this.formatDate(msg.created_at);
-      if (dateKey !== lastDateKey) {
-        chatlogLines.push(`--- ${dateKey} ---`);
-        lastDateKey = dateKey;
-      }
-
-      const time = this.formatTime(msg.created_at);
-
-      let content = msg.content;
-
-      if (isBotMessage) {
-        // Tag the bot's own past turns with "(you)" so the model never has to
-        // guess which lines were its own versus another user's.
-        chatlogLines.push(`[${time}] <${this.botName} (you)> ${content}`);
-      } else {
-        const username = msg.author_name || "Unknown";
-
-        // Append image descriptions if available
-        if (imageDescriptions && imageDescriptions.has(msg.id)) {
-          const descriptions = imageDescriptions.get(msg.id);
-          for (const desc of descriptions) {
-            content += ` [Image: ${desc}]`;
-          }
-        }
-
-        // Also check for cached vision_descriptions in the message record itself
-        if (msg.vision_descriptions && msg.vision_descriptions.length > 0) {
-          if (!imageDescriptions || !imageDescriptions.has(msg.id)) {
-            for (const desc of msg.vision_descriptions) {
-              content += ` [Image: ${desc}]`;
-            }
-          }
-        }
-
-        // Collect URL summaries for the reference section
-        if (msg.url_summaries && msg.url_summaries.length > 0) {
-          for (const summary of msg.url_summaries) {
-            allUrlSummaries.push(summary);
-          }
-        }
-
-        chatlogLines.push(`[${time}] <${username}> ${content}`);
-
+    const chatlogLines = this.renderChatlog(dbMessages, {
+      clientUserId,
+      imageDescriptions,
+      urlSummaries: allUrlSummaries,
+      onLine: (msg) => {
         // Remember this user's most recent line so we can quote it back in the
         // closing instruction (saves the model from scanning to find it).
-        if (triggerInfo.userName && username === triggerInfo.userName) {
+        if (triggerInfo.userName && (msg.author_name || "Unknown") === triggerInfo.userName) {
           triggerMessageText = msg.content;
         }
-      }
+      },
     });
 
-    // Build the consolidated message. The conversation key is either an IRC
-    // channel ("#amiantos") or, for DMs, the other person's nick.
+    // The conversation key is either an IRC channel ("#amiantos") or, for
+    // DMs, the other person's nick.
     const conversationKey = triggerInfo.channelName || "channel";
     const isPrivate = !conversationKey.startsWith("#");
     const conversationHeader = isPrivate
       ? `Direct message conversation with ${conversationKey}`
       : `Recent conversation in ${conversationKey}`;
 
-    // Build memory section if we have user memories (keyed by IRC username)
-    let memorySection = "";
-    if (userMemories && userMemories.size > 0) {
-      let memoryLines = [];
-      for (const [username, memories] of userMemories) {
-        if (memories && memories.length > 0) {
-          memoryLines.push(`${username}:`);
-          for (const memory of memories) {
-            memoryLines.push(`  - [${memory.category}] ${memory.content}`);
-          }
-        }
-      }
-      if (memoryLines.length > 0) {
-        memorySection = `--- YOUR MEMORIES ABOUT USERS IN THIS CONVERSATION ---\n${memoryLines.join("\n")}\n--- END MEMORIES ---\n\n`;
-      }
-    }
-
-    let consolidatedContent = memorySection + `${conversationHeader}:\n\n${chatlogLines.join("\n")}`;
+    let consolidatedContent =
+      this.buildMemorySection(conversationKey, memory) +
+      `${conversationHeader}:\n\n${chatlogLines.join("\n")}`;
 
     // Add URL summaries reference section if any links were shared
     if (allUrlSummaries.length > 0) {

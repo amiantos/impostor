@@ -1,23 +1,38 @@
 const IRC = require("irc-framework");
+const path = require("path");
 const { createIrcMessage } = require("./irc_message");
 const { splitMessage } = require("./message_splitter");
 const { parseBridgedMessage } = require("./bridge_parser");
 const ContextUtils = require("./context_utils");
-const PythonTool = require("./python_tool");
-const WebSearchTool = require("./web_search_tool");
-const WebFetchTool = require("./web_fetch_tool");
-const MemoryTool = require("./memory_tool");
 const DatabaseManager = require("./database");
 const MessageTracker = require("./message_tracker");
 const ResponseEvaluator = require("./response_evaluator");
 const VisionService = require("./vision_service");
 const UrlSummarizeService = require("./url_summarize_service");
-const { OpenAI } = require("openai");
+const { Archivist } = require("./archivist");
 
+/**
+ * One bot: its IRC connection, database, evaluator, reply pipeline and
+ * Archivist. Several run side by side in one process, sharing the model
+ * client and the tools (see index.js).
+ */
 class ImpostorClient {
-  constructor(logger, config) {
-    this.watchword = config.irc.watchword || config.irc.nick;
-    this.contextUtils = new ContextUtils(logger, this.watchword);
+  /**
+   * @param {Object} logger - A logger tagged with this bot's id
+   * @param {Object} config - This bot's resolved config (see bot_config.js)
+   * @param {Object} deps
+   * @param {Object} deps.openai - Shared chat completions client
+   * @param {{name: string, character: string, evaluator: string}} deps.persona
+   * @param {{pythonTool: Object, webSearchTool: Object, webFetchTool: Object}} deps.tools
+   * @param {string} deps.dataDir - Root data directory; this bot's files go under its id
+   */
+  constructor(logger, config, { openai, persona, tools, dataDir }) {
+    this.persona = persona;
+    this.id = config.bot?.id || config.irc.nick.toLowerCase();
+    // What people call the bot in chat. The persona's name unless the config
+    // says otherwise; mentioning it or the nick is always an address.
+    this.watchword = config.irc.watchword || persona.name;
+    this.contextUtils = new ContextUtils(logger, persona);
     this.config = config;
     this.logger = logger;
 
@@ -25,10 +40,7 @@ class ImpostorClient {
     this.ircClient = new IRC.Client();
     this.botNick = config.irc.nick;
 
-    this.openai = new OpenAI({
-      apiKey: config.generator.deepseek.api_key,
-      baseURL: config.generator.deepseek.base_url,
-    });
+    this.openai = openai;
 
     // Message queue system
     this.messageQueue = [];
@@ -44,17 +56,16 @@ class ImpostorClient {
     // the in-flight one once the latter finished.
     this.generatingChannels = new Set();
 
-    // Initialize tools
-    this.pythonTool = new PythonTool(logger);
-    this.webSearchTool = new WebSearchTool(logger, config);
-    this.webFetchTool = new WebFetchTool(logger);
+    // Tools are shared between bots; none of them keeps per-bot state.
+    this.pythonTool = tools.pythonTool;
+    this.webSearchTool = tools.webSearchTool;
+    this.webFetchTool = tools.webFetchTool;
 
-    // Initialize database
-    this.db = new DatabaseManager(logger);
+    // Each bot has its own database: its own copy of the channel log, its own
+    // decisions, its own journal.
+    this.dbPath = path.join(dataDir, this.id, "impostor.db");
+    this.db = new DatabaseManager(logger, this.dbPath);
     this.db.initialize();
-
-    // Initialize memory tool (needs database)
-    this.memoryTool = new MemoryTool(logger, this.db);
 
     // Initialize vision service with database for caching
     this.visionService = new VisionService(logger, config, this.db);
@@ -64,7 +75,10 @@ class ImpostorClient {
 
     // Initialize message tracker with vision and URL summarize services
     this.messageTracker = new MessageTracker(logger, this.db, config, this.visionService, this.urlSummarizeService);
-    this.evaluator = new ResponseEvaluator(logger, config, this.db, this.visionService, this.watchword, this.openai);
+    this.evaluator = new ResponseEvaluator(logger, config, this.db, this.visionService, persona, this.openai);
+
+    // The journal and people notes, updated from the chatlog in the background.
+    this.archivist = new Archivist(logger, config, this.db, this.openai, this.contextUtils);
 
     // Set up periodic maintenance
     this.maintenanceInterval = setInterval(() => {
@@ -91,6 +105,7 @@ class ImpostorClient {
     this.ircClient.on("registered", () => {
       this.reconnectDelay = 1000;
       this.logger.info(`Connected to IRC as ${this.botNick}!`);
+      this.markAsBot();
       // Join configured channels
       for (const channel of config.irc.channels) {
         this.ircClient.join(channel);
@@ -166,13 +181,30 @@ class ImpostorClient {
     // SASL authentication
     if (ircConfig.sasl && ircConfig.password) {
       connectOptions.account = {
-        account: ircConfig.nick,
+        account: ircConfig.account || ircConfig.nick,
         password: ircConfig.password,
       };
     }
 
     this.connectOptions = connectOptions;
     this.ircClient.connect(connectOptions);
+  }
+
+  /**
+   * Set the bot user mode on servers that advertise one (the BOT ISUPPORT
+   * token names the mode letter, "B" on Ergo). Marks the bot in WHOIS and
+   * tags its lines for other clients; servers without it are left alone.
+   */
+  markAsBot() {
+    let letter;
+    try {
+      letter = this.ircClient.network?.supports("BOT");
+    } catch (err) {
+      return;
+    }
+    if (typeof letter !== "string" || letter.length !== 1) return;
+    this.logger.info(`Server supports bot mode (+${letter}); setting it`);
+    this.ircClient.mode(this.botNick, `+${letter}`);
   }
 
   _scheduleReconnect() {
@@ -233,9 +265,9 @@ class ImpostorClient {
 
     if (!isPrivate && !this.isAllowedChannel(event.target)) return;
 
-    const bridgeNick = this.config.discord?.bridge_nick || "EyeBridge";
+    const bridgeNick = this.config.irc.bridge_nick ?? "EyeBridge";
     const { nick, message: messageText, isWebhookAnnouncement } =
-      parseBridgedMessage(event.nick, event.message, bridgeNick);
+      parseBridgedMessage(event.nick, event.message, bridgeNick, this.config.irc.bridge_tags);
 
     const message = createIrcMessage(nick, conversationId, messageText, {
       ident: event.ident,
@@ -250,6 +282,7 @@ class ImpostorClient {
       processVision: true,
       processUrls: !isWebhookAnnouncement,
     });
+    this.archivist.noteActivity(conversationId);
 
     // DMs: every message is a direct address. Only respond if the sender is
     // on the PM allowlist; otherwise stop here (still stored above).
@@ -395,13 +428,13 @@ class ImpostorClient {
     const inCooldown =
       address === "reply" && this.autonomousCooldown(recentMessages).blocked;
 
-    // Ask AI if we should respond (pass ratio for context)
+    // Ask AI if we should respond (pass ratio and the journal for context)
     const decision = await this.evaluator.shouldRespond(
       evaluationMessages,
       botUserId,
       channelName,
       botRatio,
-      { restraint: inCooldown }
+      { restraint: inCooldown, journal: this.db.getJournalText(channelName) }
     );
 
     if (decision.action === "respond") {
@@ -741,18 +774,19 @@ class ImpostorClient {
     const imageDescriptions = this.visionService.buildImageDescriptionsFromDB(dbMessages);
     const urlSummaries = this.urlSummarizeService.buildUrlSummariesFromDB(dbMessages);
 
+    // The journal for this conversation and the notes for whoever is in the window.
     const usernames = [...new Set(
       dbMessages
         .filter(msg => !msg.is_bot_message && msg.author_name)
         .map(msg => msg.author_name)
     )];
-    const userMemories = this.db.getMemoriesForUsers(usernames, 10);
+    const memory = this.archivist.memoryFor(channelId, usernames);
 
     return {
       dbMessages,
       imageDescriptions,
       urlSummaries,
-      userMemories
+      memory
     };
   }
 
@@ -767,7 +801,7 @@ class ImpostorClient {
       .replace(/[^\w\s]/gi, "");
     const character_name = this.watchword;
 
-    const { dbMessages, imageDescriptions, userMemories } = this.buildContextFromDatabase(channelName, {
+    const { dbMessages, imageDescriptions, memory } = this.buildContextFromDatabase(channelName, {
       fetchLimit: 50,
       contextBefore: 10
     });
@@ -787,8 +821,7 @@ class ImpostorClient {
         characterName: character_name,
         botUserId: this.botNick.toLowerCase(),
         imageDescriptions,
-        userMemories,
-        useDbContext: true,
+        memory,
         triggerInfo,
       }));
       this.stopTyping(channelName, null); // PRIVMSG below implicitly clears it
@@ -824,6 +857,7 @@ class ImpostorClient {
     if (response) {
       await this.sendIrcMessage(channelName, response);
       await this.messageTracker.addMessage(botMessage, { isBotMessage: true, processVision: false });
+      this.archivist.noteActivity(channelName);
     } else {
       this.logger.info(`Bot chose silence for direct mention in ${channelName}`);
     }
@@ -898,7 +932,7 @@ class ImpostorClient {
    * @param {number|null} decisionId - Optional decision ID that triggered this response
    */
   async processAutonomousMessage(channelName, decisionId = null) {
-    const { dbMessages, imageDescriptions, userMemories } = this.buildContextFromDatabase(channelName, {
+    const { dbMessages, imageDescriptions, memory } = this.buildContextFromDatabase(channelName, {
       fetchLimit: 50,
       contextBefore: 5
     });
@@ -918,8 +952,7 @@ class ImpostorClient {
         characterName: this.watchword,
         botUserId: this.botNick.toLowerCase(),
         imageDescriptions,
-        userMemories,
-        useDbContext: true,
+        memory,
         triggerInfo,
       }));
       this.stopTyping(channelName, null); // PRIVMSG below implicitly clears it
@@ -958,6 +991,7 @@ class ImpostorClient {
     if (response) {
       await this.sendIrcMessage(channelName, response);
       await this.messageTracker.addMessage(botMessage, { isBotMessage: true, processVision: false });
+      this.archivist.noteActivity(channelName);
     } else {
       this.logger.info(`Bot chose silence for autonomous trigger in ${channelName}`);
     }
@@ -990,6 +1024,7 @@ class ImpostorClient {
     }
 
     await this.messageTracker.addMessage(botMessage, { isBotMessage: true, processVision: false });
+    this.archivist.noteActivity(channelName);
     this.messageTracker.markResponded(channelName);
     this.cancelEvaluationTimer(channelName);
   }
@@ -1002,7 +1037,7 @@ class ImpostorClient {
   async sendIrcMessage(channel, text) {
     const maxLen = this.config.irc.max_line_length || 350;
 
-    // Isaac is told to address users by leading with "nick: " (IRC channel
+    // The bot is told to address users by leading with "nick: " (IRC channel
     // convention). In a 1:1 DM that prefix is just noise, since the only
     // other party in the conversation IS the recipient. Strip it post-hoc
     // rather than complicating the system prompt with another conditional.
@@ -1024,37 +1059,27 @@ class ImpostorClient {
   }
 
   async generateResponseWithChatCompletions({
-    messages = null,
     dbMessages = null,
     userName,
     characterName,
     botUserId,
     imageDescriptions = null,
-    userMemories = null,
-    useDbContext = false,
+    memory = null,
     triggerInfo = null,
   }) {
     const systemPrompt = this.contextUtils.buildInstructions();
     this.logger.debug("Generated System Prompt...", systemPrompt);
 
-    let inputMessages;
-    if (useDbContext && dbMessages && triggerInfo) {
-      inputMessages = this.contextUtils.buildChatMessagesConsolidated(
-        dbMessages,
-        botUserId,
-        triggerInfo,
-        imageDescriptions,
-        userMemories
-      );
-    } else if (useDbContext && dbMessages) {
-      inputMessages = this.contextUtils.buildChatMessagesFromDBRecords(
-        dbMessages,
-        botUserId,
-        imageDescriptions
-      );
-    } else {
-      throw new Error("dbMessages must be provided");
+    if (!dbMessages || !triggerInfo) {
+      throw new Error("dbMessages and triggerInfo must be provided");
     }
+    const inputMessages = this.contextUtils.buildChatMessagesConsolidated(
+      dbMessages,
+      botUserId,
+      triggerInfo,
+      imageDescriptions,
+      memory
+    );
 
     let conversationLog = [
       {
@@ -1284,14 +1309,6 @@ Reply with valid JSON in the format described above.`,
       case "web_fetch":
         result = await this.webFetchTool.fetchPage(toolRequest.url);
         break;
-      case "remember":
-        result = await this.memoryTool.remember({
-          username: toolRequest.username,
-          category: toolRequest.category,
-          content: toolRequest.content,
-          source_message_id: toolRequest.source_message_id || null,
-        });
-        break;
       default:
         return {
           success: false,
@@ -1312,11 +1329,23 @@ Reply with valid JSON in the format described above.`,
     return this.db;
   }
 
+  /** What the dashboard shows for this bot. */
+  describe() {
+    return {
+      id: this.id,
+      nick: this.botNick,
+      name: this.persona.name,
+      channels: this.config.irc.channels,
+      connected: Boolean(this.ircClient?.connected),
+    };
+  }
+
   /**
    * Cleanup resources on shutdown
    */
   shutdown() {
     this.shuttingDown = true;
+    this.archivist.shutdown();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;

@@ -25,35 +25,60 @@ class DatabaseManager {
   }
 
   runMigrations() {
-    // One-time drop: the legacy schema keyed memories by IRC hostmask
-    // (nick!ident@hostname) and kept a separate users table. We've moved to
-    // username-only keying so hostnames don't leak into prompts or logs. If
-    // we still see the old shape, drop it. The user confirmed there were no
-    // stored memories at the time of the migration, so this is non-destructive.
-    const memoryColumns = this.db.pragma("table_info(user_memories)");
-    const hasLegacyUserIdColumn = memoryColumns.some((c) => c.name === "user_id");
-    if (hasLegacyUserIdColumn) {
-      this.db.exec(`DROP TABLE IF EXISTS user_memories`);
-      this.db.exec(`DROP TABLE IF EXISTS users`);
-    }
+    // The remember tool and its per-nick fact rows are gone; the Archivist
+    // keeps a journal per conversation and a note per person instead. Both
+    // legacy shapes (hostmask-keyed with a users table, then nick-keyed) are
+    // dropped the first time a database from before the journal starts.
+    this.db.exec(`DROP TABLE IF EXISTS user_memories`);
+    this.db.exec(`DROP TABLE IF EXISTS users`);
 
-    // Memories are keyed by IRC username. No separate users table — username
-    // uniqueness within a libera.chat channel is good enough for this bot.
+    // One journal per conversation (channel or DM partner), rewritten whole by
+    // each Archivist pass. watermark_rowid is the messages rowid the pass last
+    // read up to, so a restart or a backlog picks up exactly where it left off.
     this.db.exec(`
-      CREATE TABLE IF NOT EXISTS user_memories (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT NOT NULL,
-        category TEXT NOT NULL,
-        content TEXT NOT NULL,
-        created_at DATETIME NOT NULL,
-        updated_at DATETIME NOT NULL,
-        is_active BOOLEAN DEFAULT TRUE,
-        source_message_id TEXT
+      CREATE TABLE IF NOT EXISTS journals (
+        conversation_id TEXT PRIMARY KEY,
+        content TEXT NOT NULL DEFAULT '',
+        watermark_rowid INTEGER NOT NULL DEFAULT 0,
+        updated_at DATETIME NOT NULL
       )
     `);
-
     this.db.exec(`
-      CREATE INDEX IF NOT EXISTS idx_memories_username ON user_memories(username, is_active)
+      CREATE TABLE IF NOT EXISTS journal_versions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_id TEXT NOT NULL,
+        content TEXT NOT NULL,
+        source TEXT NOT NULL,
+        rationale TEXT,
+        created_at DATETIME NOT NULL
+      )
+    `);
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_journal_versions_conversation ON journal_versions(conversation_id, id)
+    `);
+
+    // One note per nick (lowercased for the key, display nick kept), shared
+    // across the bot's conversations.
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS people (
+        nick_key TEXT PRIMARY KEY,
+        nick TEXT NOT NULL,
+        content TEXT NOT NULL,
+        updated_at DATETIME NOT NULL
+      )
+    `);
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS people_versions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nick_key TEXT NOT NULL,
+        content TEXT NOT NULL,
+        source TEXT NOT NULL,
+        rationale TEXT,
+        created_at DATETIME NOT NULL
+      )
+    `);
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_people_versions_nick ON people_versions(nick_key, id)
     `);
 
     // Migration: Add enhanced message columns
@@ -908,184 +933,172 @@ class DatabaseManager {
     };
   }
 
-  // Memory operations — keyed by IRC username (nick).
+  // ==================== Journal and people (the Archivist) ====================
 
   /**
-   * Insert a new memory for a username.
-   * @param {Object} params
-   * @param {string} params.username - IRC nick the memory is about
-   * @param {string} params.category - Memory category
-   * @param {string} params.content - Memory body
-   * @param {string} [params.sourceMessageId]
-   * @returns {number} Inserted memory ID
+   * Messages in a conversation after a rowid watermark, oldest first, with
+   * their rowid. rowid is insertion order, which is arrival order, so it is a
+   * safer watermark than created_at (two messages can share a millisecond).
+   * @param {string} conversationId
+   * @param {number} afterRowid
+   * @param {number} limit
+   * @returns {Array}
    */
-  insertMemory({ username, category, content, sourceMessageId = null }) {
+  getMessagesAfterRowid(conversationId, afterRowid, limit = 200) {
+    const stmt = this.db.prepare(`
+      SELECT rowid AS rowid, * FROM messages
+      WHERE channel_id = ? AND rowid > ?
+      ORDER BY rowid ASC
+      LIMIT ?
+    `);
+    return stmt.all(conversationId, afterRowid, limit).map((msg) => this._parseMessageRecord(msg));
+  }
+
+  countMessagesAfterRowid(conversationId, afterRowid) {
+    const stmt = this.db.prepare(`
+      SELECT COUNT(*) AS count FROM messages WHERE channel_id = ? AND rowid > ?
+    `);
+    return stmt.get(conversationId, afterRowid).count;
+  }
+
+  /** The newest message's arrival time in a conversation, or null. */
+  getLastMessageTime(conversationId) {
+    const row = this.db.prepare(`
+      SELECT created_at FROM messages WHERE channel_id = ? ORDER BY rowid DESC LIMIT 1
+    `).get(conversationId);
+    return row ? new Date(row.created_at) : null;
+  }
+
+  /**
+   * A conversation's journal row, or null before the first pass.
+   * @returns {{conversation_id, content, watermark_rowid, updated_at}|null}
+   */
+  getJournal(conversationId) {
+    return this.db.prepare(`SELECT * FROM journals WHERE conversation_id = ?`).get(conversationId) || null;
+  }
+
+  /** The journal's text, or "" when there is none. */
+  getJournalText(conversationId) {
+    return this.getJournal(conversationId)?.content ?? "";
+  }
+
+  /**
+   * Replace a journal's text, keeping the old text as a version. Also moves
+   * the watermark when one is given.
+   * @param {string} conversationId
+   * @param {string} content
+   * @param {{source?: string, rationale?: string|null, watermarkRowid?: number|null}} [options]
+   */
+  setJournal(conversationId, content, { source = "archivist", rationale = null, watermarkRowid = null } = {}) {
     const now = new Date().toISOString();
-    const stmt = this.db.prepare(`
-      INSERT INTO user_memories (username, category, content, created_at, updated_at, is_active, source_message_id)
-      VALUES (?, ?, ?, ?, ?, 1, ?)
-    `);
-    const result = stmt.run(username, category, content, now, now, sourceMessageId);
-    return result.lastInsertRowid;
+    this.db.transaction(() => {
+      const existing = this.getJournal(conversationId);
+      const watermark = watermarkRowid ?? existing?.watermark_rowid ?? 0;
+      this.db.prepare(`
+        INSERT INTO journals (conversation_id, content, watermark_rowid, updated_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(conversation_id) DO UPDATE SET content = excluded.content,
+          watermark_rowid = excluded.watermark_rowid, updated_at = excluded.updated_at
+      `).run(conversationId, content, watermark, now);
+      this.db.prepare(`
+        INSERT INTO journal_versions (conversation_id, content, source, rationale, created_at)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(conversationId, content, source, rationale, now);
+    })();
   }
 
-  /**
-   * Get memories for a single user.
-   * @param {string} username
-   * @param {number} limit
-   * @returns {Array}
-   */
-  getMemoriesForUser(username, limit = 50) {
-    const stmt = this.db.prepare(`
-      SELECT * FROM user_memories
-      WHERE username = ? AND is_active = 1
-      ORDER BY created_at DESC
-      LIMIT ?
-    `);
-    return stmt.all(username, limit);
+  /** Move the watermark without changing the text (a pass that found nothing). */
+  setJournalWatermark(conversationId, watermarkRowid) {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO journals (conversation_id, content, watermark_rowid, updated_at)
+      VALUES (?, '', ?, ?)
+      ON CONFLICT(conversation_id) DO UPDATE SET watermark_rowid = excluded.watermark_rowid
+    `).run(conversationId, watermarkRowid, now);
   }
 
-  /**
-   * Get memories for multiple users (batch fetch for context).
-   * @param {Array<string>} usernames
-   * @param {number} limitPerUser
-   * @returns {Map<string, Array>} Map keyed by username
-   */
-  getMemoriesForUsers(usernames, limitPerUser = 10) {
-    if (!usernames || usernames.length === 0) {
-      return new Map();
-    }
-
-    const memories = new Map();
-    for (const username of usernames) {
-      memories.set(username, []);
-    }
-
-    const stmt = this.db.prepare(`
-      SELECT * FROM user_memories
-      WHERE username = ? AND is_active = 1
-      ORDER BY created_at DESC
-      LIMIT ?
-    `);
-
-    for (const username of usernames) {
-      const userMemories = stmt.all(username, limitPerUser);
-      if (userMemories.length > 0) {
-        memories.set(username, userMemories);
-      }
-    }
-
-    return memories;
-  }
-
-  /**
-   * List every username we have memories for, with counts and first-seen
-   * timestamps derived from their memory rows. Used by the dashboard.
-   * @param {number} limit
-   * @returns {Array}
-   */
-  getAllUsers(limit = 100) {
-    const stmt = this.db.prepare(`
-      SELECT
-        username AS id,
-        username,
-        COUNT(*) AS memory_count,
-        MIN(created_at) AS first_seen,
-        MAX(updated_at) AS updated_at
-      FROM user_memories
-      WHERE is_active = 1
-      GROUP BY username
-      ORDER BY updated_at DESC
-      LIMIT ?
-    `);
-    return stmt.all(limit);
-  }
-
-  /**
-   * Lookup a single user (derived from their memories) for the dashboard.
-   * @param {string} username
-   * @returns {Object|null}
-   */
-  getUser(username) {
-    const stmt = this.db.prepare(`
-      SELECT
-        username AS id,
-        username,
-        COUNT(*) AS memory_count,
-        MIN(created_at) AS first_seen,
-        MAX(updated_at) AS updated_at
-      FROM user_memories
-      WHERE username = ? AND is_active = 1
-      GROUP BY username
-    `);
-    return stmt.get(username) || null;
-  }
-
-  /**
-   * Soft delete a memory (set is_active = false)
-   * @param {number} memoryId - Memory ID
-   * @returns {boolean} Success
-   */
-  deactivateMemory(memoryId) {
-    const stmt = this.db.prepare(`
-      UPDATE user_memories SET is_active = 0, updated_at = ? WHERE id = ?
-    `);
-    const result = stmt.run(new Date().toISOString(), memoryId);
-    return result.changes > 0;
-  }
-
-  /**
-   * Update a memory's content
-   * @param {number} memoryId - Memory ID
-   * @param {string} content - New content
-   * @returns {boolean} Success
-   */
-  updateMemory(memoryId, content) {
-    const stmt = this.db.prepare(`
-      UPDATE user_memories SET content = ?, updated_at = ? WHERE id = ?
-    `);
-    const result = stmt.run(content, new Date().toISOString(), memoryId);
-    return result.changes > 0;
-  }
-
-  /**
-   * Get a single memory by ID
-   * @param {number} memoryId - Memory ID
-   * @returns {Object|null} Memory record
-   */
-  getMemory(memoryId) {
-    const stmt = this.db.prepare(`SELECT * FROM user_memories WHERE id = ?`);
-    return stmt.get(memoryId) || null;
-  }
-
-  /**
-   * Get memory statistics for dashboard
-   * @returns {Object} Stats object
-   */
-  getMemoryStats() {
-    const totalMemories = this.db.prepare(`
-      SELECT COUNT(*) as count FROM user_memories WHERE is_active = 1
-    `).get().count;
-
-    const usersWithMemories = this.db.prepare(`
-      SELECT COUNT(DISTINCT username) as count FROM user_memories WHERE is_active = 1
-    `).get().count;
-
-    const byCategory = this.db.prepare(`
-      SELECT category, COUNT(*) as count
-      FROM user_memories
-      WHERE is_active = 1
-      GROUP BY category
+  /** Every journal, newest update first, with its version count. */
+  listJournals() {
+    return this.db.prepare(`
+      SELECT j.*, (SELECT COUNT(*) FROM journal_versions v WHERE v.conversation_id = j.conversation_id) AS version_count
+      FROM journals j ORDER BY j.updated_at DESC
     `).all();
+  }
 
-    return {
-      totalMemories,
-      usersWithMemories,
-      byCategory: byCategory.reduce((acc, row) => {
-        acc[row.category] = row.count;
-        return acc;
-      }, {})
-    };
+  getJournalVersions(conversationId, limit = 50) {
+    return this.db.prepare(`
+      SELECT * FROM journal_versions WHERE conversation_id = ? ORDER BY id DESC LIMIT ?
+    `).all(conversationId, limit);
+  }
+
+  /** Forget a conversation's journal and its history. The watermark goes too, so the next pass rereads the backlog. */
+  deleteJournal(conversationId) {
+    return this.db.transaction(() => {
+      this.db.prepare(`DELETE FROM journal_versions WHERE conversation_id = ?`).run(conversationId);
+      return this.db.prepare(`DELETE FROM journals WHERE conversation_id = ?`).run(conversationId).changes > 0;
+    })();
+  }
+
+  static nickKey(nick) {
+    return String(nick).toLowerCase();
+  }
+
+  /** A person's note row, or null. */
+  getPerson(nick) {
+    return this.db.prepare(`SELECT * FROM people WHERE nick_key = ?`).get(DatabaseManager.nickKey(nick)) || null;
+  }
+
+  /**
+   * Notes for several nicks as a Map of display nick -> text, only for those
+   * who have one.
+   * @param {string[]} nicks
+   * @returns {Map<string, string>}
+   */
+  getPeople(nicks) {
+    const notes = new Map();
+    if (!nicks || nicks.length === 0) return notes;
+    const stmt = this.db.prepare(`SELECT * FROM people WHERE nick_key = ?`);
+    for (const nick of nicks) {
+      const row = stmt.get(DatabaseManager.nickKey(nick));
+      if (row) notes.set(row.nick, row.content);
+    }
+    return notes;
+  }
+
+  /** Replace a person's note, keeping the old one as a version. */
+  setPerson(nick, content, { source = "archivist", rationale = null } = {}) {
+    const now = new Date().toISOString();
+    const key = DatabaseManager.nickKey(nick);
+    this.db.transaction(() => {
+      this.db.prepare(`
+        INSERT INTO people (nick_key, nick, content, updated_at) VALUES (?, ?, ?, ?)
+        ON CONFLICT(nick_key) DO UPDATE SET nick = excluded.nick, content = excluded.content, updated_at = excluded.updated_at
+      `).run(key, nick, content, now);
+      this.db.prepare(`
+        INSERT INTO people_versions (nick_key, content, source, rationale, created_at) VALUES (?, ?, ?, ?, ?)
+      `).run(key, content, source, rationale, now);
+    })();
+  }
+
+  listPeople() {
+    return this.db.prepare(`
+      SELECT p.*, (SELECT COUNT(*) FROM people_versions v WHERE v.nick_key = p.nick_key) AS version_count
+      FROM people p ORDER BY p.updated_at DESC
+    `).all();
+  }
+
+  getPersonVersions(nick, limit = 50) {
+    return this.db.prepare(`
+      SELECT * FROM people_versions WHERE nick_key = ? ORDER BY id DESC LIMIT ?
+    `).all(DatabaseManager.nickKey(nick), limit);
+  }
+
+  deletePerson(nick) {
+    const key = DatabaseManager.nickKey(nick);
+    return this.db.transaction(() => {
+      this.db.prepare(`DELETE FROM people_versions WHERE nick_key = ?`).run(key);
+      return this.db.prepare(`DELETE FROM people WHERE nick_key = ?`).run(key).changes > 0;
+    })();
   }
 
   close() {

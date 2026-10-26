@@ -231,109 +231,121 @@ router.get("/responses", (req, res) => {
   }
 });
 
-// ============ User Memory Endpoints ============
+// ============ Bots ============
 
-// Get all users with memory counts
-router.get("/users", (req, res) => {
+// Every bot the dashboard can show
+router.get("/bots", (req, res) => {
+  res.json([...req.clients.values()].map((client) => client.describe()));
+});
+
+// ============ Journals and people (the Archivist) ============
+
+router.get("/journals", (req, res) => {
   try {
-    const limit = parseInt(req.query.limit) || 100;
-    const users = req.db.getAllUsers(limit);
-    res.json(users);
+    res.json(req.db.listJournals());
   } catch (error) {
-    req.logger.error("Error fetching users:", error);
-    res.status(500).json({ error: "Failed to fetch users" });
+    req.logger.error("Error listing journals:", error);
+    res.status(500).json({ error: "Failed to list journals" });
   }
 });
 
-// Get a single user with their memories
-router.get("/users/:userId", (req, res) => {
+router.get("/journals/:conversationId", (req, res) => {
   try {
-    const { userId } = req.params;
-    const user = req.db.getUser(userId);
-
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    const memories = req.db.getMemoriesForUser(userId, 100);
-    res.json({ user, memories });
+    const { conversationId } = req.params;
+    const journal = req.db.getJournal(conversationId);
+    if (!journal) return res.status(404).json({ error: "No journal for that conversation" });
+    res.json({
+      journal,
+      versions: req.db.getJournalVersions(conversationId),
+      unread: req.client.archivist.unreadCount(conversationId),
+    });
   } catch (error) {
-    req.logger.error("Error fetching user:", error);
-    res.status(500).json({ error: "Failed to fetch user" });
+    req.logger.error("Error fetching journal:", error);
+    res.status(500).json({ error: "Failed to fetch journal" });
   }
 });
 
-// Get memories for a specific user
-router.get("/users/:userId/memories", (req, res) => {
+// Edit a journal by hand; kept as a version like any other change
+router.patch("/journals/:conversationId", (req, res) => {
   try {
-    const { userId } = req.params;
-    const limit = parseInt(req.query.limit) || 50;
-    const memories = req.db.getMemoriesForUser(userId, limit);
-    res.json(memories);
+    const { content } = req.body || {};
+    if (typeof content !== "string") {
+      return res.status(400).json({ error: "content must be a string" });
+    }
+    req.db.setJournal(req.params.conversationId, content.trim(), { source: "edit" });
+    res.json({ success: true, journal: req.db.getJournal(req.params.conversationId) });
   } catch (error) {
-    req.logger.error("Error fetching user memories:", error);
-    res.status(500).json({ error: "Failed to fetch memories" });
+    req.logger.error("Error updating journal:", error);
+    res.status(500).json({ error: "Failed to update journal" });
   }
 });
 
-// Get memory statistics
-router.get("/memories/stats", (req, res) => {
+// Forget a journal and its history; the next pass rereads the whole backlog
+router.delete("/journals/:conversationId", (req, res) => {
   try {
-    const stats = req.db.getMemoryStats();
-    res.json(stats);
+    const removed = req.db.deleteJournal(req.params.conversationId);
+    if (!removed) return res.status(404).json({ error: "No journal for that conversation" });
+    res.json({ success: true });
   } catch (error) {
-    req.logger.error("Error fetching memory stats:", error);
-    res.status(500).json({ error: "Failed to fetch memory stats" });
+    req.logger.error("Error deleting journal:", error);
+    res.status(500).json({ error: "Failed to delete journal" });
   }
 });
 
-// Soft delete a memory
-router.delete("/memories/:memoryId", (req, res) => {
+// Run an Archivist pass now, without waiting for the triggers
+router.post("/journals/:conversationId/run", async (req, res) => {
   try {
-    const memoryId = parseInt(req.params.memoryId);
-    const memory = req.db.getMemory(memoryId);
-
-    if (!memory) {
-      return res.status(404).json({ error: "Memory not found" });
-    }
-
-    const success = req.db.deactivateMemory(memoryId);
-    if (success) {
-      res.json({ success: true, message: "Memory deleted" });
-    } else {
-      res.status(500).json({ error: "Failed to delete memory" });
-    }
+    const result = await req.client.archivist.runPass(req.params.conversationId);
+    res.json({ success: true, ...result, journal: req.db.getJournal(req.params.conversationId) });
   } catch (error) {
-    req.logger.error("Error deleting memory:", error);
-    res.status(500).json({ error: "Failed to delete memory" });
+    req.logger.error("Error running an Archivist pass:", error);
+    res.status(500).json({ error: `Archivist pass failed: ${error.message}` });
   }
 });
 
-// Update a memory's content
-router.patch("/memories/:memoryId", (req, res) => {
+router.get("/people", (req, res) => {
   try {
-    const memoryId = parseInt(req.params.memoryId);
-    const { content } = req.body;
-
-    if (!content || typeof content !== "string" || content.trim().length === 0) {
-      return res.status(400).json({ error: "Content is required and must be a non-empty string" });
-    }
-
-    const memory = req.db.getMemory(memoryId);
-    if (!memory) {
-      return res.status(404).json({ error: "Memory not found" });
-    }
-
-    const success = req.db.updateMemory(memoryId, content.trim());
-    if (success) {
-      const updated = req.db.getMemory(memoryId);
-      res.json({ success: true, memory: updated });
-    } else {
-      res.status(500).json({ error: "Failed to update memory" });
-    }
+    res.json(req.db.listPeople());
   } catch (error) {
-    req.logger.error("Error updating memory:", error);
-    res.status(500).json({ error: "Failed to update memory" });
+    req.logger.error("Error listing people:", error);
+    res.status(500).json({ error: "Failed to list people" });
+  }
+});
+
+router.get("/people/:nick", (req, res) => {
+  try {
+    const person = req.db.getPerson(req.params.nick);
+    if (!person) return res.status(404).json({ error: "No note for that nick" });
+    res.json({ person, versions: req.db.getPersonVersions(req.params.nick) });
+  } catch (error) {
+    req.logger.error("Error fetching person:", error);
+    res.status(500).json({ error: "Failed to fetch person" });
+  }
+});
+
+router.patch("/people/:nick", (req, res) => {
+  try {
+    const { content } = req.body || {};
+    if (typeof content !== "string" || !content.trim()) {
+      return res.status(400).json({ error: "content must be a non-empty string" });
+    }
+    const existing = req.db.getPerson(req.params.nick);
+    req.db.setPerson(existing?.nick || req.params.nick, content.trim(), { source: "edit" });
+    res.json({ success: true, person: req.db.getPerson(req.params.nick) });
+  } catch (error) {
+    req.logger.error("Error updating person:", error);
+    res.status(500).json({ error: "Failed to update person" });
+  }
+});
+
+router.delete("/people/:nick", (req, res) => {
+  try {
+    const removed = req.db.deletePerson(req.params.nick);
+    if (!removed) return res.status(404).json({ error: "No note for that nick" });
+    res.json({ success: true });
+  } catch (error) {
+    req.logger.error("Error deleting person:", error);
+    res.status(500).json({ error: "Failed to delete person" });
   }
 });
 

@@ -1,11 +1,22 @@
 class Logger {
-  constructor(debug = false) {
+  /**
+   * @param {boolean} debug - Print debug lines and attached objects
+   * @param {string|null} prefix - Tag for every line, e.g. a bot id
+   */
+  constructor(debug = false, prefix = null) {
     this.debugMode = debug;
+    this.prefix = prefix;
+  }
+
+  /** A logger that tags its lines, for one bot's output among several. */
+  child(prefix) {
+    return new Logger(this.debugMode, prefix);
   }
 
   formatMessage(level, message, obj) {
     const timestamp = new Date().toISOString();
-    let formattedMessage = `[${timestamp}] [${level.toUpperCase()}] ${message}`;
+    const tag = this.prefix ? ` [${this.prefix}]` : "";
+    let formattedMessage = `[${timestamp}] [${level.toUpperCase()}]${tag} ${message}`;
     if (obj !== null && this.debugMode) {
       formattedMessage += `\n${JSON.stringify(obj, null, 2)}`;
     }

@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Impostor is an IRC chatbot powered by DeepSeek API with an Isaac personality (melancholic, sarcastic, cynical robot). Connects to libera.chat and joins #amiantos. Features include autonomous responses, URL summarization, web search/fetch, and Python code execution.
+Impostor runs IRC chatbots powered by the DeepSeek API. One process runs every bot listed in `conf/config.json`; each bot has a persona file (`conf/personas/*.md`), its own IRC connection and NickServ account, its own SQLite database under `data/<id>/`, and its own memory. Isaac (melancholic, sarcastic, cynical robot) ships as the first persona. Built for irc.lurker.chat (`~/Coding/lurker-dev/IRC_SERVER_PLAN.md`). The design is in `JOURNAL_AND_MULTIBOT_PLAN.md`.
 
-The Discord ↔ IRC bridge, the GitHub/Discourse webhook receivers, and the channel-log archive (which feeds the chat-log feed on bradroot.me) all live in a separate project ([`~/Coding/snitch`](../snitch)). They were extracted because they don't need any of Isaac's DeepSeek/tools/dashboard infrastructure and have an independent lifecycle. Isaac still parses bridged IRC messages of the form `[Discord] <Username> message` via `classes/bridge_parser.js` so it can address the real Discord user — that's the only contract between the two projects.
+The bridge between Discord, Libera, MansionNET and irc.lurker.chat, the GitHub/Discourse webhook receivers, and the channel-log archive all live in a separate project ([`~/Coding/snitch`](../snitch)). Bots parse bridged lines of the form `[tag] <nick> message` via `classes/bridge_parser.js` so they address the real person; which tags are humans is `irc.bridge_tags`. That is the only contract between the two projects.
 
 ## Development Commands
 
@@ -25,18 +25,21 @@ npm start
 ## Architecture
 
 ### Entry Point
-- **index.js**: Initializes Logger and ImpostorClient, starts the bot
+- **index.js**: Reads `bots`, builds one shared OpenAI client and one set of tools, one ImpostorClient per bot with a prefixed logger and its persona, one dashboard over all of them
 
 ### Core Classes (`classes/`)
 
 | Class | Purpose |
 |-------|---------|
-| **ImpostorClient** | Main IRC client (irc-framework), message handling, queue system, tool execution, DeepSeek API calls |
+| **ImpostorClient** | One bot: IRC client (irc-framework), message handling, queue system, tool execution, DeepSeek API calls, its Archivist |
+| **bot_config.js** | `listBots` validates the `bots` list; `resolveBotConfig` layers a bot's overrides over the shared sections into the single-bot shape the client reads |
+| **persona.js** | Loads `conf/personas/*.md`: `# Name`, the character text, an optional `## Evaluator` section |
+| **Archivist** | The memory: a journal per conversation and a note per person, rewritten whole by a background model call over the chatlog since the last pass (watermark = messages rowid) |
 | **irc_message.js** | Factory for normalized message objects (IRC events -> common shape used by all downstream code) |
-| **ContextUtils** | System prompt (Isaac personality), message formatting for API calls |
-| **DatabaseManager** | SQLite persistence for messages, decisions, responses, prompts |
+| **ContextUtils** | System prompt = persona character + the medium (IRC conventions, chatlog format, journal/people blocks, JSON protocol, tools); renders the chatlog for the reply model and the Archivist |
+| **DatabaseManager** | SQLite persistence for messages, decisions, responses, prompts, journals, people (per bot) |
 | **MessageTracker** | Per-channel message tracking, triggers URL processing |
-| **ResponseEvaluator** | AI evaluation for autonomous responses (should bot respond?) |
+| **ResponseEvaluator** | AI evaluation for autonomous responses (should bot respond?); generic rules + the persona's Evaluator section + the journal |
 | **VisionService** | GPT-4o image recognition (dormant for IRC -- no attachments) |
 | **UrlSummarizeService** | Kagi Universal Summarizer for shared links |
 | **PythonTool** | Executes Python code via subprocess |
@@ -45,18 +48,21 @@ npm start
 | **Logger** | Simple logging utility |
 
 ### Web Dashboard (`web/`)
-- **server.js**: Express server for dashboard
-- **routes/api.js**: REST API for messages, decisions, responses, prompts
-- **views/dashboard.html**: Debug UI for viewing bot behavior
+- **server.js**: Express server for dashboard; `?bot=<id>` on every API call picks the bot (first bot by default) and sets `req.db` / `req.client`
+- **routes/api.js**: REST API for bots, messages, decisions, responses, prompts, journals, people
+- **views/dashboard.html**: Debug UI; bot picker in the header, Journals and People tabs after the channels
 
 ### Configuration
-- **conf/config.json**: All settings (gitignored)
+- **conf/config.json**: All settings (gitignored). Shared sections plus `bots: [...]`
 - **conf/config.json.example**: Template with all options documented
+- **conf/personas/*.md**: Committed. Who each bot is; nothing about the medium
 
 ## Key Features
 
 - **Autonomous Responses**: Bot monitors conversations and decides when to naturally respond (debounced, cooldown- and ratio-gated)
-- **Direct Mentions**: Mentioning "Isaac" in a message triggers a direct response
+- **Direct Mentions**: Mentioning the bot's name (persona name or `watchword`) or nick triggers a direct response
+- **Journal**: The Archivist runs per conversation at 40 new lines, or 20 quiet minutes with 5+ new lines (`journal.*`); reads a backlog in passes of 200; a failed or unparseable answer leaves the watermark alone. The reply prompt gets the journal and the notes for the nicks in the window; the evaluator gets the journal. No memory is written on the reply path (the `remember` tool is gone)
+- **Several bots**: no special handling for bot-on-bot conversation, by decision; personas and the evaluator prompt are the brake
 - **Tool Iteration**: Up to 10 iterations with reflection for precise tasks (exact character counts, complex math)
 - **URL Summarization**: Kagi summarizes shared links proactively
 - **Web Tools**: Search (Kagi FastGPT) and fetch (Readability) for current information
@@ -64,11 +70,14 @@ npm start
 
 ## Database Schema
 
-SQLite database at `data/impostor.db`:
-- **messages**: All messages with attachments, vision_descriptions, url_summaries
+SQLite database per bot at `data/<id>/impostor.db`:
+- **messages**: All messages with attachments, vision_descriptions, url_summaries (rowid is the Archivist's watermark)
 - **decision_log**: Autonomous response evaluations with reasoning
 - **responses**: Bot responses with trigger tracking
 - **prompts**: Full prompts for debugging (system + messages)
+- **journals** / **journal_versions**: One journal per conversation with its watermark; every version with source (`archivist`, `edit`) and rationale
+- **people** / **people_versions**: One note per nick (`nick_key` lowercased), every version
+- `user_memories` from the old remember tool is dropped on first start
 
 ## Message Flow
 
@@ -101,7 +110,8 @@ His problem was never total volume (~11% of channel messages) but clustering: he
 
 - Uses `irc-framework` library with TLS, SASL auth, auto-reconnect
 - The `messages.channel_id` column stores the IRC PRIVMSG target verbatim. For channel messages that's `#name`; for DMs it's the other party's nick (since channel and PM both go through PRIVMSG, the leading `#` is what distinguishes them). Conversation context is keyed off this column for both kinds.
-- Author IDs in the `messages` table are the IRC hostmask (`nick!ident@hostname`) for stable cross-nick-change identity. Memories, however, are keyed by IRC username (nick) only — hostmasks aren't shown to the LLM or stored in the memory table.
+- Author IDs in the `messages` table are the IRC hostmask (`nick!ident@hostname`) for stable cross-nick-change identity. People notes are keyed by nick only — hostmasks aren't shown to the LLM.
+- On a server that advertises the `BOT` ISUPPORT token (Ergo: `B`), each bot sets that mode on itself after registering.
 - Message IDs are UUIDs (IRC has no server-assigned message IDs)
 - DMs are accepted from anyone (so the dashboard can monitor them) but only sent to nicks listed in `irc.pm_allowed_users`. Empty list = no DM responses.
 
