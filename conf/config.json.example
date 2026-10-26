@@ -16,8 +16,6 @@
         "port": 6697,
         "tls": true,
         "max_line_length": 340,
-        "bridge_nick": "EyeBridge",
-        "bridge_tags": ["Discord", "libera", "mansion"],
         "typing_notifications": {
             "enabled": true,
             "refresh_seconds": 3

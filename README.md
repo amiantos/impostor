@@ -59,7 +59,7 @@ The bot can search the web and read pages for current information:
 - **Web Fetch**: Reads and extracts content from specific URLs using Mozilla Readability
 
 ### Bridged messages
-The bridge between Discord, Libera, MansionNET and irc.lurker.chat lives in a separate project ([snitch](../snitch)) and sits in the channel as `EyeBridge`. Its lines look like `[libera] <nick> text`; `classes/bridge_parser.js` unwraps the tags listed in `irc.bridge_tags` so responses address the human, not the bridge nick. Lines with any other tag (`[repo-name] <user> opened ...`) are webhook announcements and are left alone unless someone asks about them.
+Optional. If a bridge bot from [snitch](../snitch) sits in the channel, set `irc.bridge_nick` (its nick) and `irc.bridge_tags` (the tags that are relayed humans, e.g. `["Discord", "libera", "mansion"]`). Its lines look like `[libera] <nick> text`; `classes/bridge_parser.js` unwraps the listed tags so responses address the human, not the bridge nick. Lines with any other tag (`[github] <user> opened ...`) are announcements and are left alone unless someone asks about them. Without `irc.bridge_nick` nothing is unwrapped.
 
 ## Requirements
 
@@ -106,7 +106,7 @@ See `conf/config.json.example` for all options. Key sections:
 | `generator.deepseek` | DeepSeek API settings for chat responses |
 | `generator.deepseek.thinking` | Let the model reason before replying (default `true`) |
 | `generator.deepseek.evaluator_thinking` | Same, for the should-I-respond evaluator (default `false`) |
-| `irc` | Shared IRC connection settings (host, port, TLS, bridge nick and tags) |
+| `irc` | Shared IRC connection settings (host, port, TLS; optional `bridge_nick` and `bridge_tags`) |
 | `bots` | One entry per bot: `id`, `nick`, `persona`, `account`, `channels`, `pm_allowed_users`, and per-bot overrides of `irc`, `generator`, `autonomous`, `url_summarize`, `journal` |
 | `bots[].watchword` | What people call the bot in chat, when it differs from the persona's name |
 | `journal` | When the Archivist runs (`messages_per_pass`, `quiet_minutes`, `min_messages`) and how long a journal (`journal_max_chars`) and a note (`note_max_chars`) may get |

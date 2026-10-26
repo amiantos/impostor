@@ -268,7 +268,9 @@ class ImpostorClient {
 
     if (!isPrivate && !this.isAllowedChannel(event.target)) return;
 
-    const bridgeNick = this.config.irc.bridge_nick ?? "EyeBridge";
+    // A relay bot is opt-in: without irc.bridge_nick nothing is unwrapped
+    // and nothing is treated as an announcement.
+    const bridgeNick = this.config.irc.bridge_nick || null;
     const { nick, message: messageText, isWebhookAnnouncement } =
       parseBridgedMessage(event.nick, event.message, bridgeNick, this.config.irc.bridge_tags);
 

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Impostor runs IRC chatbots powered by the DeepSeek API. One process runs every bot listed in `conf/config.json`; each bot has a persona file (`conf/personas/*.md`), its own IRC connection and NickServ account, its own SQLite database under `data/<id>/`, and its own memory. Isaac (melancholic, sarcastic, cynical robot) ships as the first persona. Built for irc.lurker.chat (`~/Coding/lurker-dev/IRC_SERVER_PLAN.md`). The design is in `JOURNAL_AND_MULTIBOT_PLAN.md`.
 
-The bridge between Discord, Libera, MansionNET and irc.lurker.chat, the GitHub/Discourse webhook receivers, and the channel-log archive all live in a separate project ([`~/Coding/snitch`](../snitch)). Bots parse bridged lines of the form `[tag] <nick> message` via `classes/bridge_parser.js` so they address the real person; which tags are humans is `irc.bridge_tags`. That is the only contract between the two projects.
+The bridge between Discord, Libera, MansionNET and irc.lurker.chat, the GitHub/Discourse webhook receivers, and the channel-log archive all live in a separate project ([`~/Coding/snitch`](../snitch)). When `irc.bridge_nick` is set, bots parse that nick's lines of the form `[tag] <nick> message` via `classes/bridge_parser.js` so they address the real person; which tags are humans is `irc.bridge_tags`. Unset, no bridge is assumed. That is the only contract between the two projects.
 
 ## Development Commands
 
