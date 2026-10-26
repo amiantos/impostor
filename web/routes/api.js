@@ -276,8 +276,9 @@ router.patch("/journals/:conversationId", (req, res) => {
     // conversation without one yet starts its watermark at the newest line
     // rather than rereading the whole stored backlog on the next pass.
     const { conversationId } = req.params;
-    const watermarkRowid = req.db.getJournal(conversationId) ? null : req.db.getLastMessageRowid(conversationId);
-    req.db.setJournal(conversationId, content.trim(), { source: "edit", watermarkRowid });
+    const text = content.trim();
+    const watermarkRowid = text && !req.db.getJournal(conversationId) ? req.db.getLastMessageRowid(conversationId) : null;
+    req.db.setJournal(conversationId, text, { source: "edit", watermarkRowid });
     res.json({ success: true, journal: req.db.getJournal(req.params.conversationId) });
   } catch (error) {
     req.logger.error("Error updating journal:", error);

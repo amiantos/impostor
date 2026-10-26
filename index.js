@@ -1,3 +1,4 @@
+const fs = require("fs");
 const path = require("path");
 const { OpenAI } = require("openai");
 const config = require("./conf/config.json");
@@ -24,8 +25,24 @@ const tools = {
   webFetchTool: new WebFetchTool(logger),
 };
 
+const bots = listBots(config);
+
+// Before bots had ids the one database lived at data/impostor.db. Move it
+// under the first bot once, so a deployment keeps its history.
+const legacyDb = path.join(dataDir, "impostor.db");
+const firstDir = path.join(dataDir, bots[0].id.toLowerCase());
+if (fs.existsSync(legacyDb) && !fs.existsSync(path.join(firstDir, "impostor.db"))) {
+  fs.mkdirSync(firstDir, { recursive: true });
+  for (const suffix of ["", "-wal", "-shm"]) {
+    if (fs.existsSync(legacyDb + suffix)) {
+      fs.renameSync(legacyDb + suffix, path.join(firstDir, "impostor.db" + suffix));
+    }
+  }
+  logger.info(`Moved data/impostor.db to data/${bots[0].id.toLowerCase()}/impostor.db`);
+}
+
 const clients = new Map();
-for (const bot of listBots(config)) {
+for (const bot of bots) {
   const botConfig = resolveBotConfig(config, bot);
   const persona = loadPersona(path.resolve(__dirname, bot.persona));
   const client = new ImpostorClient(logger.child(bot.id), botConfig, {

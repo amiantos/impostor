@@ -128,6 +128,13 @@ When enabled, access the dashboard at `http://localhost:3000`. A picker in the h
 - Message database
 - Journals and people notes, with their history and the Archivist's rationale per pass
 
+## Upgrading from the single-bot version
+
+The first start moves `data/impostor.db` to `data/<first bot id>/impostor.db`, so the existing
+history carries over. The old `user_memories` table is dropped; the Archivist starts its journal
+from the stored backlog. The config file changes shape: see `conf/config.json.example` (the
+`irc.nick`, `channels`, `watchword`, `password` keys move into an entry in `bots`).
+
 ## Data Storage
 
 Each bot's data is stored in `data/<bot id>/impostor.db` (SQLite):

@@ -84,3 +84,13 @@ test("channels and pm_allowed_users must be lists of strings, and ids are lowerc
   const cfg = resolveBotConfig(shared, { id: "Isaac", nick: "Isaac", persona: "p.md" });
   assert.equal(cfg.bot.id, "isaac");
 });
+
+test("a bot may not re-point the shared model client", () => {
+  assert.throws(() => listBots({ bots: [{ id: "a", nick: "A", persona: "p", generator: { api_key: "x" } }] }), /generator.api_key is shared/);
+  assert.throws(() => listBots({ bots: [{ id: "a", nick: "A", persona: "p", generator: { base_url: "x" } }] }), /generator.base_url is shared/);
+});
+
+test("keys with a top-level alias are refused under irc", () => {
+  assert.throws(() => listBots({ bots: [{ id: "a", nick: "A", persona: "p", irc: { channels: ["#x"] } }] }), /irc.channels belongs at the bot's top level/);
+  assert.throws(() => listBots({ bots: [{ id: "a", nick: "A", persona: "p", irc: { password: "x" } }] }), /irc.password belongs/);
+});

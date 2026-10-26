@@ -148,3 +148,22 @@ test("a journal seeded by hand starts its watermark at the newest line", async (
 test("?bot= is case-insensitive", async () => {
   assert.equal((await api("/api/journals?bot=ISAAC")).status, 200);
 });
+
+test("an empty hand edit does not seed the watermark past the backlog", async () => {
+  const db = isaac.getDatabase();
+  db.insertMessageEnhanced({ id: "e1", channelId: "#empty", authorId: "a", authorName: "a", content: "old", createdAt: new Date().toISOString() });
+  const { body } = await api(`/api/journals/${encodeURIComponent("#empty")}?bot=isaac`, {
+    method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ content: "" }),
+  });
+  assert.equal(body.journal.watermark_rowid, 0);
+  assert.equal(isaac.archivist.unreadCount("#empty"), 1);
+});
+
+test("the reply prompt lists a person once under their newest spelling", () => {
+  const db = isaac.getDatabase();
+  db.setPerson("Amiantos", "my creator");
+  db.insertMessageEnhanced({ id: "c1", channelId: "#case", authorId: "amiantos", authorName: "Amiantos", content: "hi", createdAt: new Date(Date.now() - 2000).toISOString() });
+  db.insertMessageEnhanced({ id: "c2", channelId: "#case", authorId: "amiantos", authorName: "amiantos", content: "hi again", createdAt: new Date(Date.now() - 1000).toISOString() });
+  const { memory } = isaac.buildContextFromDatabase("#case");
+  assert.deepEqual([...memory.people], [["amiantos", "my creator"]]);
+});

@@ -79,6 +79,7 @@ class ImpostorClient {
 
     // The journal and people notes, updated from the chatlog in the background.
     this.archivist = new Archivist(logger, config, this.db, this.openai, this.contextUtils);
+    this.archivist.resume();
 
     // Set up periodic maintenance
     this.maintenanceInterval = setInterval(() => {
@@ -284,10 +285,11 @@ class ImpostorClient {
       processVision: true,
       processUrls: !isWebhookAnnouncement,
     });
-    this.archivist.noteActivity(conversationId);
 
     // DMs: every message is a direct address. Only respond if the sender is
-    // on the PM allowlist; otherwise stop here (still stored above).
+    // on the PM allowlist; otherwise stop here (still stored above). A DM
+    // the bot never answers gets no journal either: anyone on the network
+    // could otherwise run up model calls by pasting at the bot.
     if (isPrivate) {
       if (!this.isAllowedPmSender(event.nick)) {
         this.logger.info(
@@ -295,11 +297,14 @@ class ImpostorClient {
         );
         return;
       }
+      this.archivist.noteActivity(conversationId);
       this.logger.info(`Queuing DM from ${nick}.`, message);
       this.messageQueue.push({ message, channel: conversationId, type: "direct" });
       if (!this.isProcessing) this.processMessageQueue();
       return;
     }
+
+    this.archivist.noteActivity(conversationId);
 
     // Channel: route every message through the evaluator. Direct mentions
     // used to short-circuit straight to a response, but that bypassed the
@@ -777,12 +782,14 @@ class ImpostorClient {
     const urlSummaries = this.urlSummarizeService.buildUrlSummariesFromDB(dbMessages);
 
     // The journal for this conversation and the notes for whoever is in the window.
-    const usernames = [...new Set(
-      dbMessages
-        .filter(msg => !msg.is_bot_message && msg.author_name)
-        .map(msg => msg.author_name)
-    )];
-    const memory = this.archivist.memoryFor(channelId, usernames);
+    // One entry per person, under the spelling they used most recently.
+    const bySpelling = new Map();
+    for (const msg of dbMessages) {
+      if (!msg.is_bot_message && msg.author_name) {
+        bySpelling.set(msg.author_name.toLowerCase(), msg.author_name);
+      }
+    }
+    const memory = this.archivist.memoryFor(channelId, [...bySpelling.values()]);
 
     return {
       dbMessages,

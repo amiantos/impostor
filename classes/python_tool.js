@@ -20,8 +20,8 @@ class PythonTool {
 
     return new Promise((resolve, reject) => {
       // Create a temporary Python file
-      const timestamp = Date.now();
-      const fileName = `script_${timestamp}.py`;
+      // Several bots share this tool, so a timestamp alone can collide.
+      const fileName = `script_${Date.now()}_${process.pid}_${Math.random().toString(36).slice(2, 10)}.py`;
       const filePath = path.join(this.tempDir, fileName);
 
       try {

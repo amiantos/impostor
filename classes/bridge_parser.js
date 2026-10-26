@@ -17,9 +17,9 @@ function parseBridgedMessage(eventNick, eventMessage, bridgeNick, bridgeTags = D
   const fromBridge =
     Boolean(bridgeNick) && eventNick.toLowerCase() === bridgeNick.toLowerCase();
   const match = fromBridge ? eventMessage.match(ENVELOPE_RE) : null;
-  const tags = (bridgeTags && bridgeTags.length > 0 ? bridgeTags : DEFAULT_TAGS).map((t) =>
-    t.toLowerCase()
-  );
+  const tags = (Array.isArray(bridgeTags) && bridgeTags.length > 0 ? bridgeTags : DEFAULT_TAGS)
+    .filter((t) => typeof t === "string")
+    .map((t) => t.toLowerCase());
 
   if (match && tags.includes(match[1].toLowerCase())) {
     return {

@@ -25,6 +25,16 @@ function listBots(config) {
     if (!/^[a-z0-9_-]+$/i.test(bot.id)) {
       throw new Error(`Bot id "${bot.id}" may only contain letters, digits, "-" and "_" (it names a directory)`);
     }
+    for (const key of ["nick", "username", "realname", "channels", "pm_allowed_users", "watchword", "password", "sasl", "account"]) {
+      if (bot.irc?.[key] !== undefined) {
+        throw new Error(`Bot "${bot.id}": irc.${key} belongs at the bot's top level, not under irc`);
+      }
+    }
+    for (const key of ["api_key", "base_url"]) {
+      if (bot.generator?.[key] !== undefined) {
+        throw new Error(`Bot "${bot.id}": generator.${key} is shared by every bot; set it at the top level`);
+      }
+    }
     for (const key of ["channels", "pm_allowed_users", "bridge_tags"]) {
       const value = key === "bridge_tags" ? bot.irc?.[key] : bot[key];
       if (value !== undefined && !(Array.isArray(value) && value.every((v) => typeof v === "string"))) {

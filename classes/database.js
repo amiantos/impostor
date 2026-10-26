@@ -563,17 +563,25 @@ class DatabaseManager {
       const countStmt = this.db.prepare(`SELECT COUNT(*) as count FROM messages WHERE channel_id = ?`);
       const { count } = countStmt.get(channel_id);
 
-      if (count > maxMessagesPerChannel) {
+      // Lines the Archivist has not read yet are kept however many there
+      // are (a long model outage must not cost the journal its backlog).
+      // Only conversations with a journal row are protected, so a DM the
+      // bot never answers is still bounded.
+      const journal = this.getJournal(channel_id);
+      const unread = journal ? this.countMessagesAfterRowid(channel_id, journal.watermark_rowid) : 0;
+      const keep = Math.max(maxMessagesPerChannel, unread);
+
+      if (count > keep) {
         const deleteStmt = this.db.prepare(`
           DELETE FROM messages
           WHERE channel_id = ? AND id NOT IN (
             SELECT id FROM messages
             WHERE channel_id = ?
-            ORDER BY created_at DESC
+            ORDER BY rowid DESC
             LIMIT ?
           )
         `);
-        deleteStmt.run(channel_id, channel_id, maxMessagesPerChannel);
+        deleteStmt.run(channel_id, channel_id, keep);
         this.logger.debug(`Pruned old messages from channel ${channel_id}`);
       }
     }
@@ -967,14 +975,6 @@ class DatabaseManager {
       SELECT MAX(rowid) AS rowid FROM messages WHERE channel_id = ?
     `).get(conversationId);
     return row?.rowid ?? 0;
-  }
-
-  /** The newest message's arrival time in a conversation, or null. */
-  getLastMessageTime(conversationId) {
-    const row = this.db.prepare(`
-      SELECT created_at FROM messages WHERE channel_id = ? ORDER BY rowid DESC LIMIT 1
-    `).get(conversationId);
-    return row ? new Date(row.created_at) : null;
   }
 
   /**

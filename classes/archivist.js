@@ -222,7 +222,22 @@ class Archivist {
         this.logger.error(`Archivist pass failed for ${conversationId}: ${err.message}`)
       );
     }, quietMs);
+    // The IRC connection is what keeps the process alive; a pending pass
+    // never should (tests and shutdown would otherwise hang on it).
+    id.unref?.();
     this.quietTimers.set(conversationId, id);
+  }
+
+  /**
+   * After a restart, conversations that have unread lines but no pending
+   * message to wake them get the same scheduling they would have had: a
+   * pass now, or the quiet timer. Call once the database is open.
+   */
+  resume() {
+    if (!this.enabled) return;
+    for (const { channel_id } of this.db.getActiveChannels()) {
+      if (this.unreadCount(channel_id) > 0) this.noteActivity(channel_id);
+    }
   }
 
   unreadCount(conversationId) {
@@ -275,11 +290,12 @@ class Archivist {
     } finally {
       this.running.delete(conversationId);
     }
-    if (this.pending.has(conversationId) && !this.shuttingDown) {
-      this.pending.delete(conversationId);
-      // Lines arrived during the pass; they get the same treatment as any
-      // other new line, so a short tail waits for quiet rather than being
-      // stranded until someone speaks again.
+    this.pending.delete(conversationId);
+    // Whatever is still unread (lines that arrived during the pass, or the
+    // stretch a failed pass left behind) gets the same treatment as any new
+    // line: a pass now, or the quiet timer. Nothing is stranded until
+    // someone happens to speak again.
+    if (!this.shuttingDown && this.unreadCount(conversationId) > 0) {
       this.noteActivity(conversationId);
     }
     return { passes, changed };
@@ -292,10 +308,16 @@ class Archivist {
    */
   async readBatch(conversationId, batch, part) {
     const journal = this.db.getJournalText(conversationId);
+    // rowid is the watermark, but not quite arrival order: a message whose
+    // link took seconds to summarize is inserted after lines that followed
+    // it. Read the stretch in the order it happened.
+    const inOrder = [...batch].sort(
+      (a, b) => new Date(a.created_at) - new Date(b.created_at) || a.rowid - b.rowid
+    );
     // Only people with a rendered line can get a note from this stretch;
     // renderChatlog skips "!" commands, so take the nicks from what it kept.
     const seen = new Set();
-    const lines = this.contextUtils.renderChatlog(batch, {
+    const lines = this.contextUtils.renderChatlog(inOrder, {
       onLine: (msg) => seen.add(msg.author_name || "Unknown"),
     });
     const nicks = [...seen];
@@ -319,7 +341,15 @@ class Archivist {
     }
     this.failedAt.delete(conversationId);
 
-    const lastRowid = batch[batch.length - 1].rowid;
+    // The journal was edited or forgotten from the dashboard while the model
+    // was reading. Its answer rewrote text that no longer stands, so drop it
+    // and leave the watermark where the operator's action left it.
+    if (this.db.getJournalText(conversationId) !== journal) {
+      this.logger.info(`Archivist: journal for ${conversationId} changed during the pass; discarding this answer`);
+      return { ok: false, changed: false };
+    }
+
+    const lastRowid = Math.max(...batch.map((m) => m.rowid));
     let changed = false;
 
     if (answer.journal && answer.journal !== journal.trim()) {
@@ -352,7 +382,15 @@ class Archivist {
         this.logger.warn(`Archivist: note for ${displayNick} came back ${note.length} chars, far over budget; dropped`);
         continue;
       }
-      if (note === (people.get(displayNick) || "").trim()) continue;
+      const shown = (people.get(displayNick) || "").trim();
+      if (note === shown) continue;
+      // Another conversation's pass, or a dashboard edit, rewrote this note
+      // while the model was reading the old one. Keep the newer note rather
+      // than overwrite it with one built on stale text.
+      if ((this.db.getPerson(displayNick)?.content || "").trim() !== shown) {
+        this.logger.info(`Archivist: note for ${displayNick} changed during the pass; keeping the newer one`);
+        continue;
+      }
       this.db.setPerson(displayNick, note, { source: "archivist", rationale: answer.rationale || null });
       changed = true;
       this.logger.info(`Archivist: note for ${displayNick} updated (${note.length} chars)`);

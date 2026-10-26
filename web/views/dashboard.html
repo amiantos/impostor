@@ -952,7 +952,10 @@
     // Channel tabs
     async function loadChannels() {
       try {
-        channels = await fetchJson(`${API_BASE}/channels`);
+        const bot = currentBot;
+        const data = await fetchJson(`${API_BASE}/channels`);
+        if (bot !== currentBot) return;
+        channels = data;
         renderChannelTabs();
       } catch (error) {
         console.error('Failed to load channels:', error);
@@ -1002,7 +1005,10 @@
           url = `${API_BASE}/chat?limit=100`;
         }
 
-        chatData = await fetchJson(url);
+        const bot = currentBot, channel = currentChannel;
+        const data = await fetchJson(url);
+        if (bot !== currentBot || channel !== currentChannel || memoryView) return;
+        chatData = data;
         renderChat();
       } catch (error) {
         console.error('Failed to load chat:', error);
@@ -1433,7 +1439,10 @@
       document.getElementById('memory-list-title').textContent = memoryView === 'journals' ? 'Journals' : 'People';
       container.innerHTML = '<div class="loading-spinner">Loading...</div>';
       try {
-        memoryItems = await fetchJson(`${API_BASE}/${memoryView}`);
+        const bot = currentBot, view = memoryView;
+        const items = await fetchJson(`${API_BASE}/${memoryView}`);
+        if (bot !== currentBot || view !== memoryView) return;
+        memoryItems = items;
         countEl.textContent = memoryItems.length;
         renderMemoryList();
         if (memorySelected) {
@@ -1498,7 +1507,10 @@
       const statsEl = document.getElementById('memory-selected-stats');
       container.innerHTML = '<div class="loading-spinner">Loading...</div>';
       try {
+        const bot = currentBot, view = memoryView;
         const data = await fetchJson(memoryUrl(key));
+        // The picker or the selection moved on while this was loading.
+        if (bot !== currentBot || view !== memoryView || key !== memorySelected) return;
         const current = memoryView === 'journals' ? data.journal : data.person;
         const label = memoryView === 'journals' ? conversationLabel(key) : current.nick;
         headerEl.textContent = label;

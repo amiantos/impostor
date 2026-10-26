@@ -131,3 +131,8 @@ test("without a bridge nick nothing is unwrapped", () => {
   const result = parseBridgedMessage("EyeBridge", "[Discord] <eve> yo", null);
   assert.deepEqual(result, { nick: "EyeBridge", message: "[Discord] <eve> yo", isWebhookAnnouncement: false });
 });
+
+test("a misconfigured bridge_tags value falls back to the default instead of throwing", () => {
+  assert.equal(parseBridgedMessage("EyeBridge", "[Discord] <eve> yo", BRIDGE, "Discord").nick, "eve");
+  assert.equal(parseBridgedMessage("EyeBridge", "[Discord] <eve> yo", BRIDGE, [42]).nick, "EyeBridge");
+});

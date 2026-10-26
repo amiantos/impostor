@@ -321,3 +321,90 @@ test("a ! command alone does not put its sender among the people of a stretch", 
   assert.equal(db.getPerson("amiantos").content, "real");
   db.close();
 });
+
+test("a stretch is read in the order it happened even when a slow message was stored late", async () => {
+  const db = tempDb();
+  // bob's line was inserted first (rowid 1) but alice's link, stored after
+  // its summary came back, happened two seconds earlier.
+  db.insertMessageEnhanced({ id: "bob", channelId: "#c", authorId: "bob", authorName: "bob", content: "nice", createdAt: "2026-10-26T12:00:02.000Z" });
+  db.insertMessageEnhanced({ id: "alice", channelId: "#c", authorId: "alice", authorName: "alice", content: "https://x", createdAt: "2026-10-26T12:00:00.000Z" });
+  const openai = fakeOpenai([{ journal: "j", people: {} }]);
+  const archivist = new Archivist(silent, {}, db, openai, new ContextUtils(silent, persona));
+  await archivist.runPass("#c");
+  assert.match(openai.calls[0].messages[1].content, /<alice> https:\/\/x\n\[\d\d:\d\d\] <bob> nice/);
+  assert.equal(db.getJournal("#c").watermark_rowid, 2);
+  db.close();
+});
+
+test("a journal forgotten during a pass stays forgotten", async () => {
+  const db = tempDb();
+  db.setJournal("#c", "old text", { watermarkRowid: 0 });
+  say(db, "#c", "a", "one");
+  let release;
+  const gate = new Promise((r) => (release = r));
+  const openai = { chat: { completions: { create: async () => { await gate; return { choices: [{ message: { content: '{"journal": "old text plus one", "people": {}}' } }] }; } } } };
+  const archivist = new Archivist(silent, { journal: { quiet_minutes: 60 } }, db, openai, new ContextUtils(silent, persona));
+  const running = archivist.runPass("#c");
+  await new Promise((r) => setTimeout(r, 5));
+  db.deleteJournal("#c");
+  release();
+  const result = await running;
+  assert.deepEqual(result, { passes: 1, changed: false });
+  assert.equal(db.getJournal("#c"), null);
+  archivist.shutdown();
+  db.close();
+});
+
+test("a pass that fails from the quiet timer re-arms the timer", async () => {
+  const db = tempDb();
+  say(db, "#c", "a", "one");
+  const openai = fakeOpenai(["junk", "junk"]);
+  const archivist = new Archivist(silent, { journal: { messages_per_pass: 100, min_messages: 1, quiet_minutes: 60 } }, db, openai, new ContextUtils(silent, persona));
+  await archivist.runPass("#c");
+  assert.equal(archivist.quietTimers.size, 1, "the unread stretch is not stranded");
+  archivist.shutdown();
+  db.close();
+});
+
+test("resume() schedules conversations left unread by a restart", () => {
+  const db = tempDb();
+  say(db, "#c", "a", "one");
+  say(db, "#read", "a", "x");
+  db.setJournal("#read", "done", { watermarkRowid: 2 });
+  const archivist = new Archivist(silent, { journal: { quiet_minutes: 60 } }, db, fakeOpenai([]), new ContextUtils(silent, persona));
+  archivist.resume();
+  assert.deepEqual([...archivist.quietTimers.keys()], ["#c"]);
+  archivist.shutdown();
+  db.close();
+});
+
+test("a note rewritten elsewhere during a pass is kept over the stale rewrite", async () => {
+  const db = tempDb();
+  db.setPerson("bob", "v1");
+  say(db, "#c", "bob", "hi");
+  let release;
+  const gate = new Promise((r) => (release = r));
+  const openai = { chat: { completions: { create: async () => { await gate; return { choices: [{ message: { content: '{"journal": "j", "people": {"bob": "v1 plus stale"}}' } }] }; } } } };
+  const archivist = new Archivist(silent, { journal: { quiet_minutes: 60 } }, db, openai, new ContextUtils(silent, persona));
+  const running = archivist.runPass("#c");
+  await new Promise((r) => setTimeout(r, 5));
+  db.setPerson("bob", "v2 from the other channel");
+  release();
+  await running;
+  assert.equal(db.getPerson("bob").content, "v2 from the other channel");
+  assert.equal(db.getJournalText("#c"), "j", "the journal itself is unaffected");
+  archivist.shutdown();
+  db.close();
+});
+
+test("pruning keeps an unread backlog but still bounds conversations without a journal", () => {
+  const db = tempDb();
+  for (let i = 0; i < 8; i++) say(db, "#c", "a", `line ${i}`);
+  for (let i = 0; i < 8; i++) say(db, "stranger", "stranger", `spam ${i}`);
+  db.setJournalWatermark("#c", 2); // six unread lines
+  db.pruneOldMessages(4);
+  assert.equal(db.countMessagesAfterRowid("#c", 0), 6, "nothing unread was pruned");
+  assert.equal(db.getMessagesAfterRowid("#c", 0, 10)[0].content, "line 2");
+  assert.equal(db.countMessagesAfterRowid("stranger", 0), 4);
+  db.close();
+});
