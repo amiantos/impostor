@@ -35,7 +35,7 @@ for (const bot of listBots(config)) {
     dataDir,
   });
   clients.set(client.id, client);
-  logger.info(`Bot "${bot.id}" is ${persona.name} as ${bot.nick} in ${(bot.channels || []).join(", ") || "no channels"}`);
+  logger.info(`Bot "${client.id}" is ${persona.name} as ${bot.nick} in ${(bot.channels || []).join(", ") || "no channels"}`);
 }
 
 let webServer = null;

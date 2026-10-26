@@ -401,10 +401,7 @@ Do not include any text outside of this JSON structure. The "message" field shou
     // The conversation key is either an IRC channel ("#amiantos") or, for
     // DMs, the other person's nick.
     const conversationKey = triggerInfo.channelName || "channel";
-    const isPrivate = !conversationKey.startsWith("#");
-    const conversationHeader = isPrivate
-      ? `Direct message conversation with ${conversationKey}`
-      : `Recent conversation in ${conversationKey}`;
+    const conversationHeader = `Recent conversation in ${ContextUtils.conversationLabel(conversationKey)}`;
 
     let consolidatedContent =
       this.buildMemorySection(conversationKey, memory) +

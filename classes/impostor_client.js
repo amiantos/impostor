@@ -105,7 +105,7 @@ class ImpostorClient {
     this.ircClient.on("registered", () => {
       this.reconnectDelay = 1000;
       this.logger.info(`Connected to IRC as ${this.botNick}!`);
-      this.markAsBot();
+      this.botModeSet = false;
       // Join configured channels
       for (const channel of config.irc.channels) {
         this.ircClient.join(channel);
@@ -157,8 +157,11 @@ class ImpostorClient {
       this.logger.error("IRC error:", event);
     });
 
+    // ISUPPORT (005) arrives after RPL_WELCOME, one event per line, so the
+    // bot mode can only be set from here, once the BOT token has shown up.
     this.ircClient.on("server options", (event) => {
       this.logger.info("IRC server options received (connection established)");
+      this.markAsBot(event.options);
     });
   }
 
@@ -194,15 +197,14 @@ class ImpostorClient {
    * Set the bot user mode on servers that advertise one (the BOT ISUPPORT
    * token names the mode letter, "B" on Ergo). Marks the bot in WHOIS and
    * tags its lines for other clients; servers without it are left alone.
+   * Called on every ISUPPORT line; acts once per connection.
+   * @param {Object} options - The server's ISUPPORT tokens so far
    */
-  markAsBot() {
-    let letter;
-    try {
-      letter = this.ircClient.network?.supports("BOT");
-    } catch (err) {
-      return;
-    }
+  markAsBot(options) {
+    if (this.botModeSet) return;
+    const letter = options?.BOT;
     if (typeof letter !== "string" || letter.length !== 1) return;
+    this.botModeSet = true;
     this.logger.info(`Server supports bot mode (+${letter}); setting it`);
     this.ircClient.mode(this.botNick, `+${letter}`);
   }

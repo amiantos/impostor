@@ -169,6 +169,9 @@ class Archivist {
     this.quietTimers = new Map(); // conversationId -> timeout
     this.running = new Set();
     this.pending = new Set();
+    // conversationId -> when a pass last failed; until quiet_minutes have
+    // passed since, the message threshold does not trigger another one.
+    this.failedAt = new Map();
     this.shuttingDown = false;
   }
 
@@ -189,7 +192,14 @@ class Archivist {
     if (timer) clearTimeout(timer);
     this.quietTimers.delete(conversationId);
 
-    if (decision === "now") {
+    // After a failed pass (the model down, a bad model name, non-JSON
+    // answers) every new line would otherwise retry at full cost. Fall back
+    // to the quiet timer until the backoff has elapsed.
+    const quietMs = this.cfg.quiet_minutes * 60 * 1000;
+    const failedAt = this.failedAt.get(conversationId);
+    const backingOff = failedAt !== undefined && Date.now() - failedAt < quietMs;
+
+    if (decision === "now" && !backingOff) {
       this.logger.debug(`Archivist: ${unread} unread lines in ${conversationId}, running a pass`);
       this.runPass(conversationId).catch((err) =>
         this.logger.error(`Archivist pass failed for ${conversationId}: ${err.message}`)
@@ -199,7 +209,6 @@ class Archivist {
 
     // Arm the quiet timer even below min_messages: more lines may come, and a
     // timer that fires early just finds too few and does nothing.
-    const quietMs = this.cfg.quiet_minutes * 60 * 1000;
     const id = setTimeout(() => {
       this.quietTimers.delete(conversationId);
       if (this.shuttingDown) return;
@@ -268,10 +277,10 @@ class Archivist {
     }
     if (this.pending.has(conversationId) && !this.shuttingDown) {
       this.pending.delete(conversationId);
-      // Enough new lines arrived during the pass to be worth another look.
-      if (decidePass(this.unreadCount(conversationId), this.cfg) === "now") {
-        return this.runPass(conversationId);
-      }
+      // Lines arrived during the pass; they get the same treatment as any
+      // other new line, so a short tail waits for quiet rather than being
+      // stranded until someone speaks again.
+      this.noteActivity(conversationId);
     }
     return { passes, changed };
   }
@@ -283,9 +292,14 @@ class Archivist {
    */
   async readBatch(conversationId, batch, part) {
     const journal = this.db.getJournalText(conversationId);
-    const nicks = [...new Set(batch.filter((m) => !m.is_bot_message).map((m) => m.author_name).filter(Boolean))];
+    // Only people with a rendered line can get a note from this stretch;
+    // renderChatlog skips "!" commands, so take the nicks from what it kept.
+    const seen = new Set();
+    const lines = this.contextUtils.renderChatlog(batch, {
+      onLine: (msg) => seen.add(msg.author_name || "Unknown"),
+    });
+    const nicks = [...seen];
     const people = this.db.getPeople(nicks);
-    const lines = this.contextUtils.renderChatlog(batch);
     const { system, user } = buildArchivistPrompt({
       persona: this.persona,
       conversationId,
@@ -299,9 +313,11 @@ class Archivist {
 
     const answer = await this.ask(system, user);
     if (!answer) {
-      this.logger.warn(`Archivist: no usable answer for ${conversationId} (part ${part.index + 1}/${part.count}); will reread next time`);
+      this.failedAt.set(conversationId, Date.now());
+      this.logger.warn(`Archivist: no usable answer for ${conversationId} (part ${part.index + 1}/${part.count}); will reread after ${this.cfg.quiet_minutes} quiet minutes`);
       return { ok: false, changed: false };
     }
+    this.failedAt.delete(conversationId);
 
     const lastRowid = batch[batch.length - 1].rowid;
     let changed = false;

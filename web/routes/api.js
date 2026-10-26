@@ -272,7 +272,12 @@ router.patch("/journals/:conversationId", (req, res) => {
     if (typeof content !== "string") {
       return res.status(400).json({ error: "content must be a string" });
     }
-    req.db.setJournal(req.params.conversationId, content.trim(), { source: "edit" });
+    // A journal written by hand describes the conversation as of now, so a
+    // conversation without one yet starts its watermark at the newest line
+    // rather than rereading the whole stored backlog on the next pass.
+    const { conversationId } = req.params;
+    const watermarkRowid = req.db.getJournal(conversationId) ? null : req.db.getLastMessageRowid(conversationId);
+    req.db.setJournal(conversationId, content.trim(), { source: "edit", watermarkRowid });
     res.json({ success: true, journal: req.db.getJournal(req.params.conversationId) });
   } catch (error) {
     req.logger.error("Error updating journal:", error);

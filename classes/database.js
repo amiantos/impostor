@@ -961,6 +961,14 @@ class DatabaseManager {
     return stmt.get(conversationId, afterRowid).count;
   }
 
+  /** The newest message's rowid in a conversation, 0 when it has none. */
+  getLastMessageRowid(conversationId) {
+    const row = this.db.prepare(`
+      SELECT MAX(rowid) AS rowid FROM messages WHERE channel_id = ?
+    `).get(conversationId);
+    return row?.rowid ?? 0;
+  }
+
   /** The newest message's arrival time in a conversation, or null. */
   getLastMessageTime(conversationId) {
     const row = this.db.prepare(`
@@ -1049,8 +1057,9 @@ class DatabaseManager {
   }
 
   /**
-   * Notes for several nicks as a Map of display nick -> text, only for those
-   * who have one.
+   * Notes for several nicks as a Map of nick -> text, keyed by the nicks as
+   * they were asked for (so a caller's lookup matches whatever case the
+   * person is using today), only for those who have one.
    * @param {string[]} nicks
    * @returns {Map<string, string>}
    */
@@ -1060,7 +1069,7 @@ class DatabaseManager {
     const stmt = this.db.prepare(`SELECT * FROM people WHERE nick_key = ?`);
     for (const nick of nicks) {
       const row = stmt.get(DatabaseManager.nickKey(nick));
-      if (row) notes.set(row.nick, row.content);
+      if (row) notes.set(nick, row.content);
     }
     return notes;
   }

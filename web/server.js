@@ -60,7 +60,7 @@ class WebServer {
       req.logger = this.logger;
       req.clients = this.clients;
       if (req.path === "/bots") return next();
-      const id = typeof req.query.bot === "string" ? req.query.bot : null;
+      const id = typeof req.query.bot === "string" ? req.query.bot.toLowerCase() : null;
       const client = id ? this.clients.get(id) : this.clients.values().next().value;
       if (!client) {
         return res.status(404).json({ error: id ? `No bot "${id}"` : "No bots configured" });

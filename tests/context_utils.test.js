@@ -91,7 +91,7 @@ test("no memory means no memory block, and a DM is labeled as one", () => {
     null,
     { journal: null, people: new Map() }
   );
-  assert.ok(message.content.startsWith("Direct message conversation with bob:"));
+  assert.ok(message.content.startsWith("Recent conversation in direct messages with bob:"));
   const [autonomous] = ctx.buildChatMessagesConsolidated([msg("bob", "hey")], "mabel", { userName: null, channelName: "#c" });
   assert.match(autonomous.content, /Respond naturally to the ongoing conversation/);
 });

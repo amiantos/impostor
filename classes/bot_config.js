@@ -25,6 +25,12 @@ function listBots(config) {
     if (!/^[a-z0-9_-]+$/i.test(bot.id)) {
       throw new Error(`Bot id "${bot.id}" may only contain letters, digits, "-" and "_" (it names a directory)`);
     }
+    for (const key of ["channels", "pm_allowed_users", "bridge_tags"]) {
+      const value = key === "bridge_tags" ? bot.irc?.[key] : bot[key];
+      if (value !== undefined && !(Array.isArray(value) && value.every((v) => typeof v === "string"))) {
+        throw new Error(`Bot "${bot.id}": "${key}" must be a list of strings`);
+      }
+    }
     const id = bot.id.toLowerCase();
     const nick = bot.nick.toLowerCase();
     if (ids.has(id)) throw new Error(`Two bots share the id "${bot.id}"`);
@@ -72,7 +78,8 @@ function resolveBotConfig(shared, bot) {
     autonomous: { ...(shared.autonomous || {}), ...(bot.autonomous || {}) },
     url_summarize: { ...(shared.url_summarize || {}), ...(bot.url_summarize || {}) },
     journal: { ...(shared.journal || {}), ...(bot.journal || {}) },
-    bot: { id: bot.id, persona: bot.persona },
+    // Lowercased: it names the data directory and the dashboard's ?bot= key.
+    bot: { id: bot.id.toLowerCase(), persona: bot.persona },
     bots: undefined,
   };
 }

@@ -216,7 +216,7 @@ test("memoryFor returns the journal and only the notes of the nicks asked for", 
   const archivist = new Archivist(silent, {}, db, fakeOpenai([]), new ContextUtils(silent, persona));
   const memory = archivist.memoryFor("#c", ["amiantos", "carol"]);
   assert.equal(memory.journal, "the story so far");
-  assert.deepEqual([...memory.people], [["Amiantos", "my creator"]]);
+  assert.deepEqual([...memory.people], [["amiantos", "my creator"]], "keyed by the nick as asked for");
   assert.equal(archivist.memoryFor("#other", []).journal, null);
   db.close();
 });
@@ -252,5 +252,72 @@ test("a disabled journal never runs", () => {
   say(db, "#c", "a", "one");
   archivist.noteActivity("#c");
   assert.equal(archivist.quietTimers.size, 0);
+  db.close();
+});
+
+test("a note is found and kept whatever case the nick is typed in today", async () => {
+  const db = tempDb();
+  db.setPerson("Amiantos", "my creator, likes tabs");
+  say(db, "#c", "amiantos", "i also like spaces now");
+  const openai = fakeOpenai([{ journal: null, people: { amiantos: "my creator, likes tabs and now spaces" } }]);
+  const archivist = new Archivist(silent, {}, db, openai, new ContextUtils(silent, persona));
+  await archivist.runPass("#c");
+  assert.match(openai.calls[0].messages[1].content, /amiantos: my creator, likes tabs/, "the old note was shown");
+  assert.equal(db.getPerson("AMIANTOS").content, "my creator, likes tabs and now spaces");
+  assert.equal(db.getPersonVersions("amiantos").length, 2, "updated, not replaced from scratch");
+  assert.deepEqual([...archivist.memoryFor("#c", ["AMIANTOS"]).people], [["AMIANTOS", "my creator, likes tabs and now spaces"]]);
+  db.close();
+});
+
+test("after a failed pass the message threshold waits out the backoff instead of retrying per line", async () => {
+  const db = tempDb();
+  const openai = fakeOpenai(["junk", "junk"]);
+  const archivist = new Archivist(silent, { journal: { messages_per_pass: 1, min_messages: 1, quiet_minutes: 60 } }, db, openai, new ContextUtils(silent, persona));
+  say(db, "#c", "a", "one");
+  await archivist.runPass("#c");
+  assert.equal(openai.calls.length, 2);
+  say(db, "#c", "a", "two");
+  archivist.noteActivity("#c");
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(openai.calls.length, 2, "no immediate retry");
+  assert.equal(archivist.quietTimers.size, 1, "the quiet timer is armed instead");
+  archivist.shutdown();
+  db.close();
+});
+
+test("lines that arrive during a pass get the quiet timer afterwards", async () => {
+  const db = tempDb();
+  say(db, "#c", "a", "one");
+  let release;
+  const gate = new Promise((r) => (release = r));
+  const openai = {
+    calls: [],
+    chat: { completions: { create: async (req) => { openai.calls.push(req); await gate; return { choices: [{ message: { content: '{"journal": "j", "people": {}}' } }] }; } } },
+  };
+  const archivist = new Archivist(silent, { journal: { messages_per_pass: 1, min_messages: 1, quiet_minutes: 60 } }, db, openai, new ContextUtils(silent, persona));
+  const running = archivist.runPass("#c");
+  await new Promise((r) => setTimeout(r, 5));
+  say(db, "#c", "a", "two");
+  archivist.noteActivity("#c"); // mid-pass: queued, timer cleared
+  assert.equal(archivist.quietTimers.size, 0);
+  release();
+  await running;
+  // The tail is below messages_per_pass? No: it is 1 >= 1, so a second pass runs.
+  await new Promise((r) => setTimeout(r, 5));
+  assert.equal(openai.calls.length, 2);
+  archivist.shutdown();
+  db.close();
+});
+
+test("a ! command alone does not put its sender among the people of a stretch", async () => {
+  const db = tempDb();
+  say(db, "#c", "carol", "!seen bob");
+  say(db, "#c", "amiantos", "hello");
+  const openai = fakeOpenai([{ journal: "j", people: { carol: "invented", amiantos: "real" } }]);
+  const archivist = new Archivist(silent, {}, db, openai, new ContextUtils(silent, persona));
+  await archivist.runPass("#c");
+  assert.doesNotMatch(openai.calls[0].messages[1].content, /carol/);
+  assert.equal(db.getPerson("carol"), null);
+  assert.equal(db.getPerson("amiantos").content, "real");
   db.close();
 });

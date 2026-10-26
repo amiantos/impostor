@@ -134,3 +134,17 @@ test("the remember tool is gone", async () => {
   assert.equal(result.success, false);
   assert.match(result.error, /Unknown tool: remember/);
 });
+
+test("a journal seeded by hand starts its watermark at the newest line", async () => {
+  const db = isaac.getDatabase();
+  for (let i = 0; i < 3; i++) db.insertMessageEnhanced({ id: `s${i}`, channelId: "#seed", authorId: "a", authorName: "a", content: "old", createdAt: new Date().toISOString() });
+  const { body } = await api(`/api/journals/${encodeURIComponent("#seed")}?bot=isaac`, {
+    method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ content: "as of now" }),
+  });
+  assert.equal(body.journal.watermark_rowid, db.getLastMessageRowid("#seed"));
+  assert.equal(isaac.archivist.unreadCount("#seed"), 0);
+});
+
+test("?bot= is case-insensitive", async () => {
+  assert.equal((await api("/api/journals?bot=ISAAC")).status, 200);
+});

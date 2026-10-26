@@ -76,3 +76,11 @@ test("listBots rejects a missing list, missing fields, and duplicates", () => {
   const bots = listBots({ bots: [{ id: "a", nick: "A", persona: "p" }] });
   assert.equal(bots.length, 1);
 });
+
+test("channels and pm_allowed_users must be lists of strings, and ids are lowercased", () => {
+  assert.throws(() => listBots({ bots: [{ id: "a", nick: "A", persona: "p", channels: "#lurker" }] }), /"channels" must be a list/);
+  assert.throws(() => listBots({ bots: [{ id: "a", nick: "A", persona: "p", pm_allowed_users: "brad" }] }), /"pm_allowed_users" must be a list/);
+  assert.throws(() => listBots({ bots: [{ id: "a", nick: "A", persona: "p", irc: { bridge_tags: "libera" } }] }), /"bridge_tags" must be a list/);
+  const cfg = resolveBotConfig(shared, { id: "Isaac", nick: "Isaac", persona: "p.md" });
+  assert.equal(cfg.bot.id, "isaac");
+});
