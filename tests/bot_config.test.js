@@ -94,3 +94,9 @@ test("keys with a top-level alias are refused under irc", () => {
   assert.throws(() => listBots({ bots: [{ id: "a", nick: "A", persona: "p", irc: { channels: ["#x"] } }] }), /irc.channels belongs at the bot's top level/);
   assert.throws(() => listBots({ bots: [{ id: "a", nick: "A", persona: "p", irc: { password: "x" } }] }), /irc.password belongs/);
 });
+
+test("timezone is shared with a per-bot override", () => {
+  assert.equal(resolveBotConfig({ ...shared, timezone: "America/Los_Angeles" }, { id: "a", nick: "A", persona: "p" }).timezone, "America/Los_Angeles");
+  assert.equal(resolveBotConfig({ ...shared, timezone: "America/Los_Angeles" }, { id: "a", nick: "A", persona: "p", timezone: "Europe/Berlin" }).timezone, "Europe/Berlin");
+  assert.equal(resolveBotConfig(shared, { id: "a", nick: "A", persona: "p" }).timezone, undefined, "unset falls through to the ContextUtils default");
+});

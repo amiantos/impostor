@@ -11,6 +11,7 @@
             "max_tokens": 500
         }
     },
+    "timezone": "America/Los_Angeles",
     "irc": {
         "host": "irc.lurker.chat",
         "port": 6697,

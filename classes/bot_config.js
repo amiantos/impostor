@@ -88,6 +88,9 @@ function resolveBotConfig(shared, bot) {
     autonomous: { ...(shared.autonomous || {}), ...(bot.autonomous || {}) },
     url_summarize: { ...(shared.url_summarize || {}), ...(bot.url_summarize || {}) },
     journal: { ...(shared.journal || {}), ...(bot.journal || {}) },
+    // The zone every timestamp the bot sees is rendered in; a bot may live
+    // somewhere else than the others.
+    timezone: bot.timezone || shared.timezone || undefined,
     // Lowercased: it names the data directory and the dashboard's ?bot= key.
     bot: { id: bot.id.toLowerCase(), persona: bot.persona },
     bots: undefined,

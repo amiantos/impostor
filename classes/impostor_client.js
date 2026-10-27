@@ -32,7 +32,7 @@ class ImpostorClient {
     // What people call the bot in chat. The persona's name unless the config
     // says otherwise; mentioning it or the nick is always an address.
     this.watchword = config.irc.watchword || persona.name;
-    this.contextUtils = new ContextUtils(logger, persona);
+    this.contextUtils = new ContextUtils(logger, persona, { timezone: config.timezone });
     this.config = config;
     this.logger = logger;
 

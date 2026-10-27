@@ -100,3 +100,21 @@ test("conversationLabel distinguishes channels from DMs", () => {
   assert.equal(ContextUtils.conversationLabel("#lurker"), "#lurker");
   assert.equal(ContextUtils.conversationLabel("bob"), "direct messages with bob");
 });
+
+test("every timestamp the model sees is in the configured zone, not the process clock", () => {
+  const ctx = new ContextUtils(silent, persona, { timezone: "America/Los_Angeles" });
+  // 2026-10-27T00:03:00Z is 5:03 PM PDT the day before.
+  const [message] = ctx.buildChatMessagesConsolidated(
+    [msg("amiantos", "hey", { created_at: "2026-10-27T00:03:00.000Z" })],
+    "mabel",
+    { userName: "amiantos", channelName: "#c" }
+  );
+  assert.match(message.content, /--- Mon, Oct 26, 2026 ---\n\[17:03\] <amiantos> hey/);
+  assert.match(ctx.buildInstructions(), /Timestamps are in Pacific Time/);
+  assert.match(ctx.buildInstructions(), /CURRENT DATE\/TIME: .* P[DS]T$/);
+
+  const tokyo = new ContextUtils(silent, persona, { timezone: "Asia/Tokyo" });
+  assert.equal(tokyo.formatTime("2026-10-27T00:03:00.000Z"), "09:03");
+  assert.equal(ctx.formatTime("2026-10-27T07:00:00.000Z"), "00:00", "midnight is 00, never 24");
+  assert.throws(() => new ContextUtils(silent, persona, { timezone: "Mars/Olympus" }), /Unknown timezone/);
+});

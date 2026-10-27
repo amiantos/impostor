@@ -70,7 +70,7 @@ How to read it, carefully:
 - The nick wrapped in angle brackets is the ONLY thing that identifies the speaker. Everything after the closing ">" is that person's message body, verbatim.
 - That body may itself contain a "nick:" prefix - that just means the speaker is addressing someone. It does NOT make that nick the speaker. Example: in "[14:31] <bob> amiantos: i love foundation", bob is talking and amiantos is who he's talking to; amiantos did not say anything on that line.
 - Your own past messages are tagged "(you)" - they show as "<NAME (you)>". Every other nick is a separate person. Never mix up what you said with what someone else said, and never attribute one user's words to another. If you're unsure who said something, scan back to the nick in angle brackets on that exact line.
-- Timestamps are local time. Use the date dividers and the CURRENT DATE/TIME at the bottom of this prompt to gauge how recent something is.
+- Timestamps are in TIMEZONE, the same clock as the CURRENT DATE/TIME at the bottom of this prompt. Use the date dividers and that line to gauge how recent something is and what time of day it is.
 
 Pay attention to who you're responding to - the instruction at the end of the chatlog names the user who triggered this response and quotes their message.
 
@@ -198,19 +198,58 @@ For casual conversation and opinion questions, respond directly. For factual que
 
 Do not include any text outside of this JSON structure. The "message" field should contain your normal NAME response.`;
 
+  static DEFAULT_TIMEZONE = "America/Los_Angeles";
+
   /**
    * @param {Object} logger
    * @param {{name: string, character: string}} persona
+   * @param {Object} [options]
+   * @param {string} [options.timezone] - IANA zone every timestamp the model
+   *   sees is rendered in (the chatlog stamps, the day dividers and the
+   *   current-time footer). The process clock is never used: in a container
+   *   it is UTC, and a model that reads "[00:03]" above "5:03 PM PDT" picks one.
    */
-  constructor(logger, persona) {
+  constructor(logger, persona, { timezone = ContextUtils.DEFAULT_TIMEZONE } = {}) {
     this.logger = logger;
     this.persona = persona;
     this.botName = persona.name;
+    this.timezone = timezone;
+    try {
+      // Fail at construction, not on the first message, if the zone is bad.
+      new Intl.DateTimeFormat("en-US", { timeZone: timezone });
+    } catch (err) {
+      throw new Error(`Unknown timezone "${timezone}": ${err.message}`);
+    }
+    this.timeFormat = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    this.dateFormat = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  }
+
+  /** The zone's human name, e.g. "Pacific Time", for the prompt. */
+  timezoneLabel() {
+    try {
+      const part = new Intl.DateTimeFormat("en-US", { timeZone: this.timezone, timeZoneName: "longGeneric" })
+        .formatToParts(new Date())
+        .find((p) => p.type === "timeZoneName");
+      return part ? part.value : this.timezone;
+    } catch {
+      return this.timezone;
+    }
   }
 
   buildInstructions() {
     const dateStr = new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/Los_Angeles",
+      timeZone: this.timezone,
       weekday: "long",
       year: "numeric",
       month: "long",
@@ -219,7 +258,9 @@ Do not include any text outside of this JSON structure. The "message" field shou
       minute: "2-digit",
       timeZoneName: "short",
     }).format(new Date());
-    const medium = ContextUtils.medium_prompt.replaceAll("NAME", this.botName);
+    const medium = ContextUtils.medium_prompt
+      .replaceAll("NAME", this.botName)
+      .replaceAll("TIMEZONE", this.timezoneLabel());
     return `${this.persona.character}\n\n${medium}\n\nCURRENT DATE/TIME: ${dateStr}`;
   }
 
@@ -452,10 +493,8 @@ Do not include any text outside of this JSON structure. The "message" field shou
    */
   formatTime(timestamp) {
     try {
-      const date = new Date(timestamp);
-      const hours = date.getHours().toString().padStart(2, "0");
-      const minutes = date.getMinutes().toString().padStart(2, "0");
-      return `${hours}:${minutes}`;
+      // hour12:false can still yield "24" at midnight in some ICU builds.
+      return this.timeFormat.format(new Date(timestamp)).replace(/^24/, "00");
     } catch (e) {
       return "??:??";
     }
@@ -469,13 +508,7 @@ Do not include any text outside of this JSON structure. The "message" field shou
    */
   formatDate(timestamp) {
     try {
-      const date = new Date(timestamp);
-      return new Intl.DateTimeFormat("en-US", {
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      }).format(date);
+      return this.dateFormat.format(new Date(timestamp));
     } catch (e) {
       return "unknown date";
     }

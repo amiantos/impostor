@@ -106,6 +106,7 @@ See `conf/config.json.example` for all options. Key sections:
 | `generator.deepseek` | DeepSeek API settings for chat responses |
 | `generator.deepseek.thinking` | Let the model reason before replying (default `true`) |
 | `generator.deepseek.evaluator_thinking` | Same, for the should-I-respond evaluator (default `false`) |
+| `timezone` | IANA zone the bots live in; every timestamp they see is in it (default `America/Los_Angeles`, per-bot override allowed) |
 | `irc` | Shared IRC connection settings (host, port, TLS; optional `bridge_nick` and `bridge_tags`) |
 | `bots` | One entry per bot: `id`, `nick`, `persona`, `account`, `channels`, `pm_allowed_users`, and per-bot overrides of `irc`, `generator`, `autonomous`, `url_summarize`, `journal` |
 | `bots[].watchword` | What people call the bot in chat, when it differs from the persona's name |
