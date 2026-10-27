@@ -22,6 +22,8 @@
         "reactions": true,
         "reaction_max_length": 24,
         "reply_min_distance": 5,
+        "dm_delay_min_seconds": 2,
+        "dm_delay_max_seconds": 6,
         "typing_notifications": {
             "enabled": true,
             "refresh_seconds": 3,

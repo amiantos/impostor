@@ -126,6 +126,7 @@ See `conf/config.json.example` for all options. Key sections:
 | `generator.deepseek.thinking` | Let the model reason before replying (default `true`) |
 | `generator.deepseek.evaluator_thinking` | Same, for the should-I-respond evaluator (default `false`) |
 | `generator.deepseek.timeout_seconds` | Give up on a model call after this long (default 300); `max_retries` (default 1) is how often the SDK retries a failed or timed-out call before the bot's own retry loop sees it |
+| `irc.dm_delay_min_seconds` / `dm_delay_max_seconds` | A random pause (default 2 to 6 seconds) before the bot starts reading and typing a reply to a DM |
 | `irc.typing_notifications.max_seconds` | After this long generating (default 300) the typing indicator goes to "paused" rather than showing the bot typing for ten minutes |
 | `timezone` | IANA zone the bots live in; every timestamp they see is in it (default `America/Los_Angeles`, per-bot override allowed) |
 | `irc` | Shared IRC connection settings (host, port, TLS; optional `bridge_nick` and `bridge_tags`) |

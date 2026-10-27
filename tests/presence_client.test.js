@@ -51,7 +51,7 @@ before(() => {
   const config = resolveBotConfig(
     {
       generator: { deepseek: { api_key: "k", model: "m", temperature: 0.9, max_tokens: 500 } },
-      irc: { host: "localhost" },
+      irc: { host: "localhost", dm_delay_min_seconds: 0, dm_delay_max_seconds: 0 },
       autonomous: { enabled: true, debounce_seconds: 0, max_wait_seconds: 0 },
       journal: { enabled: false },
       presence: { afk_minutes: 15, linger_minutes: 15 },

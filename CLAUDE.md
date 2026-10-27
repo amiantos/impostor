@@ -126,7 +126,7 @@ His problem was never total volume (~11% of channel messages) but clustering: he
 - On a server that advertises the `BOT` ISUPPORT token (Ergo: `B`), each bot sets that mode on itself after registering.
 - Message IDs are UUIDs. The server's IRCv3 `msgid` tag, when present, goes in `message_msgids` (stored before the message itself, since link summarizing can delay the insert and a reaction may arrive first). The bot's own msgids come from `echo-message`: `sendIrcMessage` queues each line in `pendingEchoes` and `recordEcho` matches echoes back in order (prefix-consuming, since irc-framework may split a line further)
 - Requests `message-tags` always and `echo-message` via irc-framework's `enable_echomessage`; `canSendReactions` checks `CLIENTTAGDENY` through `network.supportsTag`
-- DMs are accepted from anyone (so the dashboard can monitor them) but only sent to nicks listed in `irc.pm_allowed_users`. Empty list = no DM responses.
+- DMs are accepted from anyone (so the dashboard can monitor them) but only sent to nicks listed in `irc.pm_allowed_users`. Empty list = no DM responses. A DM reply waits a random `irc.dm_delay_min_seconds` to `dm_delay_max_seconds` (2 to 6) before the bot starts typing; the screen is built after the pause.
 
 ## API Response Format
 

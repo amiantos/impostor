@@ -1094,6 +1094,14 @@ class ImpostorClient {
       .replace(/[^\w\s]/gi, "");
     const character_name = this.watchword;
 
+    // Nobody reads and starts typing the instant a DM lands. A short random
+    // pause first, with the screen built after it so a second line that
+    // arrives meanwhile is on it.
+    const minDelay = this.config.irc.dm_delay_min_seconds ?? 2;
+    const maxDelay = Math.max(minDelay, this.config.irc.dm_delay_max_seconds ?? 6);
+    const delay = minDelay + Math.random() * (maxDelay - minDelay);
+    if (delay > 0) await new Promise((r) => setTimeout(r, delay * 1000));
+
     const { dbMessages, imageDescriptions, memory } = this.buildContextFromDatabase(channelName);
 
     const triggerInfo = {
