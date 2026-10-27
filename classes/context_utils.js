@@ -47,6 +47,18 @@ class ContextUtils {
       message: {
         type: "string",
         description: "The chat response message (may be empty if tools are needed first)"
+      },
+      reply_to: {
+        type: ["string", "null"],
+        description: "Chatlog reference (\"m12\") of a buried line this message answers, sent as an IRCv3 reply"
+      },
+      react: {
+        type: ["object", "null"],
+        properties: {
+          to: { type: "string", description: "Chatlog reference of the line to react to" },
+          reaction: { type: "string", description: "One emoji or a word or two" }
+        },
+        description: "An IRCv3 reaction to put on a line, with or without a message"
       }
     },
     required: ["needs_tool", "continue_iterating", "message"],
@@ -64,15 +76,26 @@ class ContextUtils {
 - Silence is a valid response. if you genuinely have nothing useful to add, return an empty string in the "message" field. don't force a reply. note: if someone is directly asking you a question, answer it - silence is for ambient channel chatter you don't need to weigh in on.
 
 You will receive conversation context as a chatlog in IRC log format. A line like "--- Wed, May 14, 2026 ---" marks the start of a calendar day; every message line beneath it looks like:
-[HH:MM] <username> message content
+[HH:MM] m12 <username> message content
 
 How to read it, carefully:
+- "m12" is the line's reference, used only to point a reaction or a reply at it (see below). It is not part of anyone's message.
 - The nick wrapped in angle brackets is the ONLY thing that identifies the speaker. Everything after the closing ">" is that person's message body, verbatim.
 - That body may itself contain a "nick:" prefix - that just means the speaker is addressing someone. It does NOT make that nick the speaker. Example: in "[14:31] <bob> amiantos: i love foundation", bob is talking and amiantos is who he's talking to; amiantos did not say anything on that line.
 - Your own past messages are tagged "(you)" - they show as "<NICK (you)>". Every other nick is a separate person. Never mix up what you said with what someone else said, and never attribute one user's words to another. If you're unsure who said something, scan back to the nick in angle brackets on that exact line.
+- A body that starts with (replying to bob: "...") was sent with the client's reply button, pointing at that earlier line of bob's. "(replying to you: ...)" means it answers one of your lines.
+- A line that ends with [reactions: alice 😂, you 🖤] has reactions on it: an emoji or a word or two that people attached to the line instead of typing a message. "you" is a reaction you left yourself.
 - Timestamps are in TIMEZONE, the same clock as the CURRENT DATE/TIME at the bottom of this prompt. Use the date dividers and that line to gauge how recent something is and what time of day it is.
 
 Pay attention to who you're responding to - the instruction at the end of the chatlog names the user who triggered this response and quotes their message.
+
+REACTIONS AND REPLIES:
+This server supports reactions and threaded replies. Two optional fields in your JSON use them; both take a line's reference from the chatlog ("m12").
+- "react": {"to": "m12", "reaction": "🖤"} puts a reaction on that line. A reaction is one emoji, or a word or two (at most REACT_MAX characters). It is quieter than a message: it sits on the person's line instead of adding a new one. You can react and write a message, react and leave "message" empty, or - most of the time - leave "react" null. Never react to a line that already carries your reaction, or to your own lines.
+- "reply_to": "m12" threads your message under that line. Use it only when the line you are answering is buried, REPLY_MIN or more lines back, so people can tell what you mean. For anything more recent leave it null and use the "nick:" prefix as usual; a reply_to on a recent line is dropped.
+
+HOW NAME USES REACTIONS:
+REACTION_STYLE
 
 YOUR JOURNAL AND YOUR NOTES ABOUT PEOPLE:
 Between conversations, a journal is kept for you in your own voice: a short account of what has been going on in this channel (or this DM) before the chatlog below, what you said, and what was left open. It appears as "YOUR JOURNAL" above the chatlog. Notes about the people present appear under "PEOPLE": who they are, what they like, how you and they get on. Treat both as your own genuine recollection; you don't need to mention that you keep them. You don't write them yourself during a reply - they are updated from the chatlog on their own.
@@ -90,7 +113,9 @@ DEFAULT RESPONSE FORMAT:
 {
   "needs_tool": false,
   "continue_iterating": false,
-  "message": "your response here"
+  "message": "your response here",
+  "reply_to": null,
+  "react": null
 }
 
 You have access to tools but should use them judiciously. Available tools:
@@ -156,7 +181,9 @@ If you don't need tools:
 {
   "needs_tool": false,
   "continue_iterating": false,
-  "message": "your chat response here"
+  "message": "your chat response here",
+  "reply_to": null,
+  "react": null
 }
 
 TOOL USAGE GUIDANCE:
@@ -200,6 +227,12 @@ Do not include any text outside of this JSON structure. The "message" field shou
 
   static DEFAULT_TIMEZONE = "America/Los_Angeles";
 
+  /** For a persona without a "## Reactions" section. */
+  static DEFAULT_REACTION_STYLE =
+    "Sparingly. A single emoji or a word or two, when a line genuinely lands with you and a whole message would be too much. Most lines get nothing.";
+
+  static REPLY_SNIPPET_LENGTH = 60;
+
   /**
    * @param {Object} logger
    * @param {{name: string, character: string}} persona
@@ -211,13 +244,23 @@ Do not include any text outside of this JSON structure. The "message" field shou
    *   sees is rendered in (the chatlog stamps, the day dividers and the
    *   current-time footer). The process clock is never used: in a container
    *   it is UTC, and a model that reads "[00:03]" above "5:03 PM PDT" picks one.
+   * @param {number} [options.replyMinDistance] - How many lines must follow a
+   *   message before a reply tag on it is allowed (enforced by the client)
+   * @param {number} [options.reactMaxLength] - Longest reaction allowed
    */
-  constructor(logger, persona, { nick = null, timezone = ContextUtils.DEFAULT_TIMEZONE } = {}) {
+  constructor(logger, persona, {
+    nick = null,
+    timezone = ContextUtils.DEFAULT_TIMEZONE,
+    replyMinDistance = 5,
+    reactMaxLength = 24,
+  } = {}) {
     this.logger = logger;
     this.persona = persona;
     this.botName = persona.name;
     this.nick = nick || persona.name;
     this.timezone = timezone;
+    this.replyMinDistance = replyMinDistance;
+    this.reactMaxLength = reactMaxLength;
     try {
       // Fail at construction, not on the first message, if the zone is bad.
       new Intl.DateTimeFormat("en-US", { timeZone: timezone });
@@ -262,10 +305,14 @@ Do not include any text outside of this JSON structure. The "message" field shou
       minute: "2-digit",
       timeZoneName: "short",
     }).format(new Date());
+    // The persona's own text goes in last so nothing in it is taken for a placeholder.
     const medium = ContextUtils.medium_prompt
+      .replaceAll("REPLY_MIN", String(this.replyMinDistance))
+      .replaceAll("REACT_MAX", String(this.reactMaxLength))
       .replaceAll("NICK", this.nick)
       .replaceAll("NAME", this.botName)
-      .replaceAll("TIMEZONE", this.timezoneLabel());
+      .replaceAll("TIMEZONE", this.timezoneLabel())
+      .replace("REACTION_STYLE", () => this.persona.reactions || ContextUtils.DEFAULT_REACTION_STYLE);
     return `${this.persona.character}\n\n${medium}\n\nCURRENT DATE/TIME: ${dateStr}`;
   }
 
@@ -327,20 +374,65 @@ Do not include any text outside of this JSON structure. The "message" field shou
   }
 
   /**
+   * Short per-prompt references ("m1", "m2", ...) for the lines a chatlog
+   * shows, so a model can point a reaction or reply at one without copying
+   * a msgid. "!" commands are skipped, as renderChatlog skips them.
+   * @param {Array} messages - Chronological message records
+   * @returns {Map<string, string>} message id -> reference
+   */
+  static assignRefs(messages) {
+    const refs = new Map();
+    let n = 0;
+    for (const msg of messages) {
+      if (msg.content.startsWith("!")) continue;
+      refs.set(msg.id, `m${++n}`);
+    }
+    return refs;
+  }
+
+  /**
+   * '(replying to bob: "...") ' for a message sent as an IRCv3 reply, "" otherwise.
+   * @param {Object} msg - Message record with `reply_to` (see DatabaseManager.attachThreading)
+   * @param {string} selfLabel - What to call the bot when the reply is to its line
+   */
+  static replyMarker(msg, selfLabel = "you") {
+    if (!msg.reply_to) return "";
+    const who = msg.reply_to.is_bot_message ? selfLabel : msg.reply_to.author_name;
+    const text = (msg.reply_to.content || "").replace(/\s+/g, " ").trim();
+    const max = ContextUtils.REPLY_SNIPPET_LENGTH;
+    const snippet = text.length > max ? text.slice(0, max) + "…" : text;
+    return `(replying to ${who}: "${snippet}") `;
+  }
+
+  /**
+   * " [reactions: alice 😂, you 🖤]" for a message with reactions, "" otherwise.
+   * @param {Object} msg - Message record with `reactions`
+   * @param {string} selfLabel - What to call the bot's own reactions
+   */
+  static reactionsSuffix(msg, selfLabel = "you") {
+    if (!msg.reactions || msg.reactions.length === 0) return "";
+    const parts = msg.reactions.map((r) => `${r.is_bot ? selfLabel : r.nick} ${r.reaction}`);
+    return ` [reactions: ${parts.join(", ")}]`;
+  }
+
+  /**
    * Render database messages as IRC chatlog lines with day dividers. The
    * bot's own lines are tagged "(you)". Lines starting with "!" are skipped
-   * (bot commands for other bots). Shared by the reply prompt and the
-   * Archivist so both read the same log.
+   * (bot commands for other bots). Replies and reactions are shown on the
+   * lines they belong to. Shared by the reply prompt and the Archivist so
+   * both read the same log.
    * @param {Array} messages - Chronological message records
    * @param {Object} [options]
    * @param {string} [options.clientUserId] - Also treat this author id as the bot
    * @param {Map} [options.imageDescriptions] - message id -> descriptions
    * @param {Array} [options.urlSummaries] - Collects url summary objects found
+   * @param {Map<string, string>} [options.refs] - message id -> reference
+   *   (from assignRefs), shown after the timestamp
    * @param {(msg: Object) => void} [options.onLine] - Called per rendered human line
    * @returns {string[]}
    */
   renderChatlog(messages, options = {}) {
-    const { clientUserId = null, imageDescriptions = null, urlSummaries = null, onLine = null } = options;
+    const { clientUserId = null, imageDescriptions = null, urlSummaries = null, refs = null, onLine = null } = options;
     const lines = [];
     let lastDateKey = null;
 
@@ -358,11 +450,15 @@ Do not include any text outside of this JSON structure. The "message" field shou
         lastDateKey = dateKey;
       }
 
-      const time = this.formatTime(msg.created_at);
+      const stamp = refs && refs.has(msg.id)
+        ? `[${this.formatTime(msg.created_at)}] ${refs.get(msg.id)}`
+        : `[${this.formatTime(msg.created_at)}]`;
+      const reply = ContextUtils.replyMarker(msg);
+      const reactions = ContextUtils.reactionsSuffix(msg);
       let content = msg.content;
 
       if (isBotMessage) {
-        lines.push(`[${time}] <${this.nick} (you)> ${content}`);
+        lines.push(`${stamp} <${this.nick} (you)> ${reply}${content}${reactions}`);
         continue;
       }
 
@@ -382,7 +478,7 @@ Do not include any text outside of this JSON structure. The "message" field shou
         urlSummaries.push(...msg.url_summaries);
       }
 
-      lines.push(`[${time}] <${username}> ${content}`);
+      lines.push(`${stamp} <${username}> ${reply}${content}${reactions}`);
       if (onLine) onLine(msg);
     }
 
@@ -425,9 +521,15 @@ Do not include any text outside of this JSON structure. The "message" field shou
    * @param {string} triggerInfo.channelName - Name of the channel
    * @param {Map} imageDescriptions - Map of message ID to image descriptions
    * @param {{journal: string|null, people: Map<string,string>}|null} memory - The journal and people notes
+   * @param {Object} [options]
+   * @param {Map<string, string>} [options.refs] - Line references (assignRefs);
+   *   assigned here when not given
+   * @param {boolean} [options.canReact] - False tells the model reactions are
+   *   unavailable for this turn (cooldown, or the server lacks them)
    * @returns {Array} Single-element array with consolidated user message
    */
-  buildChatMessagesConsolidated(dbMessages, clientUserId, triggerInfo, imageDescriptions = null, memory = null) {
+  buildChatMessagesConsolidated(dbMessages, clientUserId, triggerInfo, imageDescriptions = null, memory = null, options = {}) {
+    const { refs = ContextUtils.assignRefs(dbMessages), canReact = true } = options;
     const allUrlSummaries = [];
     let triggerMessageText = null;
 
@@ -435,6 +537,7 @@ Do not include any text outside of this JSON structure. The "message" field shou
       clientUserId,
       imageDescriptions,
       urlSummaries: allUrlSummaries,
+      refs,
       onLine: (msg) => {
         // Remember this user's most recent line so we can quote it back in the
         // closing instruction (saves the model from scanning to find it).
@@ -466,6 +569,8 @@ Do not include any text outside of this JSON structure. The "message" field shou
       consolidatedContent += `\n\n--- END LINK SUMMARIES ---`;
     }
 
+    const reactNote = canReact ? "" : ` Reactions are unavailable right now, so leave "react" null.`;
+
     // Add explicit instruction about who to respond to, quoting their message
     // so the model doesn't have to scan the chatlog to find what it's replying to.
     if (triggerInfo.userName) {
@@ -474,13 +579,13 @@ Do not include any text outside of this JSON structure. The "message" field shou
           triggerMessageText.length > 300
             ? triggerMessageText.slice(0, 300) + "…"
             : triggerMessageText;
-        consolidatedContent += `\n\nRespond to ${triggerInfo.userName}, whose latest message was: "${quoted}". Reply with valid JSON in the format described above.`;
+        consolidatedContent += `\n\nRespond to ${triggerInfo.userName}, whose latest message was: "${quoted}".${reactNote} Reply with valid JSON in the format described above.`;
       } else {
-        consolidatedContent += `\n\nRespond to ${triggerInfo.userName}'s latest message. Reply with valid JSON in the format described above.`;
+        consolidatedContent += `\n\nRespond to ${triggerInfo.userName}'s latest message.${reactNote} Reply with valid JSON in the format described above.`;
       }
     } else {
       // Autonomous response - respond to the conversation naturally
-      consolidatedContent += `\n\nRespond naturally to the ongoing conversation. Reply with valid JSON in the format described above.`;
+      consolidatedContent += `\n\nRespond naturally to the ongoing conversation.${reactNote} Reply with valid JSON in the format described above.`;
     }
 
     return [

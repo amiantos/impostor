@@ -109,7 +109,7 @@ test("every timestamp the model sees is in the configured zone, not the process 
     "mabel",
     { userName: "amiantos", channelName: "#c" }
   );
-  assert.match(message.content, /--- Mon, Oct 26, 2026 ---\n\[17:03\] <amiantos> hey/);
+  assert.match(message.content, /--- Mon, Oct 26, 2026 ---\n\[17:03\] m1 <amiantos> hey/);
   assert.match(ctx.buildInstructions(), /Timestamps are in Pacific Time/);
   assert.match(ctx.buildInstructions(), /CURRENT DATE\/TIME: .* P[DS]T$/);
 
@@ -125,4 +125,57 @@ test("the bot's own lines are tagged with its IRC nick, the persona name stays t
   assert.match(lines[1], /<mabel \(you\)> hello$/);
   assert.match(ctx.buildInstructions(), /they show as "<mabel \(you\)>"/);
   assert.match(ctx.buildInstructions(), /your normal Mabel response/);
+});
+
+test("the reply prompt's chatlog gives every line a reference, skipping ! commands", () => {
+  const ctx = new ContextUtils(silent, persona);
+  const messages = [msg("amiantos", "hi"), msg("bob", "!roll"), msg("carol", "yo")];
+  const refs = ContextUtils.assignRefs(messages);
+  assert.deepEqual([...refs.values()], ["m1", "m2"]);
+  assert.equal(refs.get("carol-yo"), "m2");
+  const [message] = ctx.buildChatMessagesConsolidated(messages, "mabel", { userName: "carol", channelName: "#c" }, null, null, { refs });
+  assert.match(message.content, /\] m1 <amiantos> hi\n.*\] m2 <carol> yo/s);
+});
+
+test("replies and reactions show on the lines they belong to", () => {
+  const ctx = new ContextUtils(silent, persona, { nick: "mabel" });
+  const lines = ctx.renderChatlog([
+    msg("bob", "my landlord is a vampire", {
+      reactions: [
+        { nick: "alice", reaction: "😂", is_bot: false },
+        { nick: "mabel", reaction: "🦇", is_bot: true },
+      ],
+    }),
+    msg("alice", "wait what", { reply_to: { author_name: "mabel", is_bot_message: true, content: "tea is a soup" } }),
+    msg("mabel", "you heard him", {
+      is_bot_message: true,
+      reply_to: { author_name: "bob", is_bot_message: false, content: "x".repeat(80) },
+    }),
+  ]);
+  assert.match(lines[1], /<bob> my landlord is a vampire \[reactions: alice 😂, you 🦇\]$/);
+  assert.match(lines[2], /<alice> \(replying to you: "tea is a soup"\) wait what$/);
+  assert.match(lines[3], /<mabel \(you\)> \(replying to bob: "x{60}…"\) you heard him$/);
+});
+
+test("the system prompt explains reactions and replies with the persona's style and limits", () => {
+  const ctx = new ContextUtils(silent, { ...persona, reactions: "only 🫖, and only for tea." }, { replyMinDistance: 7, reactMaxLength: 12 });
+  const prompt = ctx.buildInstructions();
+  assert.match(prompt, /HOW Mabel USES REACTIONS:\nonly 🫖, and only for tea\./);
+  assert.match(prompt, /7 or more lines back/);
+  assert.match(prompt, /at most 12 characters/);
+  assert.doesNotMatch(prompt, /REPLY_MIN|REACT_MAX|REACTION_STYLE/);
+  assert.match(new ContextUtils(silent, persona).buildInstructions(), new RegExp(ContextUtils.DEFAULT_REACTION_STYLE.slice(0, 20)));
+});
+
+test("a persona's reaction text is never read as a placeholder", () => {
+  const ctx = new ContextUtils(silent, { ...persona, reactions: "NAME and NICK stay as written; $& too" });
+  assert.match(ctx.buildInstructions(), /NAME and NICK stay as written; \$& too/);
+});
+
+test("the closing instruction says when reactions are unavailable", () => {
+  const ctx = new ContextUtils(silent, persona);
+  const [blocked] = ctx.buildChatMessagesConsolidated([msg("bob", "hey")], "mabel", { userName: null, channelName: "#c" }, null, null, { canReact: false });
+  assert.match(blocked.content, /Reactions are unavailable right now, so leave "react" null\./);
+  const [open] = ctx.buildChatMessagesConsolidated([msg("bob", "hey")], "mabel", { userName: null, channelName: "#c" });
+  assert.doesNotMatch(open.content, /unavailable/);
 });

@@ -1,6 +1,16 @@
 const { v4: uuidv4 } = require("uuid");
 
 /**
+ * The stable author id for an IRC user: nick!ident@hostname when the
+ * hostmask is known, the lowercased nick otherwise.
+ */
+function ircUserId(nick, ident, hostname) {
+  return ident && hostname
+    ? `${nick.toLowerCase()}!${ident}@${hostname}`
+    : nick.toLowerCase();
+}
+
+/**
  * Create a normalized message object from an IRC event.
  * Matches the shape that MessageTracker, ContextUtils, and other
  * downstream code expect.
@@ -17,10 +27,7 @@ const { v4: uuidv4 } = require("uuid");
 function createIrcMessage(nick, channel, text, options = {}) {
   const { ident, hostname, isBot = false } = options;
 
-  // Build a stable user ID from nick!ident@hostname if available
-  const userId = ident && hostname
-    ? `${nick.toLowerCase()}!${ident}@${hostname}`
-    : nick.toLowerCase();
+  const userId = ircUserId(nick, ident, hostname);
 
   return {
     id: uuidv4(),
@@ -40,4 +47,4 @@ function createIrcMessage(nick, channel, text, options = {}) {
   };
 }
 
-module.exports = { createIrcMessage };
+module.exports = { createIrcMessage, ircUserId };

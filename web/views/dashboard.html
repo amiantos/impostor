@@ -282,6 +282,32 @@
       color: var(--text-secondary);
     }
 
+    .message-reply {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-bottom: 4px;
+    }
+
+    .message-reactions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 6px;
+    }
+
+    .message-reactions .reaction {
+      font-size: 0.8rem;
+      padding: 1px 6px;
+      border-radius: 10px;
+      border: 1px solid var(--text-secondary);
+      color: var(--text-secondary);
+    }
+
+    .message-reactions .reaction.mine {
+      border-color: var(--accent-blue);
+      color: var(--text-primary);
+    }
+
     /* Jump to Bottom Button */
     .jump-to-bottom {
       position: fixed;
@@ -1102,6 +1128,14 @@
 
       const content = msg.content ? escapeHtml(truncate(msg.content)) : '<em>(no text content)</em>';
 
+      // IRCv3 reply and reactions, when the line has them
+      const replyLine = msg.reply_to
+        ? `<div class="message-reply">&#8618; ${escapeHtml(msg.reply_to.author_name)}: ${escapeHtml(truncate(msg.reply_to.content || '', 80))}</div>`
+        : '';
+      const reactionLine = msg.reactions && msg.reactions.length > 0
+        ? `<div class="message-reactions">${msg.reactions.map(r => `<span class="reaction${r.is_bot ? ' mine' : ''}" title="${escapeHtml(r.nick)}">${escapeHtml(r.reaction)}</span>`).join('')}</div>`
+        : '';
+
       return `
         <div class="message-bubble ${isBot ? 'bot' : ''}" onclick="showMessageDetails('${msg.id}')">
           <div class="message-header">
@@ -1110,7 +1144,9 @@
             <span class="message-time">${formatTime(msg.created_at)}</span>
             <div class="message-indicators">${indicators}</div>
           </div>
+          ${replyLine}
           <div class="message-content">${content}</div>
+          ${reactionLine}
         </div>
       `;
     }

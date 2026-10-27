@@ -1,6 +1,6 @@
 const IRC = require("irc-framework");
 const path = require("path");
-const { createIrcMessage } = require("./irc_message");
+const { createIrcMessage, ircUserId } = require("./irc_message");
 const { splitMessage } = require("./message_splitter");
 const { parseBridgedMessage } = require("./bridge_parser");
 const ContextUtils = require("./context_utils");
@@ -33,7 +33,12 @@ class ImpostorClient {
     // What people call the bot in chat. The persona's name unless the config
     // says otherwise; mentioning it or the nick is always an address.
     this.watchword = config.irc.watchword || persona.name;
-    this.contextUtils = new ContextUtils(logger, persona, { nick: config.irc.nick, timezone: config.timezone });
+    this.contextUtils = new ContextUtils(logger, persona, {
+      nick: config.irc.nick,
+      timezone: config.timezone,
+      replyMinDistance: config.irc.reply_min_distance ?? 5,
+      reactMaxLength: config.irc.reaction_max_length ?? 24,
+    });
     this.config = config;
     this.logger = logger;
 
@@ -93,16 +98,20 @@ class ImpostorClient {
     this.reconnectTimer = null;
     this.shuttingDown = false;
 
-    // IRCv3 message-tags cap is required for +typing client tags. Must be
-    // requested before connect — the registration handler reads
-    // request_extra_caps during CAP negotiation. Server silently drops it if
-    // unsupported, so this is safe on networks without IRCv3 support.
-    if (config.irc.typing_notifications?.enabled !== false) {
-      this.ircClient.requestCap("message-tags");
-    }
+    // IRCv3 message-tags carries +typing, msgids, +draft/react and
+    // +draft/reply. Must be requested before connect — the registration
+    // handler reads request_extra_caps during CAP negotiation. Server silently
+    // drops it if unsupported, so this is safe on networks without IRCv3.
+    this.ircClient.requestCap("message-tags");
 
     // Per-target typing refresh timers (PRIVMSG target -> setInterval id)
     this.typingTimers = new Map();
+
+    // Lines sent but not yet echoed back (lowercased target -> [{messageId,
+    // text, sentAt}]). With echo-message the server returns each of our
+    // PRIVMSGs carrying its msgid, which is how the bot learns the msgids of
+    // its own lines (so it can see reactions and replies to them).
+    this.pendingEchoes = new Map();
 
     // IRC event handlers
     this.ircClient.on("registered", () => {
@@ -124,6 +133,10 @@ class ImpostorClient {
 
     this.ircClient.on("privmsg", (event) => {
       this.handleIrcMessage(event);
+    });
+
+    this.ircClient.on("tagmsg", (event) => {
+      this.handleTagmsg(event);
     });
 
     this.ircClient.on("action", (event) => {
@@ -183,6 +196,8 @@ class ImpostorClient {
       username: ircConfig.username || ircConfig.nick.toLowerCase(),
       gecos: ircConfig.realname || ircConfig.nick,
       auto_reconnect: false, // We handle reconnection ourselves with exponential backoff
+      // Our own lines come back with their msgids (see recordEcho).
+      enable_echomessage: true,
     };
 
     // SASL authentication
@@ -258,9 +273,12 @@ class ImpostorClient {
    * @param {Object} event - irc-framework message event
    */
   async handleIrcMessage(event) {
-    // Ignore our own messages (IRC nicks are case-insensitive)
-    if (event.nick.toLowerCase() === this.botNick.toLowerCase()) return;
     if (!event.target) return;
+    // Our own messages come back only as echoes (IRC nicks are case-insensitive)
+    if (event.nick.toLowerCase() === this.botNick.toLowerCase()) {
+      this.recordEcho(event);
+      return;
+    }
 
     // IRC routes channel messages and PMs through the same PRIVMSG verb. The
     // only difference is the target: channels start with '#', everything else
@@ -282,6 +300,18 @@ class ImpostorClient {
       hostname: event.hostname,
       isBot: false,
     });
+
+    // Stored ahead of the message itself: a link summary can hold the
+    // message back for seconds, and a reaction to it may arrive first.
+    const msgid = event.tags?.msgid;
+    if (msgid) this.db.addMsgid(message.id, msgid);
+
+    // A reply (+draft/reply) to a line we know is threaded onto it, and a
+    // reply to one of his own lines is as good as using his name.
+    const replyMsgid = event.tags?.["+draft/reply"];
+    const replyTarget = replyMsgid ? this.db.getMessageByMsgid(replyMsgid) : null;
+    if (replyTarget) message.reference = { messageId: replyTarget.id };
+    const repliesToBot = Boolean(replyTarget?.is_bot_message);
 
     // Always track the message so the admin dashboard surfaces every chat,
     // including DMs from non-allowlisted senders.
@@ -316,9 +346,181 @@ class ImpostorClient {
     // react/ignore branches — now the evaluator decides for everything.
     if (this.config.autonomous?.enabled) {
       this.scheduleAutonomousEvaluation(conversationId, {
-        addressed: this.mentionsBot(messageText),
+        addressed: repliesToBot || this.mentionsBot(messageText),
       });
     }
+  }
+
+  /**
+   * An IRCv3 TAGMSG. Only reactions matter here (+draft/react, or
+   * +draft/unreact, aimed by +draft/reply at the line they belong to);
+   * typing notifications and anything else are ignored. Reactions are
+   * stored, not treated as messages: they show on their line in the
+   * chatlog and never trigger an evaluation.
+   * @param {Object} event - irc-framework tagmsg event
+   */
+  handleTagmsg(event) {
+    if (!event.nick || !event.target) return;
+    // Our own come back as echoes; his reactions are stored when he sends them.
+    if (event.nick.toLowerCase() === this.botNick.toLowerCase()) return;
+
+    const tags = event.tags || {};
+    const targetMsgid = tags["+draft/reply"];
+    const react = tags["+draft/react"];
+    const unreact = tags["+draft/unreact"];
+    if (!targetMsgid || (!react && !unreact)) return;
+
+    const isPrivate = !event.target.startsWith("#");
+    const conversationId = isPrivate ? event.nick : event.target;
+    if (!isPrivate && !this.isAllowedChannel(event.target)) return;
+
+    const authorId = ircUserId(event.nick, event.ident, event.hostname);
+    if (react) {
+      this.db.addReaction({
+        channelId: conversationId,
+        targetMsgid,
+        authorId,
+        authorName: event.nick,
+        reaction: react,
+      });
+      this.logger.debug(`${event.nick} reacted ${react} to ${targetMsgid} in ${conversationId}`);
+    } else {
+      this.db.removeReaction(targetMsgid, authorId, unreact);
+      this.logger.debug(`${event.nick} removed reaction ${unreact} from ${targetMsgid} in ${conversationId}`);
+    }
+  }
+
+  /**
+   * Match an echoed line of ours to the message it was sent for and record
+   * its msgid. Echoes come back in the order the lines went out; a line the
+   * server never echoed (dropped, or sent by something other than
+   * sendIrcMessage) is skipped over, and one the library split further is
+   * consumed piece by piece.
+   * @param {Object} event - irc-framework privmsg event from our own nick
+   */
+  recordEcho(event) {
+    const msgid = event.tags?.msgid;
+    const key = event.target.toLowerCase();
+    const queue = this.pendingEchoes.get(key);
+    if (!msgid || !queue) return;
+
+    const cutoff = Date.now() - 60 * 1000;
+    while (queue.length > 0 && queue[0].sentAt < cutoff) queue.shift();
+
+    const text = (event.message || "").trim();
+    const index = text ? queue.findIndex((entry) => entry.text.startsWith(text)) : -1;
+    if (index === -1) {
+      if (queue.length === 0) this.pendingEchoes.delete(key);
+      return;
+    }
+    queue.splice(0, index);
+    const entry = queue[0];
+    this.db.addMsgid(entry.messageId, msgid);
+    entry.text = entry.text.slice(text.length).trim();
+    if (!entry.text) queue.shift();
+    if (queue.length === 0) this.pendingEchoes.delete(key);
+  }
+
+  /** Whether the server lets us send IRCv3 reactions at all. */
+  canSendReactions() {
+    if (this.config.irc.reactions === false) return false;
+    const network = this.ircClient.network;
+    return Boolean(network?.supportsTag("draft/react") && network?.supportsTag("draft/reply"));
+  }
+
+  /**
+   * Reactions are cheap, so they don't trigger the speaking cooldown, but
+   * nothing else would stop a bot from reacting to every line. After one
+   * he waits for a few lines from other people and some wall clock.
+   * @param {string} channelName
+   * @returns {{blocked: boolean, reason: string}}
+   */
+  reactionCooldown(channelName) {
+    const last = this.db.getLastBotReaction(channelName);
+    if (!last) return { blocked: false, reason: "" };
+    const minMessages = this.config.autonomous?.react_cooldown_messages ?? 3;
+    const minSeconds = this.config.autonomous?.react_cooldown_seconds ?? 30;
+
+    const since = this.db.countHumanMessagesSince(channelName, last.created_at);
+    if (since < minMessages) {
+      return { blocked: true, reason: `only ${since} message(s) since his last reaction (needs ${minMessages})` };
+    }
+    const elapsed = (Date.now() - new Date(last.created_at).getTime()) / 1000;
+    if (elapsed < minSeconds) {
+      return { blocked: true, reason: `only ${elapsed.toFixed(0)}s since his last reaction (needs ${minSeconds}s)` };
+    }
+    return { blocked: false, reason: "" };
+  }
+
+  /**
+   * A reaction the model wrote, made fit to send: one line, trimmed, and
+   * short (an emoji or a word or two). Null when nothing usable is left.
+   * @param {*} raw
+   * @returns {string|null}
+   */
+  cleanReaction(raw) {
+    if (typeof raw !== "string") return null;
+    const reaction = raw.replace(/\s+/g, " ").trim();
+    const max = this.config.irc.reaction_max_length ?? 24;
+    if (!reaction || [...reaction].length > max) return null;
+    return reaction;
+  }
+
+  /**
+   * Put a reaction on a line, if that's allowed: not his own line, not one
+   * he already reacted to, not inside the reaction cooldown, and only when
+   * the server and the line can carry an IRCv3 react.
+   * @param {string} channelName - Conversation (PRIVMSG target)
+   * @param {Object|null} target - Message record to react to
+   * @param {*} rawReaction - What the model asked for
+   * @returns {{sent: boolean, reason: string, reaction: string|null}}
+   *   `reason` "unsupported" means only the transport was missing
+   */
+  sendReaction(channelName, target, rawReaction) {
+    const reaction = this.cleanReaction(rawReaction);
+    if (!reaction) return { sent: false, reason: `unusable reaction ${JSON.stringify(rawReaction)}`, reaction };
+    if (!target) return { sent: false, reason: "no line to react to", reaction };
+    if (target.is_bot_message) return { sent: false, reason: "that's his own line", reaction };
+
+    const cooldown = this.reactionCooldown(channelName);
+    if (cooldown.blocked) return { sent: false, reason: cooldown.reason, reaction };
+
+    const msgid = this.db.getMsgidFor(target.id);
+    if (!msgid || !this.canSendReactions()) return { sent: false, reason: "unsupported", reaction };
+    if (this.db.hasBotReaction(msgid)) return { sent: false, reason: "already reacted to that line", reaction };
+
+    this.ircClient.tagmsg(channelName, { "+draft/reply": msgid, "+draft/react": reaction });
+    this.db.addReaction({
+      channelId: channelName,
+      targetMsgid: msgid,
+      authorId: this.botNick.toLowerCase(),
+      authorName: this.botNick,
+      reaction,
+      isBotMessage: true,
+    });
+    this.db.logResponse(channelName, null, "reaction", reaction, target.id);
+    this.logger.info(`Reacted ${reaction} to ${target.author_name}'s line in ${channelName}`);
+    return { sent: true, reason: "", reaction };
+  }
+
+  /**
+   * The msgid to send a reply tag against, or null. Reply tags are only for
+   * answering a line that has scrolled out of sight (`irc.reply_min_distance`
+   * lines or more after it); on anything recent a "nick:" prefix does the
+   * job, and a reply-threaded answer to the line just above is noise.
+   * @param {string} channelName
+   * @param {Object} target - Message record being answered
+   * @returns {string|null}
+   */
+  replyTagFor(channelName, target) {
+    const minDistance = this.config.irc.reply_min_distance ?? 5;
+    const distance = this.db.countMessagesAfter(channelName, target.id);
+    if (distance === null || distance < minDistance) {
+      this.logger.debug(`Not reply-tagging ${target.author_name}'s line: ${distance ?? "?"} line(s) after it (needs ${minDistance})`);
+      return null;
+    }
+    if (!this.ircClient.network?.supportsTag("draft/reply")) return null;
+    return this.db.getMsgidFor(target.id);
   }
 
   /**
@@ -397,6 +599,15 @@ class ImpostorClient {
       return;
     }
 
+    // A reaction is a turn too: once he's reacted, the same lines don't get
+    // weighed again.
+    const lastReaction = this.db.getLastBotReaction(channelName);
+    const newest = recentMessages[recentMessages.length - 1];
+    if (lastReaction && new Date(newest.created_at) <= new Date(lastReaction.created_at)) {
+      this.logger.debug("No new messages since last bot reaction");
+      return;
+    }
+
     // How (and whether) anyone is actually talking to him decides which of
     // the dampers below apply.
     const address = this.addressSinceLastBotMessage(recentMessages);
@@ -463,7 +674,11 @@ class ImpostorClient {
       botUserId,
       channelName,
       botRatio,
-      { restraint: inCooldown, journal: this.db.getJournalText(channelName) }
+      {
+        restraint: inCooldown,
+        journal: this.db.getJournalText(channelName),
+        canReact: !this.reactionCooldown(channelName).blocked,
+      }
     );
 
     if (decision.action === "respond") {
@@ -485,6 +700,8 @@ class ImpostorClient {
         channel: channelName,
         type: "react",
         decisionId: decision.decisionId,
+        targetMessageId: decision.reply_to_message_id,
+        reaction: decision.reaction,
         enqueuedAt: Date.now(),
       });
       if (!this.isProcessing) this.processMessageQueue();
@@ -534,7 +751,8 @@ class ImpostorClient {
    * Classify how (or whether) someone is addressing the bot since he last
    * spoke. IRC has no reply threading, so this leans on two signals:
    *
-   *   "named"  - someone used his name or nick. Unambiguous; he answers.
+   *   "named"  - someone used his name or nick, or sent an IRCv3 reply to
+   *              one of his lines. Unambiguous; he answers.
    *   "reply"  - nobody named him, but a human answered into the gap right
    *              after he spoke using second person or a question. On IRC
    *              that's someone talking *to* him even though they didn't
@@ -553,6 +771,8 @@ class ImpostorClient {
     if (since.length === 0) return "none";
 
     if (since.some((m) => this.mentionsBot(m.content))) return "named";
+    // Someone hit reply on one of his lines: as explicit as his name.
+    if (since.some((m) => !m.is_bot_message && m.reply_to?.is_bot_message)) return "named";
 
     // Nothing he said to reply to yet.
     if (since.length === messages.length) return "none";
@@ -750,7 +970,7 @@ class ImpostorClient {
               this.logger.info(
                 `Processing reaction for channel ${queueItem.channel}. Queue length: ${this.messageQueue.length}`
               );
-              await this.processReactMessage(queueItem.channel, queueItem.decisionId);
+              await this.processReactMessage(queueItem.channel, queueItem);
             }
           } finally {
             this.generatingChannels.delete(queueItem.channel);
@@ -847,11 +1067,12 @@ class ImpostorClient {
       userName: message.author.username,
       channelName: channelName,
     };
+    const refs = ContextUtils.assignRefs(dbMessages);
 
     this.startTyping(channelName);
-    let response, conversationLog;
+    let response, conversationLog, react, replyTo;
     try {
-      ({ response, conversationLog } = await this.generateResponseWithChatCompletions({
+      ({ response, conversationLog, react, replyTo } = await this.generateResponseWithChatCompletions({
         dbMessages,
         userName: user_name,
         characterName: character_name,
@@ -859,8 +1080,11 @@ class ImpostorClient {
         imageDescriptions,
         memory,
         triggerInfo,
+        refs,
+        canReact: this.canReactNow(channelName),
       }));
-      this.stopTyping(channelName, null); // PRIVMSG below implicitly clears it
+      // A PRIVMSG implicitly clears the indicator; a reaction alone doesn't.
+      this.stopTyping(channelName, response ? null : "done");
     } catch (err) {
       this.stopTyping(channelName, "done");
       throw err;
@@ -890,11 +1114,10 @@ class ImpostorClient {
       temperature: this.config.generator.deepseek.temperature
     });
 
-    if (response) {
-      await this.sendIrcMessage(channelName, response);
-      await this.messageTracker.addMessage(botMessage, { isBotMessage: true, processVision: false });
+    const { sent, reacted } = await this.deliverResponse(channelName, { response, react, replyTo, refs, botMessage });
+    if (sent) {
       this.archivist.noteActivity(channelName);
-    } else {
+    } else if (!reacted) {
       this.logger.info(`Bot chose silence for direct mention in ${channelName}`);
     }
 
@@ -978,11 +1201,12 @@ class ImpostorClient {
       userName: null,
       channelName: channelName,
     };
+    const refs = ContextUtils.assignRefs(dbMessages);
 
     this.startTyping(channelName);
-    let response, conversationLog;
+    let response, conversationLog, react, replyTo;
     try {
-      ({ response, conversationLog } = await this.generateResponseWithChatCompletions({
+      ({ response, conversationLog, react, replyTo } = await this.generateResponseWithChatCompletions({
         dbMessages,
         userName: "various",
         characterName: this.watchword,
@@ -990,8 +1214,11 @@ class ImpostorClient {
         imageDescriptions,
         memory,
         triggerInfo,
+        refs,
+        canReact: this.canReactNow(channelName),
       }));
-      this.stopTyping(channelName, null); // PRIVMSG below implicitly clears it
+      // A PRIVMSG implicitly clears the indicator; a reaction alone doesn't.
+      this.stopTyping(channelName, response ? null : "done");
     } catch (err) {
       this.stopTyping(channelName, "done");
       throw err;
@@ -1024,11 +1251,10 @@ class ImpostorClient {
       this.db.markDecisionResponseSent(decisionId);
     }
 
-    if (response) {
-      await this.sendIrcMessage(channelName, response);
-      await this.messageTracker.addMessage(botMessage, { isBotMessage: true, processVision: false });
+    const { sent, reacted } = await this.deliverResponse(channelName, { response, react, replyTo, refs, botMessage });
+    if (sent) {
       this.archivist.noteActivity(channelName);
-    } else {
+    } else if (!reacted) {
       this.logger.info(`Bot chose silence for autonomous trigger in ${channelName}`);
     }
 
@@ -1037,30 +1263,84 @@ class ImpostorClient {
   }
 
   /**
-   * Send a short canned laugh reaction. The evaluator already decided this
-   * conversation deserves a laugh, so we skip the main generation pipeline
-   * entirely and just emit one of these tokens.
-   * @param {string} channelName - IRC channel name
-   * @param {number|null} decisionId - Decision log id
+   * Whether the reply model may attach a reaction this turn: the server can
+   * carry one and he isn't inside the reaction cooldown.
+   * @param {string} channelName
    */
-  async processReactMessage(channelName, decisionId = null) {
-    const pool = this.persona.reactions || ["haha", "lol", "lmao", "kek", "heh", "lmfao", "hah"];
-    const reaction = pool[Math.floor(Math.random() * pool.length)];
+  canReactNow(channelName) {
+    return this.canSendReactions() && !this.reactionCooldown(channelName).blocked;
+  }
 
-    await this.sendIrcMessage(channelName, reaction);
+  /**
+   * Send what the reply model produced: its reaction first, if it asked for
+   * one and one is allowed, then its message, sent as an IRCv3 reply when it
+   * answers a line buried deep enough (see replyTagFor).
+   * @param {string} channelName
+   * @param {Object} reply
+   * @param {string} reply.response - The message; empty means none
+   * @param {{to: string, reaction: string}|null} reply.react
+   * @param {string|null} reply.replyTo - Chatlog reference of the line answered
+   * @param {Map<string, string>} reply.refs - message id -> reference, as shown to the model
+   * @param {Object} reply.botMessage - The message record to send and store
+   * @returns {Promise<{sent: boolean, reacted: boolean}>}
+   */
+  async deliverResponse(channelName, { response, react, replyTo, refs, botMessage }) {
+    const byRef = new Map([...refs].map(([id, ref]) => [ref, id]));
+    const lineFor = (ref) => {
+      const id = typeof ref === "string" ? byRef.get(ref.trim()) : null;
+      return id ? this.db.getMessage(id) : null;
+    };
 
-    const botMessage = createIrcMessage(this.botNick, channelName, reaction, {
-      isBot: true,
-    });
-
-    this.db.logResponse(channelName, botMessage.id, "reaction", reaction, null);
-
-    if (decisionId) {
-      this.db.markDecisionResponseSent(decisionId);
+    let reacted = false;
+    if (react && typeof react === "object") {
+      const result = this.sendReaction(channelName, lineFor(react.to), react.reaction);
+      reacted = result.sent;
+      if (!result.sent) this.logger.info(`Dropping the reply's reaction in ${channelName}: ${result.reason}`);
     }
 
+    if (!response) return { sent: false, reacted };
+
+    const replyTarget = lineFor(replyTo);
+    const replyMsgid = replyTarget ? this.replyTagFor(channelName, replyTarget) : null;
+    if (replyMsgid) botMessage.reference = { messageId: replyTarget.id };
+    await this.sendIrcMessage(channelName, response, { messageId: botMessage.id, replyToMsgid: replyMsgid });
     await this.messageTracker.addMessage(botMessage, { isBotMessage: true, processVision: false });
-    this.archivist.noteActivity(channelName);
+    return { sent: true, reacted };
+  }
+
+  /**
+   * The evaluator picked "react": put its reaction on the line it chose
+   * (the newest line from someone else if it named none). Where the server
+   * or the line can't carry an IRCv3 react, the reaction is said as a
+   * plain line instead, the way reactions worked before.
+   * @param {string} channelName - IRC channel name
+   * @param {Object} item - The queue item
+   * @param {number|null} item.decisionId - Decision log id
+   * @param {string|null} item.targetMessageId - Message to react to
+   * @param {string|null} item.reaction - The reaction
+   */
+  async processReactMessage(channelName, { decisionId = null, targetMessageId = null, reaction = null } = {}) {
+    const target =
+      (targetMessageId && this.db.getMessage(targetMessageId)) ||
+      this.db.getRecentMessages(channelName, 10, true).reverse().find((m) => !m.is_bot_message) ||
+      null;
+
+    const result = this.sendReaction(channelName, target, reaction);
+    if (result.sent) {
+      if (decisionId) this.db.markDecisionResponseSent(decisionId);
+    } else if (result.reason === "unsupported") {
+      const botMessage = createIrcMessage(this.botNick, channelName, result.reaction, {
+        isBot: true,
+      });
+      await this.sendIrcMessage(channelName, result.reaction, { messageId: botMessage.id });
+      this.db.logResponse(channelName, botMessage.id, "reaction", result.reaction, target?.id || null);
+      if (decisionId) this.db.markDecisionResponseSent(decisionId);
+      await this.messageTracker.addMessage(botMessage, { isBotMessage: true, processVision: false });
+      this.archivist.noteActivity(channelName);
+    } else {
+      this.logger.info(`Not reacting in ${channelName}: ${result.reason}`);
+    }
+
     this.messageTracker.markResponded(channelName);
     this.cancelEvaluationTimer(channelName);
   }
@@ -1069,8 +1349,13 @@ class ImpostorClient {
    * Send a message to an IRC channel, splitting into multiple lines if needed
    * @param {string} channel - IRC channel name
    * @param {string} text - Message text
+   * @param {Object} [options]
+   * @param {string} [options.messageId] - The stored message these lines are;
+   *   their echoes are matched back to it to learn their msgids
+   * @param {string} [options.replyToMsgid] - Send as an IRCv3 reply to this
+   *   msgid (on the first line)
    */
-  async sendIrcMessage(channel, text) {
+  async sendIrcMessage(channel, text, { messageId = null, replyToMsgid = null } = {}) {
     const maxLen = this.config.irc.max_line_length || 350;
 
     // The bot is told to address users by leading with "nick: " (IRC channel
@@ -1085,8 +1370,15 @@ class ImpostorClient {
 
     const lines = splitMessage(payload, maxLen);
 
+    const echoes = Boolean(messageId && this.ircClient.network?.cap.isEnabled("echo-message"));
     for (let i = 0; i < lines.length; i++) {
-      this.ircClient.say(channel, lines[i]);
+      if (echoes) {
+        const key = channel.toLowerCase();
+        if (!this.pendingEchoes.has(key)) this.pendingEchoes.set(key, []);
+        this.pendingEchoes.get(key).push({ messageId, text: lines[i], sentAt: Date.now() });
+      }
+      const tags = i === 0 && replyToMsgid ? { "+draft/reply": replyToMsgid } : undefined;
+      this.ircClient.say(channel, lines[i], tags);
       // Delay between lines to avoid flood protection
       if (i < lines.length - 1) {
         await new Promise((r) => setTimeout(r, 500));
@@ -1102,6 +1394,8 @@ class ImpostorClient {
     imageDescriptions = null,
     memory = null,
     triggerInfo = null,
+    refs = null,
+    canReact = true,
   }) {
     const systemPrompt = this.contextUtils.buildInstructions();
     this.logger.debug("Generated System Prompt...", systemPrompt);
@@ -1114,7 +1408,8 @@ class ImpostorClient {
       botUserId,
       triggerInfo,
       imageDescriptions,
-      memory
+      memory,
+      { refs: refs || undefined, canReact }
     );
 
     let conversationLog = [
@@ -1205,7 +1500,9 @@ Reply with valid JSON in the format described above.`,
 
     return {
       response: replyMessage,
-      conversationLog
+      conversationLog,
+      react: structuredResponse.react || null,
+      replyTo: structuredResponse.reply_to || null,
     };
   }
 

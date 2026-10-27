@@ -1,3 +1,5 @@
+const ContextUtils = require("./context_utils");
+
 /**
  * ResponseEvaluator - AI-driven decision making for autonomous responses
  *
@@ -45,17 +47,20 @@ RESPOND - ${name} should generate a full message. Pick this when:
 - ${name} has something meaningful or interesting to add to the discussion
 - Someone brings up something ${name} would naturally comment on, given who they are
 
-REACT - ${name} should drop a short laugh-reaction ("haha", "lol", etc.) and nothing else. Pick this when:
+REACT - ${name} should put a reaction on one line and say nothing. A reaction is an emoji or a word or two attached to someone's message (an IRCv3 reaction); it doesn't add a line to the channel. Pick this when:
 - Someone said something genuinely funny - a clever joke, an absurd observation, a punchline that landed
-- A funny thing happened in the conversation that ${name} would naturally laugh at as a lurking channel regular
-- ${name} is amused but has nothing substantive to add beyond acknowledging it
-- A reaction would feel more natural than a full sentence about why it's funny
+- A line landed with ${name} - something they'd laugh at, wince at, agree with, or feel for - but there's nothing to add in words
+- Someone answered or thanked ${name} and the exchange is done; a reaction closes it more gracefully than another message
+- A reaction would feel more natural than a full sentence
 
 Do NOT pick "react" for:
-- Mildly clever remarks that don't actually warrant a laugh (tepid puns, dry observations)
-- Things that aren't funny - reacting to non-jokes feels desperate and canned
-- Conversations where ${name} just laughed recently (don't react to every line)
-- Direct questions to ${name} - those need a real reply, not a laugh
+- Lines that don't actually move ${name} (tepid puns, routine chatter) - reacting to everything feels canned
+- Conversations where ${name} just reacted (lines marked with ${name}'s reaction); one reaction per stretch of conversation
+- Direct questions to ${name} - those need a real reply, not a reaction
+- A line ${name} already reacted to, or one of ${name}'s own lines
+
+HOW ${name.toUpperCase()} USES REACTIONS:
+${this.persona.reactions || ContextUtils.DEFAULT_REACTION_STYLE}
 
 IGNORE - ${name} should stay silent. Pick this when:
 - The topic is something ${name} doesn't know about (see above)
@@ -73,14 +78,17 @@ ONE TURN PER THOUGHT: ${name} gets one contribution per topic, not a running com
 
 IMPORTANT: ${name} should only speak when they have genuine insight, curiosity, or thoughtful observation to offer - or when something is genuinely funny. Being contrary or dismissive is NOT a reason to respond. If ${name} doesn't understand something or wouldn't realistically know about it, they should stay quiet rather than fake expertise or mock it. Default to ignoring; speak only when the conversation earns it.
 
+Each message below starts with a reference in brackets ("[m3]"). A message may start with (replying to bob: "...") when it was sent as a reply to an earlier line, and may end with [reactions: alice 😂] listing the reactions on it.
+
 You MUST respond with valid JSON only:
 {
   "action": "respond" | "react" | "ignore",
-  "reply_to_message_id": "message_id_to_reply_to" or null,
+  "reply_to_message_id": "m3" or null,
+  "reaction": "the reaction" or null,
   "reason": "brief explanation of your decision"
 }
 
-reply_to_message_id is informational (it tags which specific message ${name} is reacting/responding to in the dashboard). Set it to the message id when there's a clear single message that prompted the action; null if it's a reaction to the conversation as a whole.`;
+reply_to_message_id is the reference of the single message that prompted the action, or null if it's the conversation as a whole. For "react" it is required: it is the line the reaction goes on. "reaction" is set only for "react": one emoji, or a word or two, in ${name}'s style.`;
   }
 
   /**
@@ -149,10 +157,11 @@ reply_to_message_id is informational (it tags which specific message ${name} is 
    * @param {string} botUserId - The bot's user ID
    * @param {string} channelId - The channel ID
    * @param {number|null} botRatio - Bot's message ratio in recent history (0.0-1.0)
-   * @param {Object} options - { restraint, journal } - restraint raises the bar when
-   *   someone is replying inside the bot's own cooldown window; journal is the
-   *   bot's journal for this conversation, if any
-   * @returns {Object} Decision object { should_respond, reply_to_message_id, reason, decisionId }
+   * @param {Object} options - { restraint, journal, canReact } - restraint raises
+   *   the bar when someone is replying inside the bot's own cooldown window;
+   *   journal is the bot's journal for this conversation, if any; canReact
+   *   false takes "react" off the table (the bot reacted moments ago)
+   * @returns {Object} Decision object { action, should_respond, reply_to_message_id, reaction, reason, decisionId }
    */
   async shouldRespond(messages, botUserId, channelId, botRatio = null, options = {}) {
     if (!messages || messages.length === 0) {
@@ -165,10 +174,17 @@ reply_to_message_id is informational (it tags which specific message ${name} is 
     // Extract message IDs for tracking
     const evaluatedMessageIds = messages.map(m => m.id);
 
-    const conversationContext = formattedMessages
-      .map((msg) => {
-        let line = `[${msg.id}] ${msg.author}${msg.is_bot ? ` (${this.botName})` : ""}: ${msg.content}`;
-        return line;
+    // Short references instead of message ids: the model copies them back
+    // for the line it means, and a uuid is a lot of tokens to copy.
+    const byRef = new Map();
+    const conversationContext = messages
+      .map((raw, i) => {
+        const msg = formattedMessages[i];
+        const ref = `m${i + 1}`;
+        byRef.set(ref, raw.id);
+        const reply = ContextUtils.replyMarker(raw, this.botName);
+        const reactions = ContextUtils.reactionsSuffix(raw, this.botName);
+        return `[${ref}] ${msg.author}${msg.is_bot ? ` (${this.botName})` : ""}: ${reply}${msg.content}${reactions}`;
       })
       .join("\n");
 
@@ -194,10 +210,15 @@ reply_to_message_id is informational (it tags which specific message ${name} is 
       ? `\n${this.botName} spoke moments ago and the newest messages are a reply to them, but nobody used their name. Answer only if they have asked something genuinely new or raised a point ${this.botName} has not already made. If it is a correction, a restatement, an aside, or an acknowledgement of what ${this.botName} just said, pick "ignore" or "react" - do not reword the previous message back at them.`
       : "";
 
-    const userPrompt = `${journalContext}Here is the recent conversation (message IDs in brackets):
+    // He reacted moments ago; the client would drop another one anyway.
+    const reactContext = options.canReact === false
+      ? `\n${this.botName} reacted to something moments ago, so "react" is not available right now. Choose "respond" or "ignore".`
+      : "";
+
+    const userPrompt = `${journalContext}Here is the recent conversation (message references in brackets):
 
 ${conversationContext}
-${ratioContext}${restraintContext}
+${ratioContext}${restraintContext}${reactContext}
 
 Should ${this.botName} respond to this conversation? Remember to respond with valid JSON only.`;
 
@@ -244,12 +265,24 @@ Should ${this.botName} respond to this conversation? Remember to respond with va
         throw new Error("Invalid decision structure: missing action");
       }
 
+      // The model answers with a reference; the decision log and the client
+      // want the message id. A full id copied back is accepted too.
+      const ref = decision.reply_to_message_id ? String(decision.reply_to_message_id).replace(/^\[|\]$/g, "") : null;
+      const targetId = ref ? byRef.get(ref) || (evaluatedMessageIds.includes(ref) ? ref : null) : null;
+      const reaction = typeof decision.reaction === "string" ? decision.reaction.trim() : "";
+
+      if (action === "react" && (options.canReact === false || !reaction)) {
+        this.logger.info(`Evaluator picked react ${options.canReact === false ? "while reactions are on cooldown" : "without a reaction"}; ignoring instead`);
+        action = "ignore";
+      }
+
       const shouldRespond = action !== "ignore";
 
       const normalizedDecision = {
         action,
         should_respond: shouldRespond,
-        reply_to_message_id: decision.reply_to_message_id || null,
+        reply_to_message_id: targetId,
+        reaction: action === "react" ? reaction : null,
         reason: decision.reason || "No reason provided",
       };
 
@@ -258,7 +291,9 @@ Should ${this.botName} respond to this conversation? Remember to respond with va
         messages.length,
         shouldRespond,
         normalizedDecision.reply_to_message_id,
-        `[${action}] ${normalizedDecision.reason}`,
+        action === "react"
+          ? `[react ${normalizedDecision.reaction}] ${normalizedDecision.reason}`
+          : `[${action}] ${normalizedDecision.reason}`,
         evaluatedMessageIds
       );
 

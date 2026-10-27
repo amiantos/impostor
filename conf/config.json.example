@@ -17,6 +17,9 @@
         "port": 6697,
         "tls": true,
         "max_line_length": 340,
+        "reactions": true,
+        "reaction_max_length": 24,
+        "reply_min_distance": 5,
         "typing_notifications": {
             "enabled": true,
             "refresh_seconds": 3
@@ -32,6 +35,8 @@
         "reply_window_seconds": 180,
         "max_bot_ratio": 0.4,
         "ratio_window": 10,
+        "react_cooldown_messages": 3,
+        "react_cooldown_seconds": 30,
         "max_context_age_minutes": 30,
         "max_conversation_gap_minutes": 30
     },

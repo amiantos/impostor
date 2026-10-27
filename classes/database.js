@@ -149,6 +149,41 @@ class DatabaseManager {
       this.db.exec(`ALTER TABLE messages ADD COLUMN url_summaries TEXT`);
       this.logger.info("Migration: Added url_summaries column to messages");
     }
+
+    // The server's IRCv3 msgid for each stored message, which is what reacts
+    // and reply tags point at. A message can have several: the bot's long
+    // replies go out as several PRIVMSGs, each echoed back with its own. The
+    // first one (lowest rowid) is the one the bot points at. No foreign key:
+    // the echo of a bot line can arrive before the line is stored.
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS message_msgids (
+        msgid TEXT PRIMARY KEY,
+        message_id TEXT NOT NULL
+      )
+    `);
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_message_msgids_message ON message_msgids(message_id)
+    `);
+
+    // IRCv3 reactions (+draft/react TAGMSGs), the bot's own and everyone
+    // else's, keyed by the msgid they were attached to. Not messages: they
+    // never count toward cooldowns or the bot ratio.
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS reactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        channel_id TEXT NOT NULL,
+        target_msgid TEXT NOT NULL,
+        author_id TEXT NOT NULL,
+        author_name TEXT NOT NULL,
+        reaction TEXT NOT NULL,
+        is_bot_message BOOLEAN DEFAULT FALSE,
+        created_at DATETIME NOT NULL
+      )
+    `);
+    this.db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_reactions_unique ON reactions(target_msgid, author_id, reaction);
+      CREATE INDEX IF NOT EXISTS idx_reactions_channel ON reactions(channel_id, created_at);
+    `);
   }
 
   createTables() {
@@ -507,7 +542,146 @@ class DatabaseManager {
     `);
     const messages = stmt.all(channelId, limit);
     if (parseJson) {
-      return messages.map(msg => this._parseMessageRecord(msg));
+      return this.attachThreading(messages.map(msg => this._parseMessageRecord(msg)));
+    }
+    return messages;
+  }
+
+  // IRCv3 msgids, reactions and replies
+
+  /** Record that the server knows this message as `msgid`. */
+  addMsgid(messageId, msgid) {
+    this.db.prepare(`INSERT OR IGNORE INTO message_msgids (msgid, message_id) VALUES (?, ?)`)
+      .run(msgid, messageId);
+  }
+
+  /** The msgid to point a react or reply at, or null when the server never gave one. */
+  getMsgidFor(messageId) {
+    const row = this.db.prepare(`
+      SELECT msgid FROM message_msgids WHERE message_id = ? ORDER BY rowid ASC LIMIT 1
+    `).get(messageId);
+    return row ? row.msgid : null;
+  }
+
+  /** The stored message a msgid belongs to, or null. */
+  getMessageByMsgid(msgid) {
+    const row = this.db.prepare(`
+      SELECT m.* FROM message_msgids mm JOIN messages m ON m.id = mm.message_id WHERE mm.msgid = ?
+    `).get(msgid);
+    return row ? this._parseMessageRecord(row) : null;
+  }
+
+  /**
+   * Store a reaction. The same person attaching the same reaction to the
+   * same line twice is one reaction.
+   */
+  addReaction({ channelId, targetMsgid, authorId, authorName, reaction, isBotMessage = false, createdAt = new Date() }) {
+    this.db.prepare(`
+      INSERT OR IGNORE INTO reactions (channel_id, target_msgid, author_id, author_name, reaction, is_bot_message, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      channelId,
+      targetMsgid,
+      authorId,
+      authorName,
+      reaction,
+      isBotMessage ? 1 : 0,
+      createdAt instanceof Date ? createdAt.toISOString() : createdAt
+    );
+  }
+
+  /** Remove a reaction (+draft/unreact). */
+  removeReaction(targetMsgid, authorId, reaction) {
+    this.db.prepare(`
+      DELETE FROM reactions WHERE target_msgid = ? AND author_id = ? AND reaction = ?
+    `).run(targetMsgid, authorId, reaction);
+  }
+
+  /** Whether the bot has already reacted to this msgid. */
+  hasBotReaction(targetMsgid) {
+    return this.db.prepare(`
+      SELECT 1 FROM reactions WHERE target_msgid = ? AND is_bot_message = 1
+    `).get(targetMsgid) !== undefined;
+  }
+
+  /** The bot's most recent reaction in a conversation, or null. */
+  getLastBotReaction(channelId) {
+    return this.db.prepare(`
+      SELECT * FROM reactions WHERE channel_id = ? AND is_bot_message = 1
+      ORDER BY created_at DESC LIMIT 1
+    `).get(channelId) || null;
+  }
+
+  /** How many messages other people have sent in a conversation after a time. */
+  countHumanMessagesSince(channelId, since) {
+    return this.db.prepare(`
+      SELECT COUNT(*) AS count FROM messages
+      WHERE channel_id = ? AND is_bot_message = 0 AND created_at > ?
+    `).get(channelId, since instanceof Date ? since.toISOString() : since).count;
+  }
+
+  /**
+   * How many messages were stored in a conversation after this one, i.e.
+   * how deep it is buried. Null when the message is unknown.
+   */
+  countMessagesAfter(channelId, messageId) {
+    const target = this.db.prepare(`SELECT rowid FROM messages WHERE id = ?`).get(messageId);
+    if (!target) return null;
+    return this.countMessagesAfterRowid(channelId, target.rowid);
+  }
+
+  /**
+   * Fill in what IRCv3 adds to a parsed message: its msgid (`msgid`), the
+   * reactions on it (`reactions`, [{nick, reaction, is_bot}]) and, when it
+   * was sent as a reply, the line it answers (`reply_to`, {author_name,
+   * is_bot_message, content}). Mutates and returns the list.
+   * @param {Array} messages - Parsed message records
+   */
+  attachThreading(messages) {
+    if (!messages || messages.length === 0) return messages;
+    const ids = messages.map((m) => m.id);
+    const marks = ids.map(() => "?").join(",");
+
+    const msgids = new Map();
+    for (const row of this.db.prepare(`
+      SELECT msgid, message_id FROM message_msgids WHERE message_id IN (${marks}) ORDER BY rowid ASC
+    `).all(...ids)) {
+      if (!msgids.has(row.message_id)) msgids.set(row.message_id, row.msgid);
+    }
+
+    const reactions = new Map();
+    for (const row of this.db.prepare(`
+      SELECT r.author_name, r.reaction, r.is_bot_message, mm.message_id
+      FROM reactions r JOIN message_msgids mm ON mm.msgid = r.target_msgid
+      WHERE mm.message_id IN (${marks})
+      ORDER BY r.created_at ASC
+    `).all(...ids)) {
+      if (!reactions.has(row.message_id)) reactions.set(row.message_id, []);
+      reactions.get(row.message_id).push({
+        nick: row.author_name,
+        reaction: row.reaction,
+        is_bot: !!row.is_bot_message,
+      });
+    }
+
+    const replyIds = [...new Set(messages.map((m) => m.reply_to_message_id).filter(Boolean))];
+    const replyTargets = new Map();
+    if (replyIds.length > 0) {
+      for (const row of this.db.prepare(`
+        SELECT id, author_name, is_bot_message, content FROM messages WHERE id IN (${replyIds.map(() => "?").join(",")})
+      `).all(...replyIds)) {
+        replyTargets.set(row.id, {
+          author_name: row.author_name,
+          is_bot_message: !!row.is_bot_message,
+          content: row.content,
+        });
+      }
+    }
+
+    for (const m of messages) {
+      m.msgid = msgids.get(m.id) || null;
+      m.reactions = reactions.get(m.id) || [];
+      m.reply_to = (m.reply_to_message_id && replyTargets.get(m.reply_to_message_id)) || null;
     }
     return messages;
   }
@@ -585,6 +759,15 @@ class DatabaseManager {
         this.logger.debug(`Pruned old messages from channel ${channel_id}`);
       }
     }
+
+    // msgids of pruned messages go with them, and so do the reactions on
+    // them. A reaction whose line was never stored is kept for a day in case
+    // the line is still on its way in (a link being summarized).
+    this.db.exec(`DELETE FROM message_msgids WHERE message_id NOT IN (SELECT id FROM messages)`);
+    this.db.prepare(`
+      DELETE FROM reactions
+      WHERE target_msgid NOT IN (SELECT msgid FROM message_msgids) AND created_at < ?
+    `).run(new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
   }
 
   // Decision log operations
@@ -799,6 +982,7 @@ class DatabaseManager {
     if (messages.length === 0) {
       return { messages: [], relations: {} };
     }
+    this.attachThreading(messages);
 
     const messageIds = messages.map(m => m.id);
     const messageIdSet = new Set(messageIds);
@@ -959,7 +1143,7 @@ class DatabaseManager {
       ORDER BY rowid ASC
       LIMIT ?
     `);
-    return stmt.all(conversationId, afterRowid, limit).map((msg) => this._parseMessageRecord(msg));
+    return this.attachThreading(stmt.all(conversationId, afterRowid, limit).map((msg) => this._parseMessageRecord(msg)));
   }
 
   countMessagesAfterRowid(conversationId, afterRowid) {

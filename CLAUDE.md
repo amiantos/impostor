@@ -33,11 +33,11 @@ npm start
 |-------|---------|
 | **ImpostorClient** | One bot: IRC client (irc-framework), message handling, queue system, tool execution, DeepSeek API calls, its Archivist |
 | **bot_config.js** | `listBots` validates the `bots` list; `resolveBotConfig` layers a bot's overrides over the shared sections into the single-bot shape the client reads |
-| **persona.js** | Loads `conf/personas/*.md`: `# Name`, the character text, an optional `## Evaluator` section |
+| **persona.js** | Loads `conf/personas/*.md`: `# Name`, the character text, optional `## Evaluator` and `## Reactions` (how they react: which emoji/words, how often) sections |
 | **Archivist** | The memory: a journal per conversation and a note per person, rewritten whole by a background model call over the chatlog since the last pass (watermark = messages rowid) |
 | **irc_message.js** | Factory for normalized message objects (IRC events -> common shape used by all downstream code) |
-| **ContextUtils** | System prompt = persona character + the medium (IRC conventions, chatlog format, journal/people blocks, JSON protocol, tools); renders the chatlog for the reply model and the Archivist |
-| **DatabaseManager** | SQLite persistence for messages, decisions, responses, prompts, journals, people (per bot) |
+| **ContextUtils** | System prompt = persona character + the medium (IRC conventions, chatlog format, reactions/replies, journal/people blocks, JSON protocol, tools); renders the chatlog for the reply model and the Archivist, with replies and reactions shown on their lines and per-prompt line refs (`m12`) for the reply model |
+| **DatabaseManager** | SQLite persistence for messages, msgids, reactions, decisions, responses, prompts, journals, people (per bot) |
 | **MessageTracker** | Per-channel message tracking, triggers URL processing |
 | **ResponseEvaluator** | AI evaluation for autonomous responses (should bot respond?); generic rules + the persona's Evaluator section + the journal |
 | **VisionService** | GPT-4o image recognition (dormant for IRC -- no attachments) |
@@ -67,6 +67,9 @@ npm start
 - **URL Summarization**: Kagi summarizes shared links proactively
 - **Web Tools**: Search (Kagi FastGPT) and fetch (Readability) for current information
 - **Message Splitting**: Long responses are split into ~400-char lines for IRC compatibility
+- **Reactions** (IRCv3 `+draft/react`): the evaluator's `react` action names a line and a reaction (emoji or a word or two, ≤ `irc.reaction_max_length`), sent as a TAGMSG; the reply model can also attach `"react": {"to": "m12", "reaction": "🖤"}` to a message or send it alone. Gated in code: never his own line, never a line he already reacted to, and after a reaction he needs `autonomous.react_cooldown_messages` (3) lines from others *and* `react_cooldown_seconds` (30). Reactions are not messages, so they don't count toward the speaking cooldown or bot ratio, but a reaction is a turn: lines he reacted after aren't evaluated again. Where the server or the line can't carry a react (no msgid, `irc.reactions: false`), an evaluator react is said as a plain line instead
+- **Reply tags** (IRCv3 `+draft/reply`): the reply model may set `"reply_to": "m12"`, but the tag is only sent when that line has `irc.reply_min_distance` (5) or more lines after it; otherwise it's silently dropped and the `nick:` prefix does the job. Incoming replies are threaded onto their line, and a reply to one of his lines classifies as `named`
+- **Seeing reactions**: other people's react/unreact TAGMSGs are stored and shown inline on the line they target (`[reactions: alice 😂, you 🖤]`) in the reply prompt, the evaluator and the Archivist
 
 ## Database Schema
 
@@ -75,6 +78,8 @@ SQLite database per bot at `data/<id>/impostor.db`:
 - **decision_log**: Autonomous response evaluations with reasoning
 - **responses**: Bot responses with trigger tracking
 - **prompts**: Full prompts for debugging (system + messages)
+- **message_msgids**: server msgid -> message id; several per bot message (one per PRIVMSG line, learned from echo-message); the lowest rowid is the one reacts/replies point at
+- **reactions**: every IRCv3 reaction, his and others', keyed by `target_msgid`
 - **journals** / **journal_versions**: One journal per conversation with its watermark; every version with source (`archivist`, `edit`) and rationale
 - **people** / **people_versions**: One note per nick (`nick_key` lowercased), every version
 - `user_memories` from the old remember tool is dropped on first start
@@ -93,14 +98,14 @@ SQLite database per bot at `data/<id>/impostor.db`:
 ### Autonomous Response
 1. All messages tracked in configured channels
 2. Debounce timer (`autonomous.debounce_seconds`, default 20s) waits for conversation to settle. Each line pushes it back, but a wait has a deadline (`max_wait_seconds`, 60s) fixed when it began, and a line naming the bot pulls that deadline in (`address_wait_seconds`, 5s); otherwise a busy channel would reset the timer forever (`classes/eval_debounce.js`)
-3. `addressSinceLastBotMessage` classifies who, if anyone, is talking to him. IRC has no reply threading, so this is inferred:
-   - **`named`** — someone used his name/nick. Straight to the evaluator, no dampers.
+3. `addressSinceLastBotMessage` classifies who, if anyone, is talking to him. Plain IRC has no reply threading, so this is mostly inferred:
+   - **`named`** — someone used his name/nick, or sent an IRCv3 reply to one of his lines. Straight to the evaluator, no dampers.
    - **`reply`** — nobody named him, but within `reply_window_seconds` (180) of his last message a human used second person, asked a question, *or* was the only person speaking (a 1:1 exchange). Also goes to the evaluator.
    - **`none`** — he'd be volunteering into a conversation that moved on without him.
 4. Only `none` hits the hard local gates, which run *before* the model is asked anything so a burst can't talk its way past them:
    - **Cooldown** — after speaking he needs `cooldown_messages` (3) new messages *and* `cooldown_seconds` (45) of wall clock
    - **Ratio ceiling** — blocked when he's already `max_bot_ratio` (0.4) of the last `ratio_window` (10) messages
-5. `ResponseEvaluator` asks DeepSeek for `respond` / `react` / `ignore`. A `reply` that arrives inside the cooldown window passes `restraint: true`, which tells the evaluator to answer only if something genuinely new was raised.
+5. `ResponseEvaluator` asks DeepSeek for `respond` / `react` / `ignore` (messages shown as `[m3] nick: …`; `react` also returns the line ref and the reaction). A `reply` that arrives inside the cooldown window passes `restraint: true`, which tells the evaluator to answer only if something genuinely new was raised. Inside the reaction cooldown it's told `react` is unavailable, and a `react` anyway becomes `ignore`.
 6. If `respond`, generates via the same pipeline as a direct mention
 7. Decision logged with reasoning — suppressions land in `decision_log` as `[ignore] cooldown: …` / `[ignore] bot ratio …`
 
@@ -112,7 +117,8 @@ His problem was never total volume (~11% of channel messages) but clustering: he
 - The `messages.channel_id` column stores the IRC PRIVMSG target verbatim. For channel messages that's `#name`; for DMs it's the other party's nick (since channel and PM both go through PRIVMSG, the leading `#` is what distinguishes them). Conversation context is keyed off this column for both kinds.
 - Author IDs in the `messages` table are the IRC hostmask (`nick!ident@hostname`) for stable cross-nick-change identity. People notes are keyed by nick only — hostmasks aren't shown to the LLM.
 - On a server that advertises the `BOT` ISUPPORT token (Ergo: `B`), each bot sets that mode on itself after registering.
-- Message IDs are UUIDs (IRC has no server-assigned message IDs)
+- Message IDs are UUIDs. The server's IRCv3 `msgid` tag, when present, goes in `message_msgids` (stored before the message itself, since link summarizing can delay the insert and a reaction may arrive first). The bot's own msgids come from `echo-message`: `sendIrcMessage` queues each line in `pendingEchoes` and `recordEcho` matches echoes back in order (prefix-consuming, since irc-framework may split a line further)
+- Requests `message-tags` always and `echo-message` via irc-framework's `enable_echomessage`; `canSendReactions` checks `CLIENTTAGDENY` through `network.supportsTag`
 - DMs are accepted from anyone (so the dashboard can monitor them) but only sent to nicks listed in `irc.pm_allowed_users`. Empty list = no DM responses.
 
 ## API Response Format
@@ -124,8 +130,12 @@ Bot responses use structured JSON:
   "tool_name": null,
   "tool_input": null,
   "continue_iterating": false,
-  "message": "Response text here"
+  "message": "Response text here",
+  "reply_to": null,
+  "react": null
 }
 ```
+
+`reply_to` and `react` are optional (see Reactions / Reply tags above); refs are resolved back to message ids in `deliverResponse`.
 
 Tools: `python`, `web_search`, `web_fetch`
