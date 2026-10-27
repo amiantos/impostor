@@ -25,6 +25,8 @@
     "autonomous": {
         "enabled": true,
         "debounce_seconds": 20,
+        "max_wait_seconds": 60,
+        "address_wait_seconds": 5,
         "cooldown_messages": 3,
         "cooldown_seconds": 45,
         "reply_window_seconds": 180,

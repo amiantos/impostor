@@ -10,6 +10,7 @@ const ResponseEvaluator = require("./response_evaluator");
 const VisionService = require("./vision_service");
 const UrlSummarizeService = require("./url_summarize_service");
 const { Archivist } = require("./archivist");
+const { debounceConfig, planEvaluation } = require("./eval_debounce");
 
 /**
  * One bot: its IRC connection, database, evaluator, reply pipeline and
@@ -46,7 +47,8 @@ class ImpostorClient {
     this.messageQueue = [];
     this.isProcessing = false;
 
-    // Debounce timers for autonomous evaluation (channelId -> timer)
+    // Pending autonomous evaluations (channelId -> { timer, deadline }).
+    // See classes/eval_debounce.js for how the deadline is chosen.
     this.evaluationTimers = new Map();
 
     // Channels with an in-flight autonomous generation. We suppress new
@@ -313,15 +315,24 @@ class ImpostorClient {
     // used to short-circuit straight to a response, but that bypassed the
     // react/ignore branches — now the evaluator decides for everything.
     if (this.config.autonomous?.enabled) {
-      this.scheduleAutonomousEvaluation(conversationId);
+      this.scheduleAutonomousEvaluation(conversationId, {
+        addressed: this.mentionsBot(messageText),
+      });
     }
   }
 
   /**
-   * Schedule an autonomous evaluation with debouncing
+   * Schedule an autonomous evaluation. Each new line pushes the timer back
+   * by the debounce so the bot reads a settled conversation, but a wait has
+   * a deadline fixed when it began (`max_wait_seconds`), and a line that
+   * names the bot pulls that deadline in (`address_wait_seconds`). Without
+   * the deadline a busy channel resets the timer forever and he never gets
+   * a turn, even when asked a question.
    * @param {string} channelName - IRC channel name (e.g. "#amiantos")
+   * @param {Object} [options]
+   * @param {boolean} [options.addressed] - The line that prompted this names the bot
    */
-  scheduleAutonomousEvaluation(channelName) {
+  scheduleAutonomousEvaluation(channelName, { addressed = false } = {}) {
     if (this.generatingChannels.has(channelName)) {
       this.logger.debug(
         `Skipped scheduling evaluation for ${channelName} — generation in flight`
@@ -329,23 +340,31 @@ class ImpostorClient {
       return;
     }
 
-    const debounceMs = (this.config.autonomous?.debounce_seconds || 3) * 1000;
-
-    // Clear any existing timer for this channel
-    if (this.evaluationTimers.has(channelName)) {
-      clearTimeout(this.evaluationTimers.get(channelName));
+    const now = Date.now();
+    const pending = this.evaluationTimers.get(channelName);
+    if (pending) {
+      clearTimeout(pending.timer);
       this.logger.debug(`Reset evaluation timer for channel ${channelName}`);
     }
 
-    // Set new timer
+    const { fireAt, deadline } = planEvaluation({
+      now,
+      deadline: pending ? pending.deadline : null,
+      addressed,
+      cfg: debounceConfig(this.config.autonomous),
+    });
+
     const timer = setTimeout(async () => {
       this.logger.debug(`Evaluation timer fired for channel ${channelName}`);
-      await this.evaluateAutonomousResponse(channelName);
       this.evaluationTimers.delete(channelName);
-    }, debounceMs);
+      await this.evaluateAutonomousResponse(channelName);
+    }, Math.max(0, fireAt - now));
 
-    this.evaluationTimers.set(channelName, timer);
-    this.logger.debug(`Scheduled evaluation for channel ${channelName} in ${debounceMs / 1000}s`);
+    this.evaluationTimers.set(channelName, { timer, deadline });
+    const why = addressed ? " (addressed)" : "";
+    this.logger.debug(
+      `Scheduled evaluation for channel ${channelName} in ${((fireAt - now) / 1000).toFixed(1)}s${why}, deadline in ${((deadline - now) / 1000).toFixed(1)}s`
+    );
   }
 
   /**
@@ -500,6 +519,18 @@ class ImpostorClient {
   }
 
   /**
+   * Whether a line names the bot (his watchword or nick, case-insensitive).
+   * @param {string} text
+   * @returns {boolean}
+   */
+  mentionsBot(text) {
+    const content = (text || "").toLowerCase();
+    return [this.watchword, this.botNick]
+      .filter(Boolean)
+      .some((n) => content.includes(n.toLowerCase()));
+  }
+
+  /**
    * Classify how (or whether) someone is addressing the bot since he last
    * spoke. IRC has no reply threading, so this leans on two signals:
    *
@@ -521,14 +552,7 @@ class ImpostorClient {
     const since = this.messagesSinceBotSpoke(messages);
     if (since.length === 0) return "none";
 
-    const names = [this.watchword, this.botNick]
-      .filter(Boolean)
-      .map((n) => n.toLowerCase());
-    const named = since.some((m) => {
-      const content = (m.content || "").toLowerCase();
-      return names.some((n) => content.includes(n));
-    });
-    if (named) return "named";
+    if (since.some((m) => this.mentionsBot(m.content))) return "named";
 
     // Nothing he said to reply to yet.
     if (since.length === messages.length) return "none";
@@ -884,7 +908,7 @@ class ImpostorClient {
    */
   cancelEvaluationTimer(channelId) {
     if (this.evaluationTimers.has(channelId)) {
-      clearTimeout(this.evaluationTimers.get(channelId));
+      clearTimeout(this.evaluationTimers.get(channelId).timer);
       this.evaluationTimers.delete(channelId);
       this.logger.debug(`Cancelled evaluation timer for channel ${channelId}`);
     }
@@ -1365,7 +1389,7 @@ Reply with valid JSON in the format described above.`,
     if (this.maintenanceInterval) {
       clearInterval(this.maintenanceInterval);
     }
-    for (const timer of this.evaluationTimers.values()) {
+    for (const { timer } of this.evaluationTimers.values()) {
       clearTimeout(timer);
     }
     this.evaluationTimers.clear();

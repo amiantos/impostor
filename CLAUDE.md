@@ -92,7 +92,7 @@ SQLite database per bot at `data/<id>/impostor.db`:
 
 ### Autonomous Response
 1. All messages tracked in configured channels
-2. Debounce timer (`autonomous.debounce_seconds`, default 20s) waits for conversation to settle
+2. Debounce timer (`autonomous.debounce_seconds`, default 20s) waits for conversation to settle. Each line pushes it back, but a wait has a deadline (`max_wait_seconds`, 60s) fixed when it began, and a line naming the bot pulls that deadline in (`address_wait_seconds`, 5s); otherwise a busy channel would reset the timer forever (`classes/eval_debounce.js`)
 3. `addressSinceLastBotMessage` classifies who, if anyone, is talking to him. IRC has no reply threading, so this is inferred:
    - **`named`** — someone used his name/nick. Straight to the evaluator, no dampers.
    - **`reply`** — nobody named him, but within `reply_window_seconds` (180) of his last message a human used second person, asked a question, *or* was the only person speaking (a 1:1 exchange). Also goes to the evaluator.

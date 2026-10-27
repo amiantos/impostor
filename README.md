@@ -112,6 +112,7 @@ See `conf/config.json.example` for all options. Key sections:
 | `bots[].watchword` | What people call the bot in chat, when it differs from the persona's name |
 | `journal` | When the Archivist runs (`messages_per_pass`, `quiet_minutes`, `min_messages`) and how long a journal (`journal_max_chars`) and a note (`note_max_chars`) may get |
 | `autonomous` | Autonomous response settings (debounce, timing) |
+| `autonomous.debounce_seconds` / `max_wait_seconds` / `address_wait_seconds` | Each new line pushes the evaluation back by the debounce (20s), but never past `max_wait_seconds` (60s) from when the wait began; a line that names the bot pulls that deadline in to `address_wait_seconds` (5s), so a busy channel can't starve him |
 | `autonomous.cooldown_messages` / `cooldown_seconds` | Quiet period after the bot speaks, before it will volunteer again (3 msgs / 45s) |
 | `autonomous.reply_window_seconds` | How long after speaking a human turn still counts as a reply to him (180s) |
 | `autonomous.max_bot_ratio` / `ratio_window` | Hard ceiling on the bot's share of the last N messages (0.4 of 10) |
