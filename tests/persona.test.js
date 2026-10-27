@@ -47,3 +47,16 @@ test("the shipped Isaac persona loads and keeps his all-lowercase rule", () => {
 test("loadPersona names the missing file", () => {
   assert.throws(() => loadPersona("/nonexistent/persona.md"), /Cannot read persona file/);
 });
+
+test("a Reactions section gives the bot its own laugh pool; none means the stock pool", () => {
+  const persona = parsePersona("# Bob\n\nYou are Bob.\n\n## Reactions\n\nha.\n\n  a grim chuckle.  \n");
+  assert.deepEqual(persona.reactions, ["ha.", "a grim chuckle."]);
+  assert.equal(parsePersona("# Bob\n\nYou are Bob.\n").reactions, null);
+  const layla = loadPersona(path.join(__dirname, "..", "conf", "personas", "layla.md"));
+  assert.ok(layla.reactions.includes("lmaooo"));
+  const nightmare = loadPersona(path.join(__dirname, "..", "conf", "personas", "nightmare.md"));
+  assert.equal(nightmare.name, "Nightmare");
+  assert.deepEqual(nightmare.reactions, ["ha.", "a grim chuckle.", "hm. yes.", "...ha."]);
+  assert.match(nightmare.evaluator, /RARELY REACTS/);
+  assert.doesNotMatch(nightmare.character, /## /);
+});

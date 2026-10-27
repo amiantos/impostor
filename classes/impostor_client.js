@@ -1020,7 +1020,7 @@ class ImpostorClient {
    * @param {number|null} decisionId - Decision log id
    */
   async processReactMessage(channelName, decisionId = null) {
-    const pool = ["haha", "lol", "lmao", "kek", "heh", "lmfao", "hah"];
+    const pool = this.persona.reactions || ["haha", "lol", "lmao", "kek", "heh", "lmfao", "hah"];
     const reaction = pool[Math.floor(Math.random() * pool.length)];
 
     await this.sendIrcMessage(channelName, reaction);
