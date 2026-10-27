@@ -36,9 +36,13 @@
         "max_bot_ratio": 0.4,
         "ratio_window": 10,
         "react_cooldown_messages": 3,
-        "react_cooldown_seconds": 30,
-        "max_context_age_minutes": 30,
-        "max_conversation_gap_minutes": 30
+        "react_cooldown_seconds": 30
+    },
+    "context": {
+        "screen_lines": 50,
+        "max_lines": 150,
+        "lull_minutes": 30,
+        "max_link_summaries": 5
     },
     "journal": {
         "enabled": true,

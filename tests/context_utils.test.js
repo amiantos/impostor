@@ -59,12 +59,13 @@ test("renderChatlog tags the bot's lines, skips ! commands, and collects link su
     ],
     { urlSummaries: summaries }
   );
-  assert.equal(lines.length, 5, "two day dividers, three lines");
+  assert.equal(lines.length, 6, "two day dividers, a lull marker, three lines");
   assert.ok(lines[0].startsWith("--- "));
   assert.match(lines[1], /<amiantos> hi$/);
   assert.match(lines[2], /<Mabel \(you\)> hello$/);
-  assert.ok(lines[3].startsWith("--- "));
-  assert.match(lines[4], /<carol> yo$/);
+  assert.equal(lines[3], "--- 24 hours later ---");
+  assert.ok(lines[4].startsWith("--- Tue"));
+  assert.match(lines[5], /<carol> yo$/);
   assert.equal(summaries.length, 1);
 });
 
@@ -178,4 +179,33 @@ test("the closing instruction says when reactions are unavailable", () => {
   assert.match(blocked.content, /Reactions are unavailable right now, so leave "react" null\./);
   const [open] = ctx.buildChatMessagesConsolidated([msg("bob", "hey")], "mabel", { userName: null, channelName: "#c" });
   assert.doesNotMatch(open.content, /unavailable/);
+});
+
+test("a lull is marked in the chatlog instead of cutting the older lines", () => {
+  assert.equal(ContextUtils.lullMarker(null, "2026-10-26T10:00:00Z", 30), null);
+  assert.equal(ContextUtils.lullMarker("2026-10-26T10:00:00Z", "2026-10-26T10:29:00Z", 30), null);
+  assert.equal(ContextUtils.lullMarker("2026-10-26T10:00:00Z", "2026-10-26T10:45:00Z", 30), "--- 45 minutes later ---");
+  assert.equal(ContextUtils.lullMarker("2026-10-26T10:00:00Z", "2026-10-26T13:10:00Z", 30), "--- 3 hours later ---");
+  assert.equal(ContextUtils.lullMarker("2026-10-26T10:00:00Z", "2026-10-29T10:00:00Z", 30), "--- 3 days later ---");
+
+  const ctx = new ContextUtils(silent, persona, { lullMinutes: 60 });
+  const lines = ctx.renderChatlog([
+    msg("bob", "old thread", { created_at: "2026-10-26T10:00:00Z" }),
+    msg("bob", "still old", { created_at: "2026-10-26T10:40:00Z" }),
+    msg("alice", "morning", { created_at: "2026-10-26T15:00:00Z" }),
+  ]);
+  assert.deepEqual(lines.slice(1, 5).map((l) => l.replace(/^\[\d\d:\d\d\] /, "")), [
+    "<bob> old thread",
+    "<bob> still old",
+    "--- 4 hours later ---",
+    "<alice> morning",
+  ]);
+});
+
+test("only the newest link summaries go in the reply prompt", () => {
+  const ctx = new ContextUtils(silent, persona, { maxLinkSummaries: 2 });
+  const linked = (n) => msg("bob", `link ${n}`, { url_summaries: [{ url: `u${n}`, success: true, summary: `s${n}` }] });
+  const [message] = ctx.buildChatMessagesConsolidated([linked(1), linked(2), linked(3)], "mabel", { userName: null, channelName: "#c" });
+  assert.doesNotMatch(message.content, /URL: u1/);
+  assert.match(message.content, /URL: u2[\s\S]*URL: u3/);
 });

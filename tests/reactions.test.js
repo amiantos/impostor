@@ -227,3 +227,45 @@ test("the evaluator answers with line references and a reaction; the client gets
   answer = { action: "react", reply_to_message_id: "m1", reason: "no reaction given" };
   assert.equal((await evaluator.shouldRespond(messages, "mabel", "#c", null, {})).action, "ignore");
 });
+
+test("the screen is the last screen_lines lines, however old, reaching back to whatever the journal hasn't read", () => {
+  const db = freshDb();
+  const { bot } = fakeBot(db, { config: {} });
+  bot.config.context = { screen_lines: 4, max_lines: 8 };
+  bot.config.journal = { enabled: true };
+  for (let i = 0; i < 12; i++) store(db, "bob", `line ${i}`, { at: Date.now() - (12 - i) * 3 * 60 * 60 * 1000 });
+
+  // No journal yet: nothing is remembered, so as far back as the cap allows.
+  assert.equal(bot.screenFor("#c").length, 8);
+
+  // The journal has read up to line 9: the last 4 lines are the screen.
+  const rowid = db.db.prepare("SELECT rowid FROM messages WHERE content = 'line 9'").get().rowid;
+  db.setJournal("#c", "we talked.", { watermarkRowid: rowid });
+  const screen = bot.screenFor("#c");
+  assert.deepEqual(screen.map((m) => m.content), ["line 8", "line 9", "line 10", "line 11"], "hours apart and still on screen");
+
+  // Read up to line 5: lines 6 through 11 are unread, so all six show.
+  const earlier = db.db.prepare("SELECT rowid FROM messages WHERE content = 'line 5'").get().rowid;
+  db.setJournalWatermark("#c", earlier);
+  assert.equal(bot.screenFor("#c")[0].content, "line 6");
+
+  bot.config.journal.enabled = false;
+  assert.equal(bot.screenFor("#c").length, 4, "no journal, no reach");
+});
+
+test("the evaluator marks where the lines since the bot last spoke begin", async () => {
+  const ResponseEvaluator = require("../classes/response_evaluator");
+  let lastPrompt = null;
+  const openai = { chat: { completions: { create: async ({ messages }) => {
+    lastPrompt = messages;
+    return { choices: [{ message: { content: JSON.stringify({ action: "ignore", reason: "r" }) } }] };
+  } } } };
+  const evaluator = new ResponseEvaluator(silent, { generator: { deepseek: { model: "m" } } }, { logDecision: () => 1, storePrompt: () => {} }, null, { name: "Mabel", evaluator: "e" }, openai);
+  await evaluator.shouldRespond([
+    { id: "1", author_name: "bob", content: "old", created_at: "2026-10-26T06:00:00Z" },
+    { id: "2", author_name: "bob", content: "hi", created_at: "2026-10-26T10:00:00Z" },
+    { id: "3", author_name: "mabel", author_id: "mabel", is_bot_message: true, content: "hello", created_at: "2026-10-26T10:01:00Z" },
+    { id: "4", author_name: "bob", content: "how are you", created_at: "2026-10-26T10:02:00Z" },
+  ], "mabel", "#c");
+  assert.match(lastPrompt[1].content, /\[m1\] bob: old\n--- 4 hours later ---\n\[m2\] bob: hi\n\[m3\] mabel \(Mabel\): hello\n--- new since Mabel last spoke ---\n\[m4\] bob: how are you/);
+});

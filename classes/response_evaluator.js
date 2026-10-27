@@ -78,6 +78,8 @@ ONE TURN PER THOUGHT: ${name} gets one contribution per topic, not a running com
 
 IMPORTANT: ${name} should only speak when they have genuine insight, curiosity, or thoughtful observation to offer - or when something is genuinely funny. Being contrary or dismissive is NOT a reason to respond. If ${name} doesn't understand something or wouldn't realistically know about it, they should stay quiet rather than fake expertise or mock it. Default to ignoring; speak only when the conversation earns it.
 
+The conversation below is what is on ${name}'s screen, oldest first. When ${name} has spoken in it, a divider marks where the lines since ${name} last spoke begin: decide mainly on those. The lines above it are context ${name} has already had a turn on; react to or answer one of them only if it is plainly still live and nobody has dealt with it. A line like "--- 3 hours later ---" marks a lull; what is above it is an older conversation.
+
 Each message below starts with a reference in brackets ("[m3]"). A message may start with (replying to bob: "...") when it was sent as a reply to an earlier line, and may end with [reactions: alice 😂] listing the reactions on it.
 
 You MUST respond with valid JSON only:
@@ -177,16 +179,26 @@ reply_to_message_id is the reference of the single message that prompted the act
     // Short references instead of message ids: the model copies them back
     // for the line it means, and a uuid is a lot of tokens to copy.
     const byRef = new Map();
-    const conversationContext = messages
-      .map((raw, i) => {
-        const msg = formattedMessages[i];
-        const ref = `m${i + 1}`;
-        byRef.set(ref, raw.id);
-        const reply = ContextUtils.replyMarker(raw, this.botName);
-        const reactions = ContextUtils.reactionsSuffix(raw, this.botName);
-        return `[${ref}] ${msg.author}${msg.is_bot ? ` (${this.botName})` : ""}: ${reply}${msg.content}${reactions}`;
-      })
-      .join("\n");
+    const lullMinutes = this.config.context?.lull_minutes ?? 30;
+    let lastBotIndex = -1;
+    formattedMessages.forEach((msg, i) => {
+      if (msg.is_bot) lastBotIndex = i;
+    });
+    const lines = [];
+    messages.forEach((raw, i) => {
+      const msg = formattedMessages[i];
+      const lull = ContextUtils.lullMarker(i > 0 ? messages[i - 1].created_at : null, raw.created_at, lullMinutes);
+      if (lull) lines.push(lull);
+      const ref = `m${i + 1}`;
+      byRef.set(ref, raw.id);
+      const reply = ContextUtils.replyMarker(raw, this.botName);
+      const reactions = ContextUtils.reactionsSuffix(raw, this.botName);
+      lines.push(`[${ref}] ${msg.author}${msg.is_bot ? ` (${this.botName})` : ""}: ${reply}${msg.content}${reactions}`);
+      if (i === lastBotIndex && i < messages.length - 1) {
+        lines.push(`--- new since ${this.botName} last spoke ---`);
+      }
+    });
+    const conversationContext = lines.join("\n");
 
     const systemPrompt = this.buildDecisionPrompt();
 

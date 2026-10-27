@@ -85,6 +85,7 @@ How to read it, carefully:
 - Your own past messages are tagged "(you)" - they show as "<NICK (you)>". Every other nick is a separate person. Never mix up what you said with what someone else said, and never attribute one user's words to another. If you're unsure who said something, scan back to the nick in angle brackets on that exact line.
 - A body that starts with (replying to bob: "...") was sent with the client's reply button, pointing at that earlier line of bob's. "(replying to you: ...)" means it answers one of your lines.
 - A line that ends with [reactions: alice 😂, you 🖤] has reactions on it: an emoji or a word or two that people attached to the line instead of typing a message. "you" is a reaction you left yourself.
+- A line like "--- 3 hours later ---" marks a lull. What is above it is an older conversation still on your screen: you can read it, and react or reply to it if it's plainly still relevant, but don't pick up a stale thread as if it were live unless someone brings it back. The newest lines are at the bottom.
 - Timestamps are in TIMEZONE, the same clock as the CURRENT DATE/TIME at the bottom of this prompt. Use the date dividers and that line to gauge how recent something is and what time of day it is.
 
 Pay attention to who you're responding to - the instruction at the end of the chatlog names the user who triggered this response and quotes their message.
@@ -247,12 +248,18 @@ Do not include any text outside of this JSON structure. The "message" field shou
    * @param {number} [options.replyMinDistance] - How many lines must follow a
    *   message before a reply tag on it is allowed (enforced by the client)
    * @param {number} [options.reactMaxLength] - Longest reaction allowed
+   * @param {number} [options.lullMinutes] - A silence this long gets a
+   *   "--- N hours later ---" marker in the chatlog
+   * @param {number} [options.maxLinkSummaries] - Only the newest this many
+   *   link summaries go in the reply prompt
    */
   constructor(logger, persona, {
     nick = null,
     timezone = ContextUtils.DEFAULT_TIMEZONE,
     replyMinDistance = 5,
     reactMaxLength = 24,
+    lullMinutes = 30,
+    maxLinkSummaries = 5,
   } = {}) {
     this.logger = logger;
     this.persona = persona;
@@ -261,6 +268,8 @@ Do not include any text outside of this JSON structure. The "message" field shou
     this.timezone = timezone;
     this.replyMinDistance = replyMinDistance;
     this.reactMaxLength = reactMaxLength;
+    this.lullMinutes = lullMinutes;
+    this.maxLinkSummaries = maxLinkSummaries;
     try {
       // Fail at construction, not on the first message, if the zone is bad.
       new Intl.DateTimeFormat("en-US", { timeZone: timezone });
@@ -391,6 +400,25 @@ Do not include any text outside of this JSON structure. The "message" field shou
   }
 
   /**
+   * "--- 3 hours later ---" when at least `minMinutes` passed between two
+   * lines, null otherwise.
+   * @param {string|null} previous - Timestamp of the line before
+   * @param {string} current - Timestamp of this line
+   * @param {number} minMinutes
+   */
+  static lullMarker(previous, current, minMinutes) {
+    if (!previous || !minMinutes) return null;
+    const minutes = (new Date(current) - new Date(previous)) / 60000;
+    if (!(minutes >= minMinutes)) return null;
+    const amount = (n, unit) => `${n} ${unit}${n === 1 ? "" : "s"}`;
+    const label =
+      minutes < 90 ? amount(Math.round(minutes), "minute")
+      : minutes < 36 * 60 ? amount(Math.round(minutes / 60), "hour")
+      : amount(Math.round(minutes / 1440), "day");
+    return `--- ${label} later ---`;
+  }
+
+  /**
    * '(replying to bob: "...") ' for a message sent as an IRCv3 reply, "" otherwise.
    * @param {Object} msg - Message record with `reply_to` (see DatabaseManager.attachThreading)
    * @param {string} selfLabel - What to call the bot when the reply is to its line
@@ -419,8 +447,8 @@ Do not include any text outside of this JSON structure. The "message" field shou
    * Render database messages as IRC chatlog lines with day dividers. The
    * bot's own lines are tagged "(you)". Lines starting with "!" are skipped
    * (bot commands for other bots). Replies and reactions are shown on the
-   * lines they belong to. Shared by the reply prompt and the Archivist so
-   * both read the same log.
+   * lines they belong to, and a lull gets a "--- 3 hours later ---" marker.
+   * Shared by the reply prompt and the Archivist so both read the same log.
    * @param {Array} messages - Chronological message records
    * @param {Object} [options]
    * @param {string} [options.clientUserId] - Also treat this author id as the bot
@@ -435,9 +463,14 @@ Do not include any text outside of this JSON structure. The "message" field shou
     const { clientUserId = null, imageDescriptions = null, urlSummaries = null, refs = null, onLine = null } = options;
     const lines = [];
     let lastDateKey = null;
+    let lastTime = null;
 
     for (const msg of messages) {
       if (msg.content.startsWith("!")) continue;
+
+      const lull = ContextUtils.lullMarker(lastTime, msg.created_at, this.lullMinutes);
+      if (lull) lines.push(lull);
+      lastTime = msg.created_at;
 
       const isBotMessage = msg.is_bot_message || (clientUserId && msg.author_id === clientUserId);
 
@@ -556,10 +589,13 @@ Do not include any text outside of this JSON structure. The "message" field shou
       this.buildMemorySection(conversationKey, memory) +
       `${conversationHeader}:\n\n${chatlogLines.join("\n")}`;
 
-    // Add URL summaries reference section if any links were shared
-    if (allUrlSummaries.length > 0) {
+    // Add URL summaries reference section if any links were shared. Only
+    // the newest few: a screenful of chatlog can hold many links, and each
+    // summary is a paragraph.
+    const shownSummaries = allUrlSummaries.slice(-this.maxLinkSummaries);
+    if (shownSummaries.length > 0) {
       consolidatedContent += `\n\n--- LINK SUMMARIES (already fetched, do not use tools to re-fetch) ---`;
-      for (const summary of allUrlSummaries) {
+      for (const summary of shownSummaries) {
         if (summary.success) {
           consolidatedContent += `\n\nURL: ${summary.url}\nSummary: ${summary.summary}`;
         } else {

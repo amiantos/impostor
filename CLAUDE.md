@@ -62,6 +62,7 @@ npm start
 - **Autonomous Responses**: Bot monitors conversations and decides when to naturally respond (debounced, cooldown- and ratio-gated)
 - **Direct Mentions**: Mentioning the bot's name (persona name or `watchword`) or nick triggers a direct response
 - **Journal**: The Archivist runs per conversation at 40 new lines, or 20 quiet minutes with 5+ new lines (`journal.*`); reads a backlog in passes of 200; a failed or unparseable answer leaves the watermark alone. The reply prompt gets the journal and the notes for the nicks in the window; the evaluator gets the journal. No memory is written on the reply path (the `remember` tool is gone)
+- **The screen**: the reply model and the evaluator both see `screenFor`: the last `context.screen_lines` (50) lines however old, reaching back further to every line the journal hasn't read yet (capped at `context.max_lines`, 150), so no line is in neither the chatlog nor memory. There is no age or gap cut: a silence of `context.lull_minutes` (30) shows as `--- 3 hours later ---`, and the evaluator gets a `--- new since NAME last spoke ---` divider and is told to decide mainly on what's below it. Only the newest `context.max_link_summaries` (5) link summaries go in the reply prompt
 - **Several bots**: no special handling for bot-on-bot conversation, by decision; personas and the evaluator prompt are the brake
 - **Tool Iteration**: Up to 10 iterations with reflection for precise tasks (exact character counts, complex math)
 - **URL Summarization**: Kagi summarizes shared links proactively
@@ -90,7 +91,7 @@ SQLite database per bot at `data/<id>/impostor.db`:
 1. `handleIrcMessage` detects bot nick in message content
 2. Message tracked in DB with URL processing
 3. Added to queue for sequential processing
-4. Build context from recent DB messages via `ContextUtils`
+4. Build context from the screen (`screenFor`) via `ContextUtils`
 5. Call DeepSeek with JSON response format
 6. Execute tools if requested, iterate with reflection (max 10 times)
 7. Reply split into IRC-friendly lines (~400 chars each)

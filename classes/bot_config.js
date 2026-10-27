@@ -1,7 +1,7 @@
 /**
  * One config file runs several bots. Top-level sections are shared; each
  * entry in `bots` names a bot and may override `irc`, `generator`,
- * `autonomous`, `url_summarize` and `journal` key by key. The result for a
+ * `autonomous`, `url_summarize`, `journal` and `context` key by key. The result for a
  * bot has the same shape the single-bot code always read (`config.irc.nick`,
  * `config.generator.deepseek.model`, ...), plus a `bot` block with its id and
  * persona path.
@@ -88,6 +88,7 @@ function resolveBotConfig(shared, bot) {
     autonomous: { ...(shared.autonomous || {}), ...(bot.autonomous || {}) },
     url_summarize: { ...(shared.url_summarize || {}), ...(bot.url_summarize || {}) },
     journal: { ...(shared.journal || {}), ...(bot.journal || {}) },
+    context: { ...(shared.context || {}), ...(bot.context || {}) },
     // The zone every timestamp the bot sees is rendered in; a bot may live
     // somewhere else than the others.
     timezone: bot.timezone || shared.timezone || undefined,

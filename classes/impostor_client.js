@@ -38,6 +38,8 @@ class ImpostorClient {
       timezone: config.timezone,
       replyMinDistance: config.irc.reply_min_distance ?? 5,
       reactMaxLength: config.irc.reaction_max_length ?? 24,
+      lullMinutes: config.context?.lull_minutes ?? 30,
+      maxLinkSummaries: config.context?.max_link_summaries ?? 5,
     });
     this.config = config;
     this.logger = logger;
@@ -659,8 +661,8 @@ class ImpostorClient {
       }
     }
 
-    // Get evaluation context
-    const evaluationMessages = this.getMessagesForEvaluation(recentMessages, 5);
+    // The evaluator sees the same screen the reply model does.
+    const evaluationMessages = this.screenFor(channelName);
 
     // Someone is talking to him without naming him, and he only just spoke.
     // He's allowed to answer, but the evaluator is told to hold a high bar so
@@ -845,85 +847,23 @@ class ImpostorClient {
   }
 
   /**
-   * Get messages for evaluation context, including bot's last response with surrounding context
-   * @param {Array} messages - Parsed messages from database (chronological order, oldest first)
-   * @param {number} contextBefore - Number of messages to include before bot's last response
-   * @param {number} maxAgeMinutes - Maximum age of messages to include
-   * @param {number} maxGapMinutes - Maximum gap between messages before treating as new conversation
-   * @returns {Array} Messages with context (chronological order, oldest first)
+   * What is on the bot's screen in a conversation: the last
+   * `context.screen_lines` lines, however old (a lull shows as a "--- 3
+   * hours later ---" marker, not a cut), reaching further back when the
+   * journal hasn't read that far yet, so no line is in neither the chatlog
+   * nor his memory. `context.max_lines` caps the reach.
+   * @param {string} channelId
+   * @returns {Array} Parsed messages, chronological
    */
-  getMessagesForEvaluation(messages, contextBefore = 5, maxAgeMinutes = null, maxGapMinutes = null) {
-    maxAgeMinutes = maxAgeMinutes ?? this.config.autonomous?.max_context_age_minutes ?? 30;
-    maxGapMinutes = maxGapMinutes ?? this.config.autonomous?.max_conversation_gap_minutes ?? 30;
-
-    const cutoffTime = Date.now() - maxAgeMinutes * 60 * 1000;
-    const recentMessages = messages.filter(m => {
-      const msgTime = new Date(m.created_at).getTime();
-      return msgTime >= cutoffTime;
-    });
-
-    if (recentMessages.length === 0) {
-      this.logger.debug(`No messages within ${maxAgeMinutes} minute window`);
-      return [];
+  screenFor(channelId) {
+    const screenLines = this.config.context?.screen_lines ?? 50;
+    const maxLines = Math.max(screenLines, this.config.context?.max_lines ?? 150);
+    let lines = screenLines;
+    if (this.config.journal?.enabled !== false) {
+      const watermark = this.db.getJournal(channelId)?.watermark_rowid ?? 0;
+      lines = Math.min(maxLines, Math.max(screenLines, this.db.countMessagesAfterRowid(channelId, watermark)));
     }
-
-    const filteredMessages = this.filterByConversationGaps(recentMessages, maxGapMinutes);
-
-    if (filteredMessages.length === 0) {
-      return [];
-    }
-
-    let lastBotIndex = -1;
-    for (let i = filteredMessages.length - 1; i >= 0; i--) {
-      if (filteredMessages[i].is_bot_message) {
-        lastBotIndex = i;
-        break;
-      }
-    }
-
-    if (lastBotIndex === -1) {
-      return filteredMessages;
-    }
-
-    const startIndex = Math.max(0, lastBotIndex - contextBefore);
-    const messagesBeforeBot = filteredMessages.slice(startIndex, lastBotIndex);
-    const botMessage = filteredMessages[lastBotIndex];
-    const messagesAfterBot = filteredMessages.slice(lastBotIndex + 1);
-
-    return [...messagesBeforeBot, botMessage, ...messagesAfterBot];
-  }
-
-  /**
-   * Filter messages by conversation gaps
-   * @param {Array} messages - Messages in chronological order (oldest first)
-   * @param {number} maxGapMinutes - Maximum allowed gap between messages
-   * @returns {Array} Filtered messages (chronological order, oldest first)
-   */
-  filterByConversationGaps(messages, maxGapMinutes) {
-    if (messages.length <= 1) {
-      return messages;
-    }
-
-    const maxGapMs = maxGapMinutes * 60 * 1000;
-    let lastGapIndex = -1;
-
-    for (let i = 0; i < messages.length - 1; i++) {
-      const currentTime = new Date(messages[i].created_at).getTime();
-      const nextTime = new Date(messages[i + 1].created_at).getTime();
-      const gap = nextTime - currentTime;
-
-      if (gap > maxGapMs) {
-        lastGapIndex = i;
-        this.logger.debug(`Found ${Math.round(gap / 60000)} minute conversation gap at index ${i}`);
-      }
-    }
-
-    if (lastGapIndex >= 0) {
-      this.logger.debug(`Excluding ${lastGapIndex + 1} older messages before conversation gap`);
-      return messages.slice(lastGapIndex + 1);
-    }
-
-    return messages;
+    return this.db.getRecentMessages(channelId, lines, true);
   }
 
   async processMessageQueue() {
@@ -1005,25 +945,13 @@ class ImpostorClient {
   }
 
   /**
-   * Build context from database
+   * Build context from database: the screen (see screenFor) plus what goes
+   * with it
    * @param {string} channelId - Channel identifier (IRC channel name)
-   * @param {Object} options - Configuration options
    * @returns {Object} Context object with messages, imageDescriptions, and urlSummaries
    */
-  buildContextFromDatabase(channelId, options = {}) {
-    const {
-      fetchLimit = 50,
-      contextBefore = 5,
-      useFiltering = true
-    } = options;
-
-    let dbMessages;
-    if (useFiltering) {
-      const rawMessages = this.db.getRecentMessages(channelId, fetchLimit, true);
-      dbMessages = this.getMessagesForEvaluation(rawMessages, contextBefore);
-    } else {
-      dbMessages = this.db.getRecentMessages(channelId, fetchLimit, true);
-    }
+  buildContextFromDatabase(channelId) {
+    const dbMessages = this.screenFor(channelId);
 
     const imageDescriptions = this.visionService.buildImageDescriptionsFromDB(dbMessages);
     const urlSummaries = this.urlSummarizeService.buildUrlSummariesFromDB(dbMessages);
@@ -1057,10 +985,7 @@ class ImpostorClient {
       .replace(/[^\w\s]/gi, "");
     const character_name = this.watchword;
 
-    const { dbMessages, imageDescriptions, memory } = this.buildContextFromDatabase(channelName, {
-      fetchLimit: 50,
-      contextBefore: 10
-    });
+    const { dbMessages, imageDescriptions, memory } = this.buildContextFromDatabase(channelName);
 
     const triggerInfo = {
       userId: message.author.id,
@@ -1191,10 +1116,7 @@ class ImpostorClient {
    * @param {number|null} decisionId - Optional decision ID that triggered this response
    */
   async processAutonomousMessage(channelName, decisionId = null) {
-    const { dbMessages, imageDescriptions, memory } = this.buildContextFromDatabase(channelName, {
-      fetchLimit: 50,
-      contextBefore: 5
-    });
+    const { dbMessages, imageDescriptions, memory } = this.buildContextFromDatabase(channelName);
 
     const triggerInfo = {
       userId: null,
