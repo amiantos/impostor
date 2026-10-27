@@ -5,6 +5,7 @@ const os = require("os");
 const path = require("path");
 const DatabaseManager = require("../classes/database");
 const ImpostorClient = require("../classes/impostor_client");
+const { Roster } = require("../classes/roster");
 const { createIrcMessage } = require("../classes/irc_message");
 
 const silent = { debug() {}, info() {}, warn() {}, error() {} };
@@ -46,6 +47,7 @@ function fakeBot(db, { config = {}, supports = true, echo = true } = {}) {
     watchword: "Mabel",
     pendingEchoes: new Map(),
     presence: { noteSent() {}, gone: false, noteAddressed() {}, describe() { return null; } },
+    roster: new Roster({ selfNick: "mabel" }),
     config: { irc: { ...(config.irc || {}) }, autonomous: { ...(config.autonomous || {}) } },
     ircClient: {
       network: {

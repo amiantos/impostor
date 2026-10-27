@@ -12,6 +12,7 @@ const UrlSummarizeService = require("./url_summarize_service");
 const { Archivist } = require("./archivist");
 const { debounceConfig, planEvaluation } = require("./eval_debounce");
 const { Presence } = require("./presence");
+const { Roster } = require("./roster");
 
 /**
  * One bot: its IRC connection, database, evaluator, reply pipeline and
@@ -91,6 +92,10 @@ class ImpostorClient {
     this.archivist = new Archivist(logger, config, this.db, this.openai, this.contextUtils);
     this.archivist.resume();
 
+    // Who is in each channel and who is away (see classes/roster.js); fed
+    // by the IRC events below.
+    this.roster = new Roster({ selfNick: config.irc.nick, bridgeNick: config.irc.bridge_nick || null });
+
     // Where the bot is: its schedule (sleep, class, out grazing) and the
     // lurker-style afk status. See classes/presence.js.
     this.presence = new Presence({
@@ -148,9 +153,43 @@ class ImpostorClient {
     });
 
     this.ircClient.on("join", (event) => {
-      if (event.nick === this.botNick) {
+      this.roster.join(event.nick, event.channel);
+      if (event.nick.toLowerCase() === this.botNick.toLowerCase()) {
         this.logger.info(`Joined ${event.channel}`);
+        // NAMES says who is here; WHO says who of them is away.
+        this.ircClient.who(event.channel, (who) => this.roster.setWho(who?.users));
       }
+    });
+
+    this.ircClient.on("userlist", (event) => {
+      this.roster.setUserlist(event.channel, event.users);
+    });
+
+    this.ircClient.on("part", (event) => {
+      if (event.nick.toLowerCase() === this.botNick.toLowerCase()) this.roster.forget(event.channel);
+      else this.roster.leave(event.nick, event.channel);
+    });
+
+    this.ircClient.on("kick", (event) => {
+      if (event.kicked.toLowerCase() === this.botNick.toLowerCase()) this.roster.forget(event.channel);
+      else this.roster.leave(event.kicked, event.channel);
+    });
+
+    this.ircClient.on("quit", (event) => {
+      this.roster.quit(event.nick);
+    });
+
+    // away-notify: who went away (with their message) and who came back.
+    this.ircClient.on("away", (event) => {
+      if (event.self) return;
+      this.roster.setAway(event.nick, event.message);
+      this.logger.debug(`${event.nick} is away: ${event.message || "(no message)"}`);
+    });
+
+    this.ircClient.on("back", (event) => {
+      if (event.self) return;
+      this.roster.setBack(event.nick);
+      this.logger.debug(`${event.nick} is back`);
     });
 
     this.ircClient.on("privmsg", (event) => {
@@ -168,6 +207,7 @@ class ImpostorClient {
     });
 
     this.ircClient.on("nick", (event) => {
+      this.roster.rename(event.nick, event.new_nick);
       // Track our own nick changes
       if (event.nick === this.botNick) {
         this.logger.info(`Nick changed from ${this.botNick} to ${event.new_nick}`);
@@ -401,6 +441,9 @@ class ImpostorClient {
     if (event.nick.toLowerCase() === this.botNick.toLowerCase()) return;
 
     const tags = event.tags || {};
+    if (tags["+typing"] && event.target.startsWith("#")) {
+      this.roster.noteTyping(event.target, event.nick, tags["+typing"]);
+    }
     const targetMsgid = tags["+draft/reply"];
     const react = tags["+draft/react"];
     const unreact = tags["+draft/unreact"];
@@ -720,6 +763,7 @@ class ImpostorClient {
         journal: this.db.getJournalText(channelName),
         canReact: !this.reactionCooldown(channelName).blocked,
         presence: this.presence.describe(),
+        whoIsHere: this.roster.describe(channelName),
       }
     );
 
@@ -1389,7 +1433,12 @@ class ImpostorClient {
       triggerInfo,
       imageDescriptions,
       memory,
-      { refs: refs || undefined, canReact, leaving: leaving ? leaving.block.activity : null }
+      {
+        refs: refs || undefined,
+        canReact,
+        leaving: leaving ? leaving.block.activity : null,
+        whoIsHere: triggerInfo.channelName ? this.roster.describe(triggerInfo.channelName) : null,
+      }
     );
 
     let conversationLog = [
@@ -1698,6 +1747,7 @@ Reply with valid JSON in the format described above.`,
             journal: this.db.getJournalText(channel),
             canReact: false,
             presence: this.presence.describe(undefined, { leaving: occurrence }),
+            whoIsHere: this.roster.describe(channel),
             leaving: occurrence.block.activity,
           }
         );

@@ -5,6 +5,7 @@ IRC chatbots powered by the DeepSeek API. One process runs any number of bots, e
 ## Features
 
 - **Personas**: each bot is a markdown file describing who it is; the code owns how IRC works
+- **Who's here**: both prompts get the channel's member list with away status (from IRCv3 away-notify and WHO), so a bot doesn't ask things of someone who's asleep or afk
 - **Schedules**: a persona can have a routine (asleep, in class, out grazing); the bot sets itself away for those, says goodnight if the channel is live, and catches up when it's back. Between times it goes afk the way lurker's client does
 - **Many bots**: one config, one process, one dashboard; each bot has its own connection, account, database and memory
 - **Journal and people notes**: the Archivist reads the chatlog in the background and keeps a short first-person journal per conversation and a note per person, so the bot picks up where things left off

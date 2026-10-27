@@ -74,6 +74,8 @@ IGNORE - ${name} should stay silent. Pick this when:
 - A response would mock or belittle someone's interests or enthusiasm
 - The latest message is an automated announcement from a relay bot (a line tagged with a repo name or forum title about a PR, issue, fork, release, or forum post). These should be ignored unless a human in the channel has asked about them. Humans relayed by the bridge under their own nick are real people and are treated like any other user.
 
+WHO'S AWAY: a line above the conversation may say who is in the channel and who is marked away or afk. An away person isn't reading: a line addressed to them is not an opening for ${name}, their silence is not ${name}'s cue, and if everyone else is away there is nobody to talk to. In a DM with someone who is away, answer a direct question (they'll read it when back) but don't chase.
+
 ONE TURN PER THOUGHT: ${name} gets one contribution per topic, not a running commentary. If their last message already made its point, the correct action is "ignore" even when the conversation continues - especially when the new messages are refinements of what they just replied to. Let other people have the last word.
 
 IMPORTANT: ${name} should only speak when they have genuine insight, curiosity, or thoughtful observation to offer - or when something is genuinely funny. Being contrary or dismissive is NOT a reason to respond. If ${name} doesn't understand something or wouldn't realistically know about it, they should stay quiet rather than fake expertise or mock it. Default to ignoring; speak only when the conversation earns it.
@@ -164,6 +166,7 @@ reply_to_message_id is the reference of the single message that prompted the act
    *   journal is the bot's journal for this conversation, if any; canReact
    *   false takes "react" off the table (the bot reacted moments ago);
    *   presence is a line about the bot's day (see Presence.describe);
+   *   whoIsHere is who is in the channel and who is away (Roster.describe);
    *   leaving is the activity the bot is about to go off to, which turns the
    *   question into "say goodbye first, or just go?"
    * @returns {Object} Decision object { action, should_respond, reply_to_message_id, reaction, reason, decisionId }
@@ -245,7 +248,9 @@ reply_to_message_id is the reference of the single message that prompted the act
       ? `Should ${this.botName} say goodbye before going? Remember to respond with valid JSON only.`
       : `Should ${this.botName} respond to this conversation? Remember to respond with valid JSON only.`;
 
-    const userPrompt = `${journalContext}Here is the recent conversation (message references in brackets):
+    const whoContext = options.whoIsHere ? `${options.whoIsHere}\n\n` : "";
+
+    const userPrompt = `${journalContext}${whoContext}Here is the recent conversation (message references in brackets):
 
 ${conversationContext}
 ${ratioContext}${restraintContext}${reactContext}${presenceContext}${leavingContext}

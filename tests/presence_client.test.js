@@ -119,6 +119,8 @@ test("in the morning the status clears and the missed conversations get one look
   // 7:00 the next day is "2026-10-29"; the block ran from the 28th.
   now = zonedDate(TZ, 2026, 10, 29, 7, 0);
   const before = { evaluations: calls.evaluations.length, replies: calls.replies.length };
+  bot.roster.setUserlist("#c", ["amiantos", "bob", "Mabel"]);
+  bot.roster.setAway("bob", "zzz");
   await bot.presence.tick();
   assert.equal(bot.presence.gone, false);
   assert.deepEqual(aways().at(-1), ["AWAY"]);
@@ -131,7 +133,9 @@ test("in the morning the status clears and the missed conversations get one look
   assert.equal(calls.replies.length, before.replies + 1, "bob's DM got an answer");
   assert.match(calls.replies.at(-1).system, /RIGHT NOW: You just got back \(just now\): you were asleep until 7:00 AM/);
   assert.equal(said.at(-1)[0], "bob");
+  assert.match(calls.replies.at(-1).user, /^bob is away: zzz, so they may not see this until they're back\.\n\nRecent conversation/m);
   assert.equal(calls.evaluations.length, before.evaluations + 1, "the channel got one evaluation");
   assert.match(calls.evaluations.at(-1), /Mabel's day right now: You just got back/);
+  assert.match(calls.evaluations.at(-1), /In #c right now: amiantos, bob \(away: zzz\)\./);
   assert.equal(bot.presence.pending.size, 0);
 });
