@@ -123,9 +123,12 @@ See `conf/config.json.example` for all options. Key sections:
 | `generator.deepseek` | DeepSeek API settings for chat responses |
 | `generator.deepseek.thinking` | Let the model reason before replying (default `true`) |
 | `generator.deepseek.evaluator_thinking` | Same, for the should-I-respond evaluator (default `false`) |
+| `generator.deepseek.timeout_seconds` | Give up on a model call after this long (default 300); `max_retries` (default 1) is how often the SDK retries a failed or timed-out call before the bot's own retry loop sees it |
+| `irc.typing_notifications.max_seconds` | After this long generating (default 300) the typing indicator goes to "paused" rather than showing the bot typing for ten minutes |
 | `timezone` | IANA zone the bots live in; every timestamp they see is in it (default `America/Los_Angeles`, per-bot override allowed) |
 | `irc` | Shared IRC connection settings (host, port, TLS; optional `bridge_nick` and `bridge_tags`) |
-| `bots` | One entry per bot: `id`, `nick`, `persona`, `account`, `channels`, `pm_allowed_users`, and per-bot overrides of `irc`, `generator`, `autonomous`, `url_summarize`, `journal` |
+| `bots` | One entry per bot: `id`, `nick`, `persona`, `account`, `channels`, `pm_allowed_users`, and per-bot overrides of `irc`, `generator`, `autonomous`, `url_summarize`, `journal`, `presence` |
+| `presence` | `enabled`; `afk_minutes` (15) of silence before the away status becomes `afk_message` (`afk since {time}`, lurker's format; 0 disables); `linger_minutes` (15) a bot may stay past the start of an away block when mid-conversation; `goodbye_window_minutes` (10): a channel with human lines this recent gets a goodbye pass before the bot goes |
 | `bots[].watchword` | What people call the bot in chat, when it differs from the persona's name |
 | `journal` | When the Archivist runs (`messages_per_pass`, `quiet_minutes`, `min_messages`) and how long a journal (`journal_max_chars`) and a note (`note_max_chars`) may get |
 | `autonomous` | Autonomous response settings (debounce, timing) |

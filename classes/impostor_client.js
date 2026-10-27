@@ -975,9 +975,8 @@ class ImpostorClient {
           // ensures no typing indicator is left hanging.
           this.stopTyping(queueItem.channel, "done");
         }
-        if (queueItem.type === "direct" && queueItem.channel) {
-          this.sendIrcMessage(queueItem.channel, "(OOC: Sorry, I appear to be having connectivity issues, please try your message again.)");
-        }
+        // No out-of-character apology: the typing indicator is gone and the
+        // next time the bot speaks it can play off the silence itself.
       }
     }
 
@@ -1113,10 +1112,19 @@ class ImpostorClient {
     const cfg = this.config.irc.typing_notifications;
     if (cfg?.enabled === false) return;
     const refreshMs = (cfg?.refresh_seconds || 3) * 1000;
+    // Nobody types for ten minutes. If the model is that slow, the indicator
+    // goes to "paused" and stays there until the reply (or its failure).
+    const maxMs = (cfg?.max_seconds ?? 300) * 1000;
+    const startedAt = Date.now();
 
     this.stopTyping(target, null); // clear any prior timer without sending done
 
     const send = () => {
+      if (Date.now() - startedAt >= maxMs) {
+        this.logger.info(`Still generating for ${target} after ${Math.round(maxMs / 1000)}s; pausing the typing indicator`);
+        this.stopTyping(target, "paused");
+        return;
+      }
       try {
         this.ircClient.tagmsg(target, { "+typing": "active" });
       } catch (err) {

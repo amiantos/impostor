@@ -8,7 +8,9 @@
             "thinking": true,
             "evaluator_thinking": false,
             "temperature": 0.9,
-            "max_tokens": 500
+            "max_tokens": 500,
+            "timeout_seconds": 300,
+            "max_retries": 1
         }
     },
     "timezone": "America/Los_Angeles",
@@ -22,7 +24,8 @@
         "reply_min_distance": 5,
         "typing_notifications": {
             "enabled": true,
-            "refresh_seconds": 3
+            "refresh_seconds": 3,
+            "max_seconds": 300
         }
     },
     "autonomous": {

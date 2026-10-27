@@ -270,3 +270,20 @@ test("the evaluator marks where the lines since the bot last spoke begin", async
   ], "mabel", "#c");
   assert.match(lastPrompt[1].content, /\[m1\] bob: old\n--- 4 hours later ---\n\[m2\] bob: hi\n\[m3\] mabel \(Mabel\): hello\n--- new since Mabel last spoke ---\n\[m4\] bob: how are you/);
 });
+
+test("the typing indicator pauses after typing_notifications.max_seconds", (t) => {
+  t.mock.timers.enable({ apis: ["setInterval", "Date"] });
+  const db = freshDb();
+  const { bot, sent } = fakeBot(db, { config: { irc: { typing_notifications: { refresh_seconds: 1, max_seconds: 5 } } } });
+  bot.typingTimers = new Map();
+  bot.startTyping("#c");
+  t.mock.timers.tick(3000);
+  assert.equal(sent.tagmsgs.length, 4, "active at 0, 1, 2, 3 seconds");
+  assert.ok(sent.tagmsgs.every((m) => m.tags["+typing"] === "active"));
+  t.mock.timers.tick(3000);
+  assert.deepEqual(sent.tagmsgs.at(-1).tags, { "+typing": "paused" });
+  assert.equal(bot.typingTimers.has("#c"), false, "no more refreshes");
+  const count = sent.tagmsgs.length;
+  t.mock.timers.tick(10000);
+  assert.equal(sent.tagmsgs.length, count);
+});

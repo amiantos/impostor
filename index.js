@@ -14,10 +14,15 @@ const WebServer = require("./web/server");
 const logger = new Logger(true);
 const dataDir = path.join(__dirname, "data");
 
-// One model client and one set of tools for every bot.
+// One model client and one set of tools for every bot. The SDK's defaults
+// (a ten-minute timeout, two silent retries) let a slow answer keep a bot
+// "typing" for half an hour; a chat reply that takes longer than this is
+// better given up on.
 const openai = new OpenAI({
   apiKey: config.generator.deepseek.api_key,
   baseURL: config.generator.deepseek.base_url,
+  timeout: (config.generator.deepseek.timeout_seconds ?? 300) * 1000,
+  maxRetries: config.generator.deepseek.max_retries ?? 1,
 });
 const tools = {
   pythonTool: new PythonTool(logger),
