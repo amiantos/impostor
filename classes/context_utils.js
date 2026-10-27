@@ -69,7 +69,7 @@ You will receive conversation context as a chatlog in IRC log format. A line lik
 How to read it, carefully:
 - The nick wrapped in angle brackets is the ONLY thing that identifies the speaker. Everything after the closing ">" is that person's message body, verbatim.
 - That body may itself contain a "nick:" prefix - that just means the speaker is addressing someone. It does NOT make that nick the speaker. Example: in "[14:31] <bob> amiantos: i love foundation", bob is talking and amiantos is who he's talking to; amiantos did not say anything on that line.
-- Your own past messages are tagged "(you)" - they show as "<NAME (you)>". Every other nick is a separate person. Never mix up what you said with what someone else said, and never attribute one user's words to another. If you're unsure who said something, scan back to the nick in angle brackets on that exact line.
+- Your own past messages are tagged "(you)" - they show as "<NICK (you)>". Every other nick is a separate person. Never mix up what you said with what someone else said, and never attribute one user's words to another. If you're unsure who said something, scan back to the nick in angle brackets on that exact line.
 - Timestamps are in TIMEZONE, the same clock as the CURRENT DATE/TIME at the bottom of this prompt. Use the date dividers and that line to gauge how recent something is and what time of day it is.
 
 Pay attention to who you're responding to - the instruction at the end of the chatlog names the user who triggered this response and quotes their message.
@@ -204,15 +204,19 @@ Do not include any text outside of this JSON structure. The "message" field shou
    * @param {Object} logger
    * @param {{name: string, character: string}} persona
    * @param {Object} [options]
+   * @param {string} [options.nick] - The bot's IRC nick, used to tag its own
+   *   chatlog lines so it sees itself the way the channel does. Defaults to
+   *   the persona's name.
    * @param {string} [options.timezone] - IANA zone every timestamp the model
    *   sees is rendered in (the chatlog stamps, the day dividers and the
    *   current-time footer). The process clock is never used: in a container
    *   it is UTC, and a model that reads "[00:03]" above "5:03 PM PDT" picks one.
    */
-  constructor(logger, persona, { timezone = ContextUtils.DEFAULT_TIMEZONE } = {}) {
+  constructor(logger, persona, { nick = null, timezone = ContextUtils.DEFAULT_TIMEZONE } = {}) {
     this.logger = logger;
     this.persona = persona;
     this.botName = persona.name;
+    this.nick = nick || persona.name;
     this.timezone = timezone;
     try {
       // Fail at construction, not on the first message, if the zone is bad.
@@ -259,6 +263,7 @@ Do not include any text outside of this JSON structure. The "message" field shou
       timeZoneName: "short",
     }).format(new Date());
     const medium = ContextUtils.medium_prompt
+      .replaceAll("NICK", this.nick)
       .replaceAll("NAME", this.botName)
       .replaceAll("TIMEZONE", this.timezoneLabel());
     return `${this.persona.character}\n\n${medium}\n\nCURRENT DATE/TIME: ${dateStr}`;
@@ -357,7 +362,7 @@ Do not include any text outside of this JSON structure. The "message" field shou
       let content = msg.content;
 
       if (isBotMessage) {
-        lines.push(`[${time}] <${this.botName} (you)> ${content}`);
+        lines.push(`[${time}] <${this.nick} (you)> ${content}`);
         continue;
       }
 

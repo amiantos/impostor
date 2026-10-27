@@ -45,11 +45,11 @@
     "bots": [
         {
             "id": "isaac",
-            "nick": "Isaac",
+            "nick": "isaac",
             "realname": "Isaac the Robot",
             "persona": "conf/personas/isaac.md",
             "account": {
-                "name": "Isaac",
+                "name": "isaac",
                 "password": "<NickServ password for this bot's account>"
             },
             "channels": ["#lurker"],

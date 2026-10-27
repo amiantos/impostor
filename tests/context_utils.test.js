@@ -118,3 +118,11 @@ test("every timestamp the model sees is in the configured zone, not the process 
   assert.equal(ctx.formatTime("2026-10-27T07:00:00.000Z"), "00:00", "midnight is 00, never 24");
   assert.throws(() => new ContextUtils(silent, persona, { timezone: "Mars/Olympus" }), /Unknown timezone/);
 });
+
+test("the bot's own lines are tagged with its IRC nick, the persona name stays the character", () => {
+  const ctx = new ContextUtils(silent, persona, { nick: "mabel" });
+  const lines = ctx.renderChatlog([msg("mabel", "hello", { is_bot_message: true })]);
+  assert.match(lines[1], /<mabel \(you\)> hello$/);
+  assert.match(ctx.buildInstructions(), /they show as "<mabel \(you\)>"/);
+  assert.match(ctx.buildInstructions(), /your normal Mabel response/);
+});
