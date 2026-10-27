@@ -101,6 +101,15 @@ test("timezone is shared with a per-bot override", () => {
   assert.equal(resolveBotConfig(shared, { id: "a", nick: "A", persona: "p" }).timezone, undefined, "unset falls through to the ContextUtils default");
 });
 
+test("display_name is carried into irc and must be a non-empty string", () => {
+  assert.equal(resolveBotConfig(shared, { id: "b", nick: "Bob", persona: "p.md", display_name: "Robert" }).irc.display_name, "Robert");
+  assert.equal(resolveBotConfig(shared, { id: "b", nick: "Bob", persona: "p.md" }).irc.display_name, null);
+  assert.throws(
+    () => listBots({ bots: [{ id: "b", nick: "Bob", persona: "p.md", display_name: " " }] }),
+    /display_name must be a non-empty string/
+  );
+});
+
 test("avatar_url is carried into irc and must be an http(s) URL", () => {
   const cfg = resolveBotConfig(shared, { id: "b", nick: "Bob", persona: "p.md", avatar_url: "https://x.test/bob.png" });
   assert.equal(cfg.irc.avatar_url, "https://x.test/bob.png");

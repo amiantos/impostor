@@ -85,6 +85,7 @@
             "nick": "isaac",
             "realname": "Isaac the Robot",
             "avatar_url": "https://example.com/isaac.png",
+            "display_name": "Isaac",
             "persona": "conf/personas/isaac.md",
             "account": {
                 "name": "isaac",

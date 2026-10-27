@@ -21,7 +21,7 @@ before(() => {
   const persona = parsePersona("# Layla\n\nYou are Layla.\n");
   const config = resolveBotConfig(
     { generator: { deepseek: { api_key: "k", model: "m" } }, irc: { host: "localhost" }, journal: { enabled: false } },
-    { id: "layla", nick: "layla", persona: "p", avatar_url: "https://x.test/layla.png" }
+    { id: "layla", nick: "layla", persona: "p", avatar_url: "https://x.test/layla.png", display_name: "Layla" }
   );
   bot = new ImpostorClient(silent, config, { openai, tools, dataDir, persona });
   bot.presence.stop();
@@ -56,4 +56,13 @@ test("without an avatar_url only the display name goes out", () => {
   bot.ircClient = stub(() => true);
   bot.sendMetadata();
   assert.deepEqual(metadata(), [["METADATA", "*", "SET", "display-name", "Layla"]]);
+});
+
+test("without a display_name no display-name is sent; the persona's name is not a fallback", () => {
+  raws.length = 0;
+  bot.config.irc.display_name = null;
+  bot.config.irc.avatar_url = "https://x.test/layla.png";
+  bot.ircClient = stub(() => true);
+  bot.sendMetadata();
+  assert.deepEqual(metadata(), [["METADATA", "*", "SET", "avatar", "https://x.test/layla.png"]]);
 });

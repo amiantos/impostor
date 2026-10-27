@@ -317,8 +317,9 @@ class ImpostorClient {
   }
 
   /**
-   * Push the bot's metadata (IRCv3 draft/metadata-2) to the server: the
-   * persona's name as `display-name` and `irc.avatar_url` as `avatar`.
+   * Push the bot's metadata (IRCv3 draft/metadata-2) to the server:
+   * `irc.display_name` as `display-name` and `irc.avatar_url` as `avatar`,
+   * each only when set.
    * Sent after every registration rather than diffed against the server,
    * because Ergo keeps metadata only for always-on accounts and a fresh
    * connection starts empty; two SETs per connect is far inside Ergo's
@@ -329,7 +330,7 @@ class ImpostorClient {
    */
   sendMetadata() {
     if (!this.ircClient.network?.cap?.isEnabled("draft/metadata-2")) return;
-    const keys = { "display-name": this.persona.name, avatar: this.config.irc.avatar_url };
+    const keys = { "display-name": this.config.irc.display_name, avatar: this.config.irc.avatar_url };
     for (const [key, value] of Object.entries(keys)) {
       if (!value) continue;
       this.logger.info(`Setting metadata ${key}`);
