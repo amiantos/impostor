@@ -50,19 +50,25 @@ test("nothing is sent without the cap", () => {
   assert.deepEqual(metadata(), []);
 });
 
-test("without an avatar_url only the display name goes out", () => {
+test("an unset avatar_url deletes the key on the server", () => {
   raws.length = 0;
   bot.config.irc.avatar_url = null;
   bot.ircClient = stub(() => true);
   bot.sendMetadata();
-  assert.deepEqual(metadata(), [["METADATA", "*", "SET", "display-name", "Layla"]]);
+  assert.deepEqual(metadata(), [
+    ["METADATA", "*", "SET", "display-name", "Layla"],
+    ["METADATA", "*", "SET", "avatar"],
+  ]);
 });
 
-test("without a display_name no display-name is sent; the persona's name is not a fallback", () => {
+test("an unset display_name deletes the key; the persona's name is not a fallback", () => {
   raws.length = 0;
   bot.config.irc.display_name = null;
   bot.config.irc.avatar_url = "https://x.test/layla.png";
   bot.ircClient = stub(() => true);
   bot.sendMetadata();
-  assert.deepEqual(metadata(), [["METADATA", "*", "SET", "avatar", "https://x.test/layla.png"]]);
+  assert.deepEqual(metadata(), [
+    ["METADATA", "*", "SET", "display-name"],
+    ["METADATA", "*", "SET", "avatar", "https://x.test/layla.png"],
+  ]);
 });

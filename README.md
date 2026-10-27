@@ -135,7 +135,7 @@ See `conf/config.json.example` for all options. Key sections:
 | `presence` | `enabled`; `afk_minutes` (15) of silence before the away status becomes `afk_message` (`afk since {time}`, lurker's format; 0 disables); `linger_minutes` (15) a bot may stay past the start of an away block when mid-conversation; `goodbye_window_minutes` (10): a channel with human lines this recent gets a goodbye pass before the bot goes |
 | `bots[].watchword` | What people call the bot in chat, when it differs from the persona's name |
 | `bots[].avatar_url` | Public image URL sent as the bot's IRCv3 `avatar` metadata after each connect; clients that render metadata (Lurker) show it. Optional |
-| `bots[].display_name` | Sent as the bot's IRCv3 `display-name` metadata. Optional; nothing is sent when unset |
+| `bots[].display_name` | Sent as the bot's IRCv3 `display-name` metadata. Optional; when unset the key is deleted on the server at each connect |
 | `journal` | When the Archivist runs (`messages_per_pass`, `quiet_minutes`, `min_messages`) and how long a journal (`journal_max_chars`) and a note (`note_max_chars`) may get |
 | `autonomous` | Autonomous response settings (debounce, timing) |
 | `autonomous.debounce_seconds` / `max_wait_seconds` / `address_wait_seconds` | Each new line pushes the evaluation back by the debounce (20s), but never past `max_wait_seconds` (60s) from when the wait began; a line that names the bot pulls that deadline in to `address_wait_seconds` (5s), so a busy channel can't starve him |

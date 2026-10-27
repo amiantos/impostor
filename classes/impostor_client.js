@@ -257,9 +257,11 @@ class ImpostorClient {
     // irc-framework has no handler for standard replies, so a refused
     // METADATA SET (`FAIL METADATA RATE_LIMITED …`) surfaces here.
     this.ircClient.on("unknown command", (command) => {
-      if (command.command === "FAIL") {
-        this.logger.warn(`IRC FAIL ${command.params.join(" ")}`);
-      }
+      if (command.command !== "FAIL") return;
+      const line = `IRC FAIL ${command.params.join(" ")}`;
+      // Deleting a metadata key the server never had; expected on most connects.
+      if (command.params[0] === "METADATA" && command.params[1] === "KEY_NOT_SET") this.logger.debug(line);
+      else this.logger.warn(line);
     });
 
     // ISUPPORT (005) arrives after RPL_WELCOME, one event per line, so the
@@ -318,23 +320,29 @@ class ImpostorClient {
 
   /**
    * Push the bot's metadata (IRCv3 draft/metadata-2) to the server:
-   * `irc.display_name` as `display-name` and `irc.avatar_url` as `avatar`,
-   * each only when set.
-   * Sent after every registration rather than diffed against the server,
-   * because Ergo keeps metadata only for always-on accounts and a fresh
-   * connection starts empty; two SETs per connect is far inside Ergo's
-   * throttle (10 per 2 minutes). Never sent before registration: Ergo's
-   * pre-registration values don't overwrite an existing key but answer as
-   * if they did. The server confirms each SET with a bare 761 and refuses
-   * with `FAIL METADATA …`, both of which only get logged.
+   * `irc.display_name` as `display-name` and `irc.avatar_url` as `avatar`.
+   * The config is the source of truth for both keys: a set one is SET, an
+   * unset one is deleted (SET with no value), since the server may remember
+   * a value from an earlier config (Ergo keeps metadata for always-on
+   * accounts). Sent after every registration rather than diffed against the
+   * server; two commands per connect is far inside Ergo's throttle (10 per
+   * 2 minutes). Never sent before registration: Ergo's pre-registration
+   * values don't overwrite an existing key but answer as if they did. The
+   * server confirms with a bare 761/766 and refuses with `FAIL METADATA …`;
+   * deleting a key that was already unset is a KEY_NOT_SET refusal, which
+   * is the normal case and logged at debug.
    */
   sendMetadata() {
     if (!this.ircClient.network?.cap?.isEnabled("draft/metadata-2")) return;
     const keys = { "display-name": this.config.irc.display_name, avatar: this.config.irc.avatar_url };
     for (const [key, value] of Object.entries(keys)) {
-      if (!value) continue;
-      this.logger.info(`Setting metadata ${key}`);
-      this.ircClient.raw("METADATA", "*", "SET", key, value);
+      if (value) {
+        this.logger.info(`Setting metadata ${key}`);
+        this.ircClient.raw("METADATA", "*", "SET", key, value);
+      } else {
+        this.logger.debug(`Clearing metadata ${key}`);
+        this.ircClient.raw("METADATA", "*", "SET", key);
+      }
     }
   }
 
