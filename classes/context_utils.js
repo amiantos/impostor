@@ -101,6 +101,9 @@ REACTION_STYLE
 YOUR JOURNAL AND YOUR NOTES ABOUT PEOPLE:
 Between conversations, a journal is kept for you in your own voice: a short account of what has been going on in this channel (or this DM) before the chatlog below, what you said, and what was left open. It appears as "YOUR JOURNAL" above the chatlog. Notes about the people present appear under "PEOPLE": who they are, what they like, how you and they get on. Treat both as your own genuine recollection; you don't need to mention that you keep them. You don't write them yourself during a reply - they are updated from the chatlog on their own.
 
+YOUR DAY:
+Like anyone in the channel you have a day: you sleep, you go out, you're busy sometimes. When this prompt ends with a "RIGHT NOW" line, it tells you what you've been doing today, whether you just got back, and what's coming up. It is true: treat it as your own day and your own reasons. Bring it up only when it fits (someone asks where you were, it's late, you've just come back to a pile of messages, you're about to head off); don't narrate your routine unprompted, and don't invent details beyond it. When your away status shows you as afk it just means you hadn't typed in a while.
+
 RELAY BOTS:
 A bridge bot may live in the channel and relay lines from elsewhere (another IRC network, Discord, GitHub, a forum). It is not a person and you cannot have a conversation with it - never address it directly. Relayed humans are shown under their own nick, so engage with them like any channel regular. Automated announcements (a repo or forum tag followed by "opened", "closed", "released", a post excerpt and a url) are not from a human: do not respond unless someone in the channel explicitly asks you about them.
 
@@ -303,7 +306,11 @@ Do not include any text outside of this JSON structure. The "message" field shou
     }
   }
 
-  buildInstructions() {
+  /**
+   * @param {string|null} [presence] - A line about the bot's day right now
+   *   (see Presence.describe); appended after the date when given
+   */
+  buildInstructions(presence = null) {
     const dateStr = new Intl.DateTimeFormat("en-US", {
       timeZone: this.timezone,
       weekday: "long",
@@ -322,7 +329,8 @@ Do not include any text outside of this JSON structure. The "message" field shou
       .replaceAll("NAME", this.botName)
       .replaceAll("TIMEZONE", this.timezoneLabel())
       .replace("REACTION_STYLE", () => this.persona.reactions || ContextUtils.DEFAULT_REACTION_STYLE);
-    return `${this.persona.character}\n\n${medium}\n\nCURRENT DATE/TIME: ${dateStr}`;
+    const rightNow = presence ? `\nRIGHT NOW: ${presence}` : "";
+    return `${this.persona.character}\n\n${medium}\n\nCURRENT DATE/TIME: ${dateStr}${rightNow}`;
   }
 
   getResponseSchema() {
@@ -559,10 +567,12 @@ Do not include any text outside of this JSON structure. The "message" field shou
    *   assigned here when not given
    * @param {boolean} [options.canReact] - False tells the model reactions are
    *   unavailable for this turn (cooldown, or the server lacks them)
+   * @param {string} [options.leaving] - The activity the bot is about to go
+   *   off to: the turn is a goodbye, not a reply
    * @returns {Array} Single-element array with consolidated user message
    */
   buildChatMessagesConsolidated(dbMessages, clientUserId, triggerInfo, imageDescriptions = null, memory = null, options = {}) {
-    const { refs = ContextUtils.assignRefs(dbMessages), canReact = true } = options;
+    const { refs = ContextUtils.assignRefs(dbMessages), canReact = true, leaving = null } = options;
     const allUrlSummaries = [];
     let triggerMessageText = null;
 
@@ -609,7 +619,9 @@ Do not include any text outside of this JSON structure. The "message" field shou
 
     // Add explicit instruction about who to respond to, quoting their message
     // so the model doesn't have to scan the chatlog to find what it's replying to.
-    if (triggerInfo.userName) {
+    if (leaving) {
+      consolidatedContent += `\n\nYou're about to head off (${leaving}) and won't be reading the channel for a while. Say a brief goodbye in your own words - one short line, the way you'd actually leave a chat: it can answer or close off whatever you were in the middle of, but don't start anything new. If you'd rather just go without a word, return an empty "message".${reactNote} Reply with valid JSON in the format described above.`;
+    } else if (triggerInfo.userName) {
       if (triggerMessageText) {
         const quoted =
           triggerMessageText.length > 300

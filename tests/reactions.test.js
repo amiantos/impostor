@@ -45,6 +45,7 @@ function fakeBot(db, { config = {}, supports = true, echo = true } = {}) {
     botNick: "mabel",
     watchword: "Mabel",
     pendingEchoes: new Map(),
+    presence: { noteSent() {}, gone: false, noteAddressed() {}, describe() { return null; } },
     config: { irc: { ...(config.irc || {}) }, autonomous: { ...(config.autonomous || {}) } },
     ircClient: {
       network: {

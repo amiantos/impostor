@@ -1,16 +1,18 @@
 const fs = require("fs");
+const { parseSchedule } = require("./schedule");
 
 /**
  * A persona is a markdown file: the character under a top-level "# Name"
  * heading, an optional "## Evaluator" section describing them for the
  * should-I-speak model, and an optional "## Reactions" section saying how
  * they use IRCv3 reactions (what they react to, which emoji or short text,
- * how often), shown to both the evaluator and the reply model. Everything
+ * how often), shown to both the evaluator and the reply model, and an
+ * optional "## Schedule" section with their routine (see schedule.js). Everything
  * about the medium (IRC, the chatlog, the JSON protocol, tools) lives in
  * code; the file holds only who the bot is.
  *
  * @param {string} text - The file's contents
- * @returns {{name: string, character: string, evaluator: string, reactions: string|null}}
+ * @returns {{name: string, character: string, evaluator: string, reactions: string|null, schedule: Object|null}}
  */
 function parsePersona(text) {
   const lines = String(text ?? "").replace(/\r\n/g, "\n").split("\n");
@@ -44,6 +46,12 @@ function parsePersona(text) {
   }
   const evaluator = (sections.get("evaluator") || []).join("\n").trim();
   const reactions = (sections.get("reactions") || []).join("\n").trim();
+  let schedule = null;
+  try {
+    schedule = parseSchedule((sections.get("schedule") || []).join("\n"));
+  } catch (err) {
+    throw new Error(`Persona "${name}": ${err.message}`);
+  }
 
   return {
     name,
@@ -52,6 +60,8 @@ function parsePersona(text) {
     evaluator: evaluator || characterText,
     // Without its own section, the prompts use generic guidance.
     reactions: reactions || null,
+    // Without a section the bot is always around (afk still applies).
+    schedule,
   };
 }
 

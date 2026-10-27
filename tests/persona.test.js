@@ -61,3 +61,18 @@ test("a Reactions section is the bot's reaction style; none means the generic on
   assert.match(nightmare.reactions, /🖤/);
   assert.match(nightmare.evaluator, /RARELY REACTS/);
 });
+
+test("a Schedule section is parsed; none means no schedule", () => {
+  const persona = parsePersona("# Bob\n\nYou are Bob.\n\n## Schedule\n\n# comment\naway 23:00-07:00 ~30m: asleep | zzz\n");
+  assert.equal(persona.schedule.blocks.length, 1);
+  assert.equal(persona.schedule.blocks[0].awayMessage, "zzz");
+  assert.equal(parsePersona("# Bob\n\nYou are Bob.\n").schedule, null);
+  assert.throws(() => parsePersona("# Bob\n\nYou are Bob.\n\n## Schedule\n\nnap 23:00-07:00: asleep\n"), /Persona "Bob": Schedule line 2/);
+  const layla = loadPersona(path.join(__dirname, "..", "conf", "personas", "layla.md"));
+  assert.ok(layla.schedule.blocks.some((b) => b.kind === "away" && b.activity === "asleep"));
+  assert.ok(layla.schedule.blocks.some((b) => b.activity === "in class"));
+  const isaac = loadPersona(path.join(__dirname, "..", "conf", "personas", "isaac.md"));
+  assert.ok(isaac.schedule.blocks.every((b) => b.kind === "here"), "Isaac never goes away");
+  const nightmare = loadPersona(path.join(__dirname, "..", "conf", "personas", "nightmare.md"));
+  assert.ok(nightmare.schedule.blocks.some((b) => /grazing/.test(b.activity)));
+});

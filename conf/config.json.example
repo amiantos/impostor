@@ -44,6 +44,13 @@
         "lull_minutes": 30,
         "max_link_summaries": 5
     },
+    "presence": {
+        "enabled": true,
+        "afk_minutes": 15,
+        "afk_message": "afk since {time}",
+        "linger_minutes": 15,
+        "goodbye_window_minutes": 10
+    },
     "journal": {
         "enabled": true,
         "messages_per_pass": 40,

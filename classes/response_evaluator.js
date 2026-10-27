@@ -159,10 +159,13 @@ reply_to_message_id is the reference of the single message that prompted the act
    * @param {string} botUserId - The bot's user ID
    * @param {string} channelId - The channel ID
    * @param {number|null} botRatio - Bot's message ratio in recent history (0.0-1.0)
-   * @param {Object} options - { restraint, journal, canReact } - restraint raises
+   * @param {Object} options - { restraint, journal, canReact, presence, leaving } - restraint raises
    *   the bar when someone is replying inside the bot's own cooldown window;
    *   journal is the bot's journal for this conversation, if any; canReact
-   *   false takes "react" off the table (the bot reacted moments ago)
+   *   false takes "react" off the table (the bot reacted moments ago);
+   *   presence is a line about the bot's day (see Presence.describe);
+   *   leaving is the activity the bot is about to go off to, which turns the
+   *   question into "say goodbye first, or just go?"
    * @returns {Object} Decision object { action, should_respond, reply_to_message_id, reaction, reason, decisionId }
    */
   async shouldRespond(messages, botUserId, channelId, botRatio = null, options = {}) {
@@ -227,12 +230,27 @@ reply_to_message_id is the reference of the single message that prompted the act
       ? `\n${this.botName} reacted to something moments ago, so "react" is not available right now. Choose "respond" or "ignore".`
       : "";
 
+    // What the bot has been up to today (just got back, about to leave).
+    const presenceContext = options.presence
+      ? `\n${this.botName}'s day right now: ${options.presence}`
+      : "";
+
+    // The goodbye pass: the bot is leaving in a moment whatever happens; the
+    // only question is whether vanishing silently would be rude.
+    const leavingContext = options.leaving
+      ? `\n${this.botName} is about to go (${options.leaving}) and will be away from the channel for a while regardless of what you pick. The only question is whether to say a quick goodbye first. Pick "respond" if ${this.botName} has been part of the conversation in the last few minutes, or someone is mid-exchange with them, so that disappearing without a word would be odd. Pick "ignore" if the channel is ticking over without ${this.botName} or nobody would notice. "react" is not an option here.`
+      : "";
+
+    const question = options.leaving
+      ? `Should ${this.botName} say goodbye before going? Remember to respond with valid JSON only.`
+      : `Should ${this.botName} respond to this conversation? Remember to respond with valid JSON only.`;
+
     const userPrompt = `${journalContext}Here is the recent conversation (message references in brackets):
 
 ${conversationContext}
-${ratioContext}${restraintContext}${reactContext}
+${ratioContext}${restraintContext}${reactContext}${presenceContext}${leavingContext}
 
-Should ${this.botName} respond to this conversation? Remember to respond with valid JSON only.`;
+${question}`;
 
     // Build the full messages array for storage
     const promptMessages = [
@@ -283,6 +301,10 @@ Should ${this.botName} respond to this conversation? Remember to respond with va
       const targetId = ref ? byRef.get(ref) || (evaluatedMessageIds.includes(ref) ? ref : null) : null;
       const reaction = typeof decision.reaction === "string" ? decision.reaction.trim() : "";
 
+      if (action === "react" && options.leaving) {
+        this.logger.info("Evaluator picked react on the goodbye pass; ignoring instead");
+        action = "ignore";
+      }
       if (action === "react" && (options.canReact === false || !reaction)) {
         this.logger.info(`Evaluator picked react ${options.canReact === false ? "while reactions are on cooldown" : "without a reaction"}; ignoring instead`);
         action = "ignore";

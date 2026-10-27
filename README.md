@@ -5,6 +5,7 @@ IRC chatbots powered by the DeepSeek API. One process runs any number of bots, e
 ## Features
 
 - **Personas**: each bot is a markdown file describing who it is; the code owns how IRC works
+- **Schedules**: a persona can have a routine (asleep, in class, out grazing); the bot sets itself away for those, says goodnight if the channel is live, and catches up when it's back. Between times it goes afk the way lurker's client does
 - **Many bots**: one config, one process, one dashboard; each bot has its own connection, account, database and memory
 - **Journal and people notes**: the Archivist reads the chatlog in the background and keeps a short first-person journal per conversation and a note per person, so the bot picks up where things left off
 - **Autonomous Responses**: Bot naturally participates in conversations without being mentioned
@@ -39,7 +40,23 @@ Nothing about memory happens on the reply path. The Archivist runs in the backgr
 On irc.lurker.chat, an oper registers each bot's account with `/msg NickServ SAREGISTER <nick> <password>` and the bot sets the server's bot mode (`+B`) on itself once connected.
 
 ### Personas
-`conf/personas/<name>.md`: a `# Name` heading, the character (who they are, what they know and don't, how they write), and a `## Evaluator` section that tells the should-I-speak model who they are and what topics are theirs. Everything about the medium (the chatlog format, IRC conventions, the JSON reply protocol, the tools, the journal) is in `classes/context_utils.js` and shared by every persona.
+`conf/personas/<name>.md`: a `# Name` heading, the character (who they are, what they know and don't, how they write), a `## Evaluator` section that tells the should-I-speak model who they are and what topics are theirs, an optional `## Reactions` section (how they use reactions), and an optional `## Schedule` section (their routine, see below). Everything about the medium (the chatlog format, IRC conventions, the JSON reply protocol, the tools, the journal) is in `classes/context_utils.js` and shared by every persona.
+
+
+### Schedules
+A `## Schedule` section in the persona gives the bot a routine, one block per line:
+
+```
+away weekdays 01:00-09:15 ~45m: asleep | zzz
+away mon wed 10:00-11:20 ~10m: in class | in class 💀
+here daily 18:30-19:30 ~20m: eating with your roommates
+```
+
+`<away|here> [days] HH:MM-HH:MM [~jitter]: activity [| away message]`. Days are `daily` (default), `weekdays`, `weekends`, names or ranges (`mon-fri`); a block belongs to the day it starts on, so `weekdays 23:30-07:30` is Monday to Friday nights. The jitter moves each edge by up to that much, differently each day but stable across restarts, so bedtime is "around one", not on the dot. Times are in the bot's `timezone`.
+
+An `away` block makes the bot gone: it sets its IRC away status to the message, stops reading and answering (lines are still stored and journaled), and when the block ends it clears the status and takes one look at every conversation that moved while it was out, answering DMs it missed. Before going, each channel that has had a human line in the last `goodbye_window_minutes` gets an evaluator pass asking only whether vanishing silently would be odd; if so the bot says goodbye through the normal reply pipeline. A bot in the middle of a conversation when the block starts lingers up to `linger_minutes` first. A `here` block changes nothing mechanically; it only tells the bot what it's doing (Isaac is mid-backup and sluggish at 3:30 AM; Nightmare dozes on her feet in the evening). Either way the prompts end with a `RIGHT NOW` line about the bot's day: what it's doing, what it just got back from, what's next.
+
+Between blocks, lurker-style afk: `afk_minutes` after the bot's own last line its away status becomes `afk since YYYY-MM-DD HH:MM:SS±ZZZZ`, cleared the moment it speaks. Afk doesn't stop it answering.
 
 ### Python Tool Execution
 The bot can execute Python code to solve problems:

@@ -1439,7 +1439,7 @@
     async function loadBots() {
       bots = await fetchJson(`${API_BASE}/bots`);
       const select = document.getElementById('bot-select');
-      select.innerHTML = bots.map(b => `<option value="${escapeHtml(b.id)}">${escapeHtml(b.name)} (${escapeHtml(b.nick)})${b.connected ? '' : ' - offline'}</option>`).join('');
+      select.innerHTML = bots.map(b => `<option value="${escapeHtml(b.id)}">${escapeHtml(b.name)} (${escapeHtml(b.nick)})${b.connected ? '' : ' - offline'}${b.presence && b.presence.state === 'away' ? ' - away: ' + escapeHtml(b.presence.activity || '') : b.presence && b.presence.state === 'afk' ? ' - afk' : ''}</option>`).join('');
       if (!bots.some(b => b.id === currentBot)) currentBot = bots[0]?.id || '';
       select.value = currentBot;
       document.title = (bots.find(b => b.id === currentBot)?.name || 'Impostor') + ' Dashboard';

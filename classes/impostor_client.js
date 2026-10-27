@@ -11,6 +11,7 @@ const VisionService = require("./vision_service");
 const UrlSummarizeService = require("./url_summarize_service");
 const { Archivist } = require("./archivist");
 const { debounceConfig, planEvaluation } = require("./eval_debounce");
+const { Presence } = require("./presence");
 
 /**
  * One bot: its IRC connection, database, evaluator, reply pipeline and
@@ -90,6 +91,21 @@ class ImpostorClient {
     this.archivist = new Archivist(logger, config, this.db, this.openai, this.contextUtils);
     this.archivist.resume();
 
+    // Where the bot is: its schedule (sleep, class, out grazing) and the
+    // lurker-style afk status. See classes/presence.js.
+    this.presence = new Presence({
+      logger,
+      schedule: persona.schedule || null,
+      timezone: this.contextUtils.timezone,
+      seed: this.id,
+      config: config.presence || {},
+      hooks: {
+        setAway: (message) => this.setAway(message),
+        onLeave: (occurrence) => this.sayGoodbyes(occurrence),
+        onReturn: (occurrence, pending) => this.catchUp(occurrence, pending),
+      },
+    });
+
     // Set up periodic maintenance
     this.maintenanceInterval = setInterval(() => {
       this.messageTracker.runMaintenance();
@@ -109,6 +125,8 @@ class ImpostorClient {
     // Per-target typing refresh timers (PRIVMSG target -> setInterval id)
     this.typingTimers = new Map();
 
+    this.presence.start();
+
     // Lines sent but not yet echoed back (lowercased target -> [{messageId,
     // text, sentAt}]). With echo-message the server returns each of our
     // PRIVMSGs carrying its msgid, which is how the bot learns the msgids of
@@ -120,6 +138,8 @@ class ImpostorClient {
       this.reconnectDelay = 1000;
       this.logger.info(`Connected to IRC as ${this.botNick}!`);
       this.botModeSet = false;
+      // A fresh connection has no away status; put ours back.
+      this.presence.reconnected();
       // Join configured channels
       for (const channel of config.irc.channels) {
         this.ircClient.join(channel);
@@ -335,6 +355,12 @@ class ImpostorClient {
         return;
       }
       this.archivist.noteActivity(conversationId);
+      if (this.presence.gone) {
+        this.logger.info(`DM from ${nick} stored; answering when back.`);
+        this.presence.notePending(conversationId, { addressed: true, dm: true });
+        return;
+      }
+      this.presence.noteAddressed();
       this.logger.info(`Queuing DM from ${nick}.`, message);
       this.messageQueue.push({ message, channel: conversationId, type: "direct" });
       if (!this.isProcessing) this.processMessageQueue();
@@ -346,10 +372,18 @@ class ImpostorClient {
     // Channel: route every message through the evaluator. Direct mentions
     // used to short-circuit straight to a response, but that bypassed the
     // react/ignore branches — now the evaluator decides for everything.
+    const addressed = repliesToBot || this.mentionsBot(messageText);
+    if (addressed) this.presence.noteAddressed();
+
+    // Gone (asleep, in class): the line is stored and the journal will
+    // cover it, but nothing is read or answered until the bot is back.
+    if (this.presence.gone) {
+      this.presence.notePending(conversationId, { addressed });
+      return;
+    }
+
     if (this.config.autonomous?.enabled) {
-      this.scheduleAutonomousEvaluation(conversationId, {
-        addressed: repliesToBot || this.mentionsBot(messageText),
-      });
+      this.scheduleAutonomousEvaluation(conversationId, { addressed });
     }
   }
 
@@ -583,6 +617,11 @@ class ImpostorClient {
       return;
     }
 
+    if (this.presence.gone) {
+      this.presence.notePending(channelName);
+      return;
+    }
+
     const botUserId = this.botNick.toLowerCase();
 
     // Get ALL recent messages for ratio calculation (50 messages)
@@ -680,6 +719,7 @@ class ImpostorClient {
         restraint: inCooldown,
         journal: this.db.getJournalText(channelName),
         canReact: !this.reactionCooldown(channelName).blocked,
+        presence: this.presence.describe(),
       }
     );
 
@@ -995,9 +1035,9 @@ class ImpostorClient {
     const refs = ContextUtils.assignRefs(dbMessages);
 
     this.startTyping(channelName);
-    let response, conversationLog, react, replyTo;
+    let response, conversationLog, react, replyTo, systemPrompt;
     try {
-      ({ response, conversationLog, react, replyTo } = await this.generateResponseWithChatCompletions({
+      ({ response, conversationLog, react, replyTo, systemPrompt } = await this.generateResponseWithChatCompletions({
         dbMessages,
         userName: user_name,
         characterName: character_name,
@@ -1033,7 +1073,7 @@ class ImpostorClient {
     this.db.storePrompt({
       responseId,
       promptType: "response",
-      systemPrompt: this.contextUtils.buildInstructions(),
+      systemPrompt,
       messagesJson: conversationLog,
       model: this.config.generator.deepseek.model,
       temperature: this.config.generator.deepseek.temperature
@@ -1115,7 +1155,14 @@ class ImpostorClient {
    * @param {string} channelName - IRC channel name
    * @param {number|null} decisionId - Optional decision ID that triggered this response
    */
-  async processAutonomousMessage(channelName, decisionId = null) {
+  /**
+   * @param {string} channelName
+   * @param {number|null} [decisionId]
+   * @param {Object} [options]
+   * @param {Object} [options.leaving] - The schedule occurrence the bot is
+   *   about to go into: this turn is a goodbye (see sayGoodbyes)
+   */
+  async processAutonomousMessage(channelName, decisionId = null, { leaving = null } = {}) {
     const { dbMessages, imageDescriptions, memory } = this.buildContextFromDatabase(channelName);
 
     const triggerInfo = {
@@ -1126,9 +1173,9 @@ class ImpostorClient {
     const refs = ContextUtils.assignRefs(dbMessages);
 
     this.startTyping(channelName);
-    let response, conversationLog, react, replyTo;
+    let response, conversationLog, react, replyTo, systemPrompt;
     try {
-      ({ response, conversationLog, react, replyTo } = await this.generateResponseWithChatCompletions({
+      ({ response, conversationLog, react, replyTo, systemPrompt } = await this.generateResponseWithChatCompletions({
         dbMessages,
         userName: "various",
         characterName: this.watchword,
@@ -1137,7 +1184,8 @@ class ImpostorClient {
         memory,
         triggerInfo,
         refs,
-        canReact: this.canReactNow(channelName),
+        canReact: !leaving && this.canReactNow(channelName),
+        leaving,
       }));
       // A PRIVMSG implicitly clears the indicator; a reaction alone doesn't.
       this.stopTyping(channelName, response ? null : "done");
@@ -1155,7 +1203,7 @@ class ImpostorClient {
     const responseId = this.db.logResponse(
       channelName,
       botMessage.id,
-      "autonomous",
+      leaving ? "goodbye" : "autonomous",
       response,
       null
     );
@@ -1163,7 +1211,7 @@ class ImpostorClient {
     this.db.storePrompt({
       responseId,
       promptType: "response",
-      systemPrompt: this.contextUtils.buildInstructions(),
+      systemPrompt,
       messagesJson: conversationLog,
       model: this.config.generator.deepseek.model,
       temperature: this.config.generator.deepseek.temperature
@@ -1301,6 +1349,7 @@ class ImpostorClient {
       }
       const tags = i === 0 && replyToMsgid ? { "+draft/reply": replyToMsgid } : undefined;
       this.ircClient.say(channel, lines[i], tags);
+      this.presence.noteSent();
       // Delay between lines to avoid flood protection
       if (i < lines.length - 1) {
         await new Promise((r) => setTimeout(r, 500));
@@ -1318,8 +1367,9 @@ class ImpostorClient {
     triggerInfo = null,
     refs = null,
     canReact = true,
+    leaving = null,
   }) {
-    const systemPrompt = this.contextUtils.buildInstructions();
+    const systemPrompt = this.contextUtils.buildInstructions(this.presence.describe(undefined, { leaving }));
     this.logger.debug("Generated System Prompt...", systemPrompt);
 
     if (!dbMessages || !triggerInfo) {
@@ -1331,7 +1381,7 @@ class ImpostorClient {
       triggerInfo,
       imageDescriptions,
       memory,
-      { refs: refs || undefined, canReact }
+      { refs: refs || undefined, canReact, leaving: leaving ? leaving.block.activity : null }
     );
 
     let conversationLog = [
@@ -1423,6 +1473,7 @@ Reply with valid JSON in the format described above.`,
     return {
       response: replyMessage,
       conversationLog,
+      systemPrompt,
       react: structuredResponse.react || null,
       replyTo: structuredResponse.reply_to || null,
     };
@@ -1592,7 +1643,98 @@ Reply with valid JSON in the format described above.`,
       name: this.persona.name,
       channels: this.config.irc.channels,
       connected: Boolean(this.ircClient?.connected),
+      presence: this.presence.snapshot(),
     };
+  }
+
+  /**
+   * Set or clear the IRC away status (null clears). Nothing is sent while
+   * disconnected; the registered handler puts the status back.
+   * @param {string|null} message
+   */
+  setAway(message) {
+    if (!this.ircClient?.connected) return;
+    if (message) {
+      this.logger.info(`Away status: ${message}`);
+      this.ircClient.raw("AWAY", message);
+    } else {
+      this.logger.info("Away status cleared");
+      this.ircClient.raw("AWAY");
+    }
+  }
+
+  /**
+   * The bot is about to go (bed, class). In every channel that has been
+   * live in the last few minutes, ask the evaluator whether vanishing
+   * silently would be odd, and if so say goodbye through the usual reply
+   * pipeline. Pending evaluations are dropped: the lines they covered get
+   * looked at again on return.
+   * @param {Object} occurrence - The schedule occurrence being entered
+   */
+  async sayGoodbyes(occurrence) {
+    const windowMinutes = this.config.presence?.goodbye_window_minutes ?? 10;
+    const since = this.presence.clock().getTime() - windowMinutes * 60000;
+    for (const channel of this.config.irc.channels || []) {
+      try {
+        if (this.generatingChannels.has(channel)) continue;
+        const recent = this.db.getRecentMessages(channel, 50, true);
+        const live = recent.some((m) => !m.is_bot_message && new Date(m.created_at).getTime() >= since);
+        if (!live) continue;
+        this.cancelEvaluationTimer(channel);
+        const decision = await this.evaluator.shouldRespond(
+          this.screenFor(channel),
+          this.botNick.toLowerCase(),
+          channel,
+          null,
+          {
+            journal: this.db.getJournalText(channel),
+            canReact: false,
+            presence: this.presence.describe(undefined, { leaving: occurrence }),
+            leaving: occurrence.block.activity,
+          }
+        );
+        if (decision.action !== "respond") continue;
+        this.generatingChannels.add(channel);
+        try {
+          await this.processAutonomousMessage(channel, decision.decisionId, { leaving: occurrence });
+        } finally {
+          this.generatingChannels.delete(channel);
+        }
+      } catch (err) {
+        this.logger.error(`Goodbye in ${channel} failed: ${err.message}`);
+      }
+    }
+    for (const channelId of [...this.evaluationTimers.keys()]) {
+      this.cancelEvaluationTimer(channelId);
+      this.presence.notePending(channelId);
+    }
+  }
+
+  /**
+   * The bot is back. Conversations that moved while it was gone get a
+   * normal evaluation (the screen shows what it missed); DMs from people
+   * it answers get a reply to their latest line.
+   * @param {Object|null} occurrence - The occurrence that just ended
+   * @param {Map<string, {addressed: boolean, dm: boolean}>} pending
+   */
+  catchUp(occurrence, pending) {
+    for (const [conversationId, { addressed, dm }] of pending) {
+      if (dm) {
+        if (!this.isAllowedPmSender(conversationId)) continue;
+        const theirs = this.db.getRecentMessages(conversationId, 10, true).filter((m) => !m.is_bot_message);
+        const last = theirs[theirs.length - 1];
+        if (!last) continue;
+        const message = {
+          id: last.id,
+          author: { id: last.author_id, username: last.author_name },
+          content: last.content,
+        };
+        this.messageQueue.push({ message, channel: conversationId, type: "direct" });
+        if (!this.isProcessing) this.processMessageQueue();
+      } else if (this.config.autonomous?.enabled) {
+        this.scheduleAutonomousEvaluation(conversationId, { addressed });
+      }
+    }
   }
 
   /**
@@ -1600,6 +1742,7 @@ Reply with valid JSON in the format described above.`,
    */
   shutdown() {
     this.shuttingDown = true;
+    this.presence.stop();
     this.archivist.shutdown();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
