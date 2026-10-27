@@ -574,10 +574,13 @@ Do not include any text outside of this JSON structure. The "message" field shou
    *   off to: the turn is a goodbye, not a reply
    * @param {string|null} [options.whoIsHere] - Who is in the channel and who
    *   is away (see Roster.describe)
+   * @param {{quietMinutes: number, news: boolean}|null} [options.spontaneous] -
+   *   The channel has been quiet this long and nobody asked anything: an
+   *   unprompted line, or nothing
    * @returns {Array} Single-element array with consolidated user message
    */
   buildChatMessagesConsolidated(dbMessages, clientUserId, triggerInfo, imageDescriptions = null, memory = null, options = {}) {
-    const { refs = ContextUtils.assignRefs(dbMessages), canReact = true, leaving = null, whoIsHere = null } = options;
+    const { refs = ContextUtils.assignRefs(dbMessages), canReact = true, leaving = null, whoIsHere = null, spontaneous = null } = options;
     const allUrlSummaries = [];
     let triggerMessageText = null;
 
@@ -625,7 +628,12 @@ Do not include any text outside of this JSON structure. The "message" field shou
 
     // Add explicit instruction about who to respond to, quoting their message
     // so the model doesn't have to scan the chatlog to find what it's replying to.
-    if (leaving) {
+    if (spontaneous) {
+      const news = spontaneous.news
+        ? ` If what you'd bring up is something current (news, a release, a result) you may use web_search once first so you're not making it up.`
+        : "";
+      consolidatedContent += `\n\nThe channel has been quiet for ${spontaneous.quietMinutes} minutes and nobody is talking to you. You may say something unprompted, or nothing, and nothing is the usual answer: return an empty "message" unless you have an actual reason in character to speak, like something from your day (see RIGHT NOW), a thought that follows from what was on your screen earlier, or something from your own interests you'd genuinely bring up.${news} Don't remark that it's quiet, don't ask if anyone's around, don't recap the conversation, don't address anyone who is away. One short line in your own voice, no nick prefix, as if you just thought of it.${reactNote} Reply with valid JSON in the format described above.`;
+    } else if (leaving) {
       consolidatedContent += `\n\nYou're about to head off (${leaving}) and won't be reading the channel for a while. Say a brief goodbye in your own words - one short line, the way you'd actually leave a chat: it can answer or close off whatever you were in the middle of, but don't start anything new. If you'd rather just go without a word, return an empty "message".${reactNote} Reply with valid JSON in the format described above.`;
     } else if (triggerInfo.userName) {
       if (triggerMessageText) {

@@ -13,6 +13,7 @@ const { Archivist } = require("./archivist");
 const { debounceConfig, planEvaluation } = require("./eval_debounce");
 const { Presence } = require("./presence");
 const { Roster } = require("./roster");
+const { SilenceBroker, Spontaneity } = require("./spontaneity");
 
 /**
  * One bot: its IRC connection, database, evaluator, reply pipeline and
@@ -28,8 +29,9 @@ class ImpostorClient {
    * @param {{name: string, character: string, evaluator: string}} deps.persona
    * @param {{pythonTool: Object, webSearchTool: Object, webFetchTool: Object}} deps.tools
    * @param {string} deps.dataDir - Root data directory; this bot's files go under its id
+   * @param {SilenceBroker} [deps.broker] - Shared between bots; private when absent
    */
-  constructor(logger, config, { openai, persona, tools, dataDir }) {
+  constructor(logger, config, { openai, persona, tools, dataDir, broker = null }) {
     this.persona = persona;
     this.id = config.bot?.id || config.irc.nick.toLowerCase();
     // What people call the bot in chat. The persona's name unless the config
@@ -95,6 +97,16 @@ class ImpostorClient {
     // Who is in each channel and who is away (see classes/roster.js); fed
     // by the IRC events below.
     this.roster = new Roster({ selfNick: config.irc.nick, bridgeNick: config.irc.bridge_nick || null });
+
+    // Unprompted lines into a quiet channel (see classes/spontaneity.js).
+    this.spontaneity = new Spontaneity({
+      logger,
+      botId: this.id,
+      broker: broker || new SilenceBroker({ channelGapMinutes: config.spontaneous?.channel_gap_minutes ?? 30 }),
+      config: config.spontaneous || {},
+    });
+    this.silenceInterval = setInterval(() => this.checkSilences(), 60 * 1000);
+    if (this.silenceInterval.unref) this.silenceInterval.unref();
 
     // Where the bot is: its schedule (sleep, class, out grazing) and the
     // lurker-style afk status. See classes/presence.js.
@@ -964,6 +976,20 @@ class ImpostorClient {
             `Processing direct message from ${queueItem.message.author.username}. Queue length: ${this.messageQueue.length}`
           );
           await this.processDirectMessage(queueItem.message, queueItem.channel);
+        } else if (queueItem.type === "spontaneous") {
+          // The silence this was meant to fill may be over by now.
+          const newest = this.db.getRecentMessages(queueItem.channel, 1)[0];
+          if (newest && new Date(newest.created_at).getTime() > queueItem.enqueuedAt) {
+            this.logger.info(`Dropping spontaneous line for ${queueItem.channel} — someone spoke meanwhile`);
+            this.spontaneity.abandon(queueItem.channel);
+            continue;
+          }
+          this.generatingChannels.add(queueItem.channel);
+          try {
+            await this.processSpontaneousMessage(queueItem.channel, queueItem);
+          } finally {
+            this.generatingChannels.delete(queueItem.channel);
+          }
         } else if (queueItem.type === "autonomous" || queueItem.type === "react") {
           // A decision can sit in the queue while an earlier in-flight
           // generation is still running. If the bot has already spoken in
@@ -1420,6 +1446,7 @@ class ImpostorClient {
     refs = null,
     canReact = true,
     leaving = null,
+    spontaneous = null,
   }) {
     const systemPrompt = this.contextUtils.buildInstructions(this.presence.describe(undefined, { leaving }));
     this.logger.debug("Generated System Prompt...", systemPrompt);
@@ -1437,6 +1464,7 @@ class ImpostorClient {
         refs: refs || undefined,
         canReact,
         leaving: leaving ? leaving.block.activity : null,
+        spontaneous,
         whoIsHere: triggerInfo.channelName ? this.roster.describe(triggerInfo.channelName) : null,
       }
     );
@@ -1692,6 +1720,91 @@ Reply with valid JSON in the format described above.`,
     return this.db;
   }
 
+  /**
+   * Once a minute: is any channel quiet enough, and the bot allowed, to say
+   * something unprompted? A "go" is queued like any other generation.
+   * @param {Date} [now]
+   */
+  checkSilences(now = new Date()) {
+    for (const channel of this.config.irc.channels || []) {
+      if (this.generatingChannels.has(channel) || this.evaluationTimers.has(channel)) continue;
+      if (this.messageQueue.some((item) => item.channel === channel)) continue;
+      const newest = this.db.getRecentMessages(channel, 1)[0];
+      const decision = this.spontaneity.decide(
+        channel,
+        {
+          lastLineAt: newest ? new Date(newest.created_at) : null,
+          present: this.roster.present(channel).length,
+          typing: this.roster.someoneTyping(channel, this.spontaneity.typingWaitSeconds, now),
+          gone: this.presence.gone,
+        },
+        now
+      );
+      if (!decision.go) {
+        this.logger.debug(`No spontaneous line for ${channel}: ${decision.reason}`);
+        continue;
+      }
+      this.logger.info(`Queueing a spontaneous line for ${channel} (${decision.reason})`);
+      this.messageQueue.push({ channel, type: "spontaneous", quietMinutes: decision.quietMinutes, enqueuedAt: now.getTime() });
+      if (!this.isProcessing) this.processMessageQueue();
+    }
+  }
+
+  /**
+   * Ask the reply model whether it has anything to say into a silence. An
+   * empty message is the expected answer most of the time.
+   * @param {string} channelName
+   * @param {{quietMinutes: number}} item
+   */
+  async processSpontaneousMessage(channelName, { quietMinutes }) {
+    const { dbMessages, imageDescriptions, memory } = this.buildContextFromDatabase(channelName);
+    const triggerInfo = { userId: null, userName: null, channelName };
+    const refs = ContextUtils.assignRefs(dbMessages);
+    let sent = false;
+    try {
+      const { response, conversationLog, react, replyTo, systemPrompt } = await this.generateResponseWithChatCompletions({
+        dbMessages,
+        userName: "various",
+        characterName: this.watchword,
+        botUserId: this.botNick.toLowerCase(),
+        imageDescriptions,
+        memory,
+        triggerInfo,
+        refs,
+        canReact: false,
+        spontaneous: { quietMinutes, news: this.spontaneity.news },
+      });
+      const botMessage = createIrcMessage(this.botNick, channelName, response, { isBot: true });
+      const responseId = this.db.logResponse(channelName, botMessage.id, "spontaneous", response, null);
+      this.db.storePrompt({
+        responseId,
+        promptType: "response",
+        systemPrompt,
+        messagesJson: conversationLog,
+        model: this.config.generator.deepseek.model,
+        temperature: this.config.generator.deepseek.temperature,
+      });
+      if (response) this.startTyping(channelName);
+      try {
+        ({ sent } = await this.deliverResponse(channelName, { response, react, replyTo, refs, botMessage }));
+      } finally {
+        this.stopTyping(channelName, sent ? null : "done");
+      }
+      this.db.logDecision(
+        channelName,
+        dbMessages.length,
+        sent,
+        null,
+        `[spontaneous] ${sent ? "spoke" : "stayed quiet"} after ${quietMinutes} quiet minutes`,
+        dbMessages.map((m) => m.id)
+      );
+      if (sent) this.archivist.noteActivity(channelName);
+      else this.logger.info(`Nothing to say into the quiet in ${channelName}`);
+    } finally {
+      this.spontaneity.finish(channelName, sent);
+    }
+  }
+
   /** What the dashboard shows for this bot. */
   describe() {
     return {
@@ -1776,6 +1889,8 @@ Reply with valid JSON in the format described above.`,
    * @param {Map<string, {addressed: boolean, dm: boolean}>} pending
    */
   catchUp(occurrence, pending) {
+    // A quiet channel is the natural moment for "morning" / "ugh, class".
+    for (const channel of this.config.irc.channels || []) this.spontaneity.nudge(channel);
     for (const [conversationId, { addressed, dm }] of pending) {
       if (dm) {
         if (!this.isAllowedPmSender(conversationId)) continue;
@@ -1801,6 +1916,7 @@ Reply with valid JSON in the format described above.`,
   shutdown() {
     this.shuttingDown = true;
     this.presence.stop();
+    if (this.silenceInterval) clearInterval(this.silenceInterval);
     this.archivist.shutdown();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);

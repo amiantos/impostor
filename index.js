@@ -9,6 +9,7 @@ const WebSearchTool = require("./classes/web_search_tool");
 const WebFetchTool = require("./classes/web_fetch_tool");
 const { listBots, resolveBotConfig } = require("./classes/bot_config");
 const { loadPersona } = require("./classes/persona");
+const { SilenceBroker } = require("./classes/spontaneity");
 const WebServer = require("./web/server");
 
 const logger = new Logger(true);
@@ -31,6 +32,9 @@ const tools = {
 };
 
 const bots = listBots(config);
+
+// One broker for every bot, so only one of them fills a given silence.
+const broker = new SilenceBroker({ channelGapMinutes: config.spontaneous?.channel_gap_minutes ?? 30 });
 
 // Before bots had ids the one database lived at data/impostor.db. Move it
 // under the first bot once, so a deployment keeps its history.
@@ -55,6 +59,7 @@ for (const bot of bots) {
     persona,
     tools,
     dataDir,
+    broker,
   });
   clients.set(client.id, client);
   logger.info(`Bot "${client.id}" is ${persona.name} as ${bot.nick} in ${(bot.channels || []).join(", ") || "no channels"}`);

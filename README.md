@@ -6,6 +6,7 @@ IRC chatbots powered by the DeepSeek API. One process runs any number of bots, e
 
 - **Personas**: each bot is a markdown file describing who it is; the code owns how IRC works
 - **Who's here**: both prompts get the channel's member list with away status (from IRCv3 away-notify and WHO), so a bot doesn't ask things of someone who's asleep or afk
+- **Spontaneous lines**: after a quiet stretch a bot may say something unprompted, from its day, its interests or what was discussed earlier; rate-limited, one bot per silence, never while someone is typing
 - **Schedules**: a persona can have a routine (asleep, in class, out grazing); the bot sets itself away for those, says goodnight if the channel is live, and catches up when it's back. Between times it goes afk the way lurker's client does
 - **Many bots**: one config, one process, one dashboard; each bot has its own connection, account, database and memory
 - **Journal and people notes**: the Archivist reads the chatlog in the background and keeps a short first-person journal per conversation and a note per person, so the bot picks up where things left off
@@ -128,7 +129,8 @@ See `conf/config.json.example` for all options. Key sections:
 | `irc.typing_notifications.max_seconds` | After this long generating (default 300) the typing indicator goes to "paused" rather than showing the bot typing for ten minutes |
 | `timezone` | IANA zone the bots live in; every timestamp they see is in it (default `America/Los_Angeles`, per-bot override allowed) |
 | `irc` | Shared IRC connection settings (host, port, TLS; optional `bridge_nick` and `bridge_tags`) |
-| `bots` | One entry per bot: `id`, `nick`, `persona`, `account`, `channels`, `pm_allowed_users`, and per-bot overrides of `irc`, `generator`, `autonomous`, `url_summarize`, `journal`, `presence` |
+| `bots` | One entry per bot: `id`, `nick`, `persona`, `account`, `channels`, `pm_allowed_users`, and per-bot overrides of `irc`, `generator`, `autonomous`, `url_summarize`, `journal`, `presence`, `spontaneous` |
+| `spontaneous` | Unprompted lines into a quiet channel. `quiet_min_minutes`/`quiet_max_minutes` (15/45): each attempt waits a quiet stretch drawn between them; `max_per_day` (3) and `min_gap_minutes` (120) per bot; `channel_gap_minutes` (30): after any bot spoke unprompted the channel is closed to all of them (shared, top level only); `typing_wait_seconds` (30): hold off while someone is typing; after coming back from an away block one attempt after `return_delay_min/max_minutes` (1 to 5) needs only `return_quiet_minutes` (5) of quiet; `news` (true) lets the model use web search once for something current |
 | `presence` | `enabled`; `afk_minutes` (15) of silence before the away status becomes `afk_message` (`afk since {time}`, lurker's format; 0 disables); `linger_minutes` (15) a bot may stay past the start of an away block when mid-conversation; `goodbye_window_minutes` (10): a channel with human lines this recent gets a goodbye pass before the bot goes |
 | `bots[].watchword` | What people call the bot in chat, when it differs from the persona's name |
 | `journal` | When the Archivist runs (`messages_per_pass`, `quiet_minutes`, `min_messages`) and how long a journal (`journal_max_chars`) and a note (`note_max_chars`) may get |

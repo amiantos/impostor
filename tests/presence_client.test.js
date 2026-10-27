@@ -25,6 +25,10 @@ const openai = {
           calls.evaluations.push(user);
           return { choices: [{ message: { content: JSON.stringify({ action: "respond", reason: "mid-chat" }) }, finish_reason: "stop" }] };
         }
+        if (/has been quiet for/.test(user)) {
+          calls.replies.push({ system: messages[0].content, user });
+          return { choices: [{ message: { content: JSON.stringify({ needs_tool: false, continue_iterating: false, message: "class was so pointless today" }) }, finish_reason: "stop" }] };
+        }
         if (/Should Mabel respond/.test(user)) {
           calls.evaluations.push(user);
           return { choices: [{ message: { content: JSON.stringify({ action: "ignore", reason: "nothing" }) }, finish_reason: "stop" }] };
@@ -138,4 +142,30 @@ test("in the morning the status clears and the missed conversations get one look
   assert.match(calls.evaluations.at(-1), /Mabel's day right now: You just got back/);
   assert.match(calls.evaluations.at(-1), /In #c right now: amiantos, bob \(away: zzz\)\./);
   assert.equal(bot.presence.pending.size, 0);
+});
+
+test("after a quiet stretch the bot may say something unprompted, once, and the broker closes the channel", async () => {
+  const later = zonedDate(TZ, 2026, 10, 29, 9, 0);
+  now = later;
+  Object.assign(bot.spontaneity, { clock: () => now, startedAt: zonedDate(TZ, 2026, 10, 29, 8, 0), random: () => 0 });
+  bot.roster.setUserlist("#c", ["amiantos", "bob", "Mabel"]);
+  bot.roster.setBack("bob");
+  // The newest line in #c was stored at the real clock (yesterday in test time), so #c has been quiet for ages.
+  const replies = calls.replies.length;
+  bot.checkSilences(now);
+  assert.equal(bot.messageQueue.length + (bot.isProcessing ? 1 : 0) >= 1 || calls.replies.length > replies, true);
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(calls.replies.length, replies + 1);
+  assert.match(calls.replies.at(-1).user, /The channel has been quiet for \d+ minutes and nobody is talking to you/);
+  assert.match(calls.replies.at(-1).user, /In #c right now: amiantos, bob\./);
+  assert.deepEqual(said.at(-1), ["#c", "class was so pointless today"]);
+  assert.equal(bot.db.db.prepare("SELECT response_type FROM responses ORDER BY rowid DESC LIMIT 1").get().response_type, "spontaneous");
+  assert.match(bot.db.db.prepare("SELECT reason FROM decision_log ORDER BY rowid DESC LIMIT 1").get().reason, /^\[spontaneous\] spoke after \d+ quiet minutes/);
+  assert.equal(bot.spontaneity.spoken.length, 1);
+
+  // Right after, the channel is closed: the bot's own gap and the broker both say no.
+  now = new Date(later.getTime() + 60 * 60000);
+  bot.checkSilences(now);
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(calls.replies.length, replies + 1);
 });

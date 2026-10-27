@@ -54,6 +54,19 @@
         "linger_minutes": 15,
         "goodbye_window_minutes": 10
     },
+    "spontaneous": {
+        "enabled": true,
+        "quiet_min_minutes": 15,
+        "quiet_max_minutes": 45,
+        "max_per_day": 3,
+        "min_gap_minutes": 120,
+        "channel_gap_minutes": 30,
+        "typing_wait_seconds": 30,
+        "return_delay_min_minutes": 1,
+        "return_delay_max_minutes": 5,
+        "return_quiet_minutes": 5,
+        "news": true
+    },
     "journal": {
         "enabled": true,
         "messages_per_pass": 40,
