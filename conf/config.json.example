@@ -3,7 +3,7 @@
         "deepseek": {
             "api_key": "<DEEPSEEK API KEY>",
             "base_url": "https://api.deepseek.com",
-            "model": "deepseek-flash",
+            "model": "deepseek-pro",
             "evaluator_model": "deepseek-flash",
             "thinking": true,
             "evaluator_thinking": false,
@@ -40,7 +40,8 @@
         "min_messages": 5,
         "max_messages_per_pass": 200,
         "journal_max_chars": 1500,
-        "note_max_chars": 600
+        "note_max_chars": 600,
+        "model": "deepseek-flash"
     },
     "bots": [
         {

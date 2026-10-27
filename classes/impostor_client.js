@@ -150,7 +150,8 @@ class ImpostorClient {
     this.ircClient.on("raw", (event) => {
       // Log raw IRC lines for debugging connection issues
       if (event.line) {
-        this.logger.debug(`IRC RAW: ${event.line}`);
+        // Both directions land here; "<-" is from the server, "->" is ours.
+        this.logger.debug(`IRC RAW ${event.from_server ? "<-" : "->"} ${event.line}`);
       }
     });
 
