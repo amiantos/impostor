@@ -3,7 +3,7 @@
         "deepseek": {
             "api_key": "<DEEPSEEK API KEY>",
             "base_url": "https://api.deepseek.com",
-            "model": "deepseek-pro",
+            "model": "deepseek-v4-pro",
             "evaluator_model": "deepseek-flash",
             "thinking": true,
             "evaluator_thinking": false,
