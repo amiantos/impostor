@@ -1892,14 +1892,25 @@ Reply with valid JSON in the format described above.`,
   /**
    * The bot is back. Conversations that moved while it was gone get a
    * normal evaluation (the screen shows what it missed); DMs from people
-   * it answers get a reply to their latest line.
+   * it answers get a reply to their latest line. What moved is read from
+   * the database, not just the in-memory list, so a restart mid-block
+   * (the block's edges are the same after it) loses nothing.
    * @param {Object|null} occurrence - The occurrence that just ended
    * @param {Map<string, {addressed: boolean, dm: boolean}>} pending
    */
   catchUp(occurrence, pending) {
     // A quiet channel is the natural moment for "morning" / "ugh, class".
     for (const channel of this.config.irc.channels || []) this.spontaneity.nudge(channel);
-    for (const [conversationId, { addressed, dm }] of pending) {
+    const missed = new Map(pending);
+    if (occurrence?.start) {
+      for (const m of this.db.getHumanMessagesSince(occurrence.start)) {
+        const dm = !m.channel_id.startsWith("#");
+        const entry = missed.get(m.channel_id) || { addressed: false, dm };
+        entry.addressed = entry.addressed || dm || this.mentionsBot(m.content);
+        missed.set(m.channel_id, entry);
+      }
+    }
+    for (const [conversationId, { addressed, dm }] of missed) {
       if (dm) {
         if (!this.isAllowedPmSender(conversationId)) continue;
         const theirs = this.db.getRecentMessages(conversationId, 10, true).filter((m) => !m.is_bot_message);

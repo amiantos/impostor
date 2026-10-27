@@ -116,6 +116,12 @@ test("at bedtime a live channel gets a goodbye, then the bot is away and answers
   assert.equal(bot.db.getRecentMessages("bob", 5, true).length, 1, "the DM is stored");
   assert.deepEqual([...bot.presence.pending.keys()], ["#c", "bob"]);
   assert.equal(bot.presence.pending.get("#c").addressed, true);
+
+  // Pretend the process restarted during the night: the in-memory list is
+  // gone, and the overnight lines sit in the database inside the block.
+  bot.db.db.prepare("UPDATE messages SET created_at = ? WHERE is_bot_message = 0 AND (content = 'mabel you still there' OR content = 'psst')")
+    .run(at(23, 30).toISOString());
+  bot.presence.pending.clear();
 });
 
 test("in the morning the status clears and the missed conversations get one look", async () => {

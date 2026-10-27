@@ -728,6 +728,20 @@ class DatabaseManager {
     return result ? new Date(result.created_at) : null;
   }
 
+  /**
+   * Every human line since an instant, oldest first, across all
+   * conversations. What the bot missed while it was away.
+   * @param {Date|string} since
+   */
+  getHumanMessagesSince(since) {
+    const iso = since instanceof Date ? since.toISOString() : String(since);
+    return this.db.prepare(`
+      SELECT id, channel_id, author_id, author_name, content, created_at FROM messages
+      WHERE created_at > ? AND is_bot_message = 0
+      ORDER BY created_at ASC
+    `).all(iso);
+  }
+
   // Clean up old messages to prevent unbounded growth
   pruneOldMessages(maxMessagesPerChannel = 1000) {
     // Get all distinct channel IDs
