@@ -25,10 +25,13 @@ function listBots(config) {
     if (!/^[a-z0-9_-]+$/i.test(bot.id)) {
       throw new Error(`Bot id "${bot.id}" may only contain letters, digits, "-" and "_" (it names a directory)`);
     }
-    for (const key of ["nick", "username", "realname", "channels", "pm_allowed_users", "watchword", "password", "sasl", "account"]) {
+    for (const key of ["nick", "username", "realname", "channels", "pm_allowed_users", "watchword", "password", "sasl", "account", "avatar_url"]) {
       if (bot.irc?.[key] !== undefined) {
         throw new Error(`Bot "${bot.id}": irc.${key} belongs at the bot's top level, not under irc`);
       }
+    }
+    if (bot.avatar_url !== undefined && !/^https?:\/\/\S+$/.test(bot.avatar_url)) {
+      throw new Error(`Bot "${bot.id}": avatar_url must be an http(s) URL`);
     }
     for (const key of ["api_key", "base_url"]) {
       if (bot.generator?.[key] !== undefined) {
@@ -64,6 +67,9 @@ function resolveBotConfig(shared, bot) {
     // What people call the bot in chat; the persona's name fills it in later
     // when unset (see ImpostorClient).
     watchword: bot.watchword || null,
+    // Shown by clients that render IRCv3 metadata (Lurker): sent as the
+    // `avatar` key after every registration. Must be a public URL.
+    avatar_url: bot.avatar_url || null,
   };
 
   if (bot.account?.password) {

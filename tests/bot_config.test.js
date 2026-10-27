@@ -100,3 +100,17 @@ test("timezone is shared with a per-bot override", () => {
   assert.equal(resolveBotConfig({ ...shared, timezone: "America/Los_Angeles" }, { id: "a", nick: "A", persona: "p", timezone: "Europe/Berlin" }).timezone, "Europe/Berlin");
   assert.equal(resolveBotConfig(shared, { id: "a", nick: "A", persona: "p" }).timezone, undefined, "unset falls through to the ContextUtils default");
 });
+
+test("avatar_url is carried into irc and must be an http(s) URL", () => {
+  const cfg = resolveBotConfig(shared, { id: "b", nick: "Bob", persona: "p.md", avatar_url: "https://x.test/bob.png" });
+  assert.equal(cfg.irc.avatar_url, "https://x.test/bob.png");
+  assert.equal(resolveBotConfig(shared, { id: "b", nick: "Bob", persona: "p.md" }).irc.avatar_url, null);
+  assert.throws(
+    () => listBots({ bots: [{ id: "b", nick: "Bob", persona: "p.md", avatar_url: "bob.png" }] }),
+    /avatar_url must be an http\(s\) URL/
+  );
+  assert.throws(
+    () => listBots({ bots: [{ id: "b", nick: "Bob", persona: "p.md", irc: { avatar_url: "https://x.test/b.png" } }] }),
+    /irc.avatar_url belongs at the bot's top level/
+  );
+});

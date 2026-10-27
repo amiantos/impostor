@@ -138,6 +138,11 @@ class ImpostorClient {
     // handler reads request_extra_caps during CAP negotiation. Server silently
     // drops it if unsupported, so this is safe on networks without IRCv3.
     this.ircClient.requestCap("message-tags");
+    // IRCv3 metadata (draft/metadata-2): the bot's avatar and display name,
+    // sent after registration (see sendMetadata). Only -2 is requested; Ergo
+    // advertises -3 too and answers either the same way, and every client we
+    // know of asks for -2.
+    this.ircClient.requestCap("draft/metadata-2");
 
     // Per-target typing refresh timers (PRIVMSG target -> setInterval id)
     this.typingTimers = new Map();
@@ -157,6 +162,7 @@ class ImpostorClient {
       this.botModeSet = false;
       // A fresh connection has no away status; put ours back.
       this.presence.reconnected();
+      this.sendMetadata();
       // Join configured channels
       for (const channel of config.irc.channels) {
         this.ircClient.join(channel);
@@ -248,6 +254,14 @@ class ImpostorClient {
       this.logger.error("IRC error:", event);
     });
 
+    // irc-framework has no handler for standard replies, so a refused
+    // METADATA SET (`FAIL METADATA RATE_LIMITED …`) surfaces here.
+    this.ircClient.on("unknown command", (command) => {
+      if (command.command === "FAIL") {
+        this.logger.warn(`IRC FAIL ${command.params.join(" ")}`);
+      }
+    });
+
     // ISUPPORT (005) arrives after RPL_WELCOME, one event per line, so the
     // bot mode can only be set from here, once the BOT token has shown up.
     this.ircClient.on("server options", (event) => {
@@ -300,6 +314,27 @@ class ImpostorClient {
     this.botModeSet = true;
     this.logger.info(`Server supports bot mode (+${letter}); setting it`);
     this.ircClient.mode(this.botNick, `+${letter}`);
+  }
+
+  /**
+   * Push the bot's metadata (IRCv3 draft/metadata-2) to the server: the
+   * persona's name as `display-name` and `irc.avatar_url` as `avatar`.
+   * Sent after every registration rather than diffed against the server,
+   * because Ergo keeps metadata only for always-on accounts and a fresh
+   * connection starts empty; two SETs per connect is far inside Ergo's
+   * throttle (10 per 2 minutes). Never sent before registration: Ergo's
+   * pre-registration values don't overwrite an existing key but answer as
+   * if they did. The server confirms each SET with a bare 761 and refuses
+   * with `FAIL METADATA …`, both of which only get logged.
+   */
+  sendMetadata() {
+    if (!this.ircClient.network?.cap?.isEnabled("draft/metadata-2")) return;
+    const keys = { "display-name": this.persona.name, avatar: this.config.irc.avatar_url };
+    for (const [key, value] of Object.entries(keys)) {
+      if (!value) continue;
+      this.logger.info(`Setting metadata ${key}`);
+      this.ircClient.raw("METADATA", "*", "SET", key, value);
+    }
   }
 
   _scheduleReconnect() {
