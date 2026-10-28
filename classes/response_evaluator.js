@@ -205,7 +205,7 @@ reply_to_message_id is the reference of the single message that prompted the act
       byRef.set(ref, raw.id);
       const reply = ContextUtils.replyMarker(raw, this.botName);
       const reactions = ContextUtils.reactionsSuffix(raw, this.botName);
-      lines.push(`[${ref}] [${this.contextUtils.formatTime(raw.created_at)}] ${msg.author}${msg.is_bot ? ` (${this.botName})` : ""}: ${reply}${msg.content}${reactions}`);
+      lines.push(`[${ref}] [${this.contextUtils.formatTime(raw.created_at)}] ${msg.author}${msg.is_bot ? ` (${this.botName})` : ""}: ${reply}${ContextUtils.indentBreaks(msg.content)}${reactions}`);
       if (i === lastBotIndex && i < messages.length - 1) {
         lines.push(`--- new since ${this.botName} last spoke ---`);
       }

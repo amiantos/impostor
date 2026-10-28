@@ -37,25 +37,30 @@ function store(db, nick, text, { channel = "#c", isBot = false, msgid = null, at
 }
 
 /** An ImpostorClient with only the parts these tests touch. */
-function fakeBot(db, { config = {}, supports = true, echo = true } = {}) {
+function fakeBot(db, { config = {}, supports = true, echo = true, multiline = null } = {}) {
   const bot = Object.create(ImpostorClient.prototype);
-  const sent = { tagmsgs: [], says: [] };
+  const sent = { tagmsgs: [], says: [], raws: [] };
   Object.assign(bot, {
     db,
     logger: silent,
     botNick: "mabel",
     watchword: "Mabel",
     pendingEchoes: new Map(),
+    batchTags: new Map(),
     presence: { noteSent() {}, gone: false, noteAddressed() {}, describe() { return null; } },
     roster: new Roster({ selfNick: "mabel" }),
     config: { irc: { ...(config.irc || {}) }, autonomous: { ...(config.autonomous || {}) } },
     ircClient: {
       network: {
         supportsTag: () => supports,
-        cap: { isEnabled: (cap) => echo && cap === "echo-message" },
+        cap: {
+          isEnabled: (cap) => (echo && cap === "echo-message") || (multiline !== null && cap === "draft/multiline"),
+          available: new Map(multiline ? [["draft/multiline", multiline]] : []),
+        },
       },
       tagmsg: (target, tags) => sent.tagmsgs.push({ target, tags }),
       say: (target, line, tags) => sent.says.push({ target, line, tags }),
+      raw: (line) => sent.raws.push(line),
     },
   });
   return { bot, sent };
@@ -288,4 +293,72 @@ test("the typing indicator pauses after typing_notifications.max_seconds", (t) =
   const count = sent.tagmsgs.length;
   t.mock.timers.tick(10000);
   assert.equal(sent.tagmsgs.length, count);
+});
+
+test("with draft/multiline a long reply is one batch of concat pieces, one echo, one msgid", async () => {
+  const db = freshDb();
+  const { bot, sent } = fakeBot(db, { config: { irc: { max_line_length: 20 } }, multiline: "max-bytes=4096,max-lines=24" });
+  await bot.sendIrcMessage("#c", "one two three four five six seven", { messageId: "m-1", replyToMsgid: "A1" });
+  assert.deepEqual(sent.says, [], "nothing went out as plain lines");
+  const id = sent.raws[0].match(/BATCH \+(\S+) draft\/multiline #c$/)[1];
+  assert.equal(sent.raws[0], `@+draft/reply=A1 BATCH +${id} draft/multiline #c`);
+  assert.equal(sent.raws[1], `@batch=${id} PRIVMSG #c :one two three four`);
+  assert.equal(sent.raws[2], `@batch=${id};draft/multiline-concat PRIVMSG #c : five six seven`);
+  assert.equal(sent.raws.at(-1), `BATCH -${id}`);
+  assert.deepEqual(bot.pendingEchoes.get("#c").map((e) => e.text), ["one two three four five six seven"]);
+
+  // The echo comes back as a batch whose start line carries the msgid.
+  bot.noteBatchStart(`@msgid=E9;time=2026-10-28T03:00:00.000Z :mabel!u@h BATCH +${id} draft/multiline #c`);
+  await bot.handleMultilineBatch({
+    id,
+    type: "draft/multiline",
+    params: ["#c"],
+    commands: [
+      { command: "PRIVMSG", nick: "mabel", ident: "u", hostname: "h", params: ["#c", "one two three four"], tags: { batch: id } },
+      { command: "PRIVMSG", nick: "mabel", ident: "u", hostname: "h", params: ["#c", " five six seven"], tags: { batch: id, "draft/multiline-concat": "" } },
+    ],
+  });
+  assert.equal(db.getMsgidFor("m-1"), "E9");
+  assert.equal(bot.pendingEchoes.has("#c"), false);
+  assert.equal(bot.batchTags.size, 0);
+
+  // A short reply is still a single plain line.
+  await bot.sendIrcMessage("#c", "ok", { messageId: "m-2" });
+  assert.deepEqual(sent.says, [{ target: "#c", line: "ok", tags: undefined }]);
+  // Over the server's limits it falls back to plain lines.
+  const small = fakeBot(db, { config: { irc: { max_line_length: 20 } }, multiline: "max-bytes=4096,max-lines=2" });
+  await small.bot.sendIrcMessage("#c", "one two three four five six seven eight nine ten eleven", { messageId: "m-3" });
+  assert.deepEqual(small.sent.raws, []);
+  assert.ok(small.sent.says.length > 2);
+});
+
+test("an incoming multiline batch is one message with the start line's tags; its lines are kept", async () => {
+  const db = freshDb();
+  const { bot } = fakeBot(db, { multiline: "max-bytes=4096,max-lines=24" });
+  const seen = [];
+  bot.handleIrcMessage = async (event) => seen.push(event);
+  bot.noteBatchStart("@msgid=M1;+draft/reply=A1;time=2026-10-28T03:00:00.000Z;account=bob :bob!u@h BATCH +xyz draft/multiline #c");
+  assert.deepEqual(bot.batchTags.get("xyz"), { msgid: "M1", "+draft/reply": "A1", time: "2026-10-28T03:00:00.000Z", account: "bob" });
+  await bot.handleMultilineBatch({
+    id: "xyz",
+    type: "draft/multiline",
+    params: ["#c"],
+    commands: [
+      { command: "PRIVMSG", nick: "bob", ident: "u", hostname: "h", params: ["#c", "first line"], tags: { batch: "xyz" } },
+      { command: "PRIVMSG", nick: "bob", ident: "u", hostname: "h", params: ["#c", " continued"], tags: { batch: "xyz", "draft/multiline-concat": "" } },
+      { command: "PRIVMSG", nick: "bob", ident: "u", hostname: "h", params: ["#c", "second line"], tags: { batch: "xyz" } },
+    ],
+  });
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].nick, "bob");
+  assert.equal(seen[0].target, "#c");
+  assert.equal(seen[0].message, "first line continued\nsecond line");
+  assert.equal(seen[0].tags.msgid, "M1");
+  assert.equal(seen[0].tags["+draft/reply"], "A1");
+  assert.equal(bot.batchTags.has("xyz"), false);
+  // A batch of something other than PRIVMSG, or an unknown start, is ignored.
+  bot.noteBatchStart(":irc.example BATCH +q chathistory #c");
+  assert.equal(bot.batchTags.has("q"), false);
+  await bot.handleMultilineBatch({ id: "q", type: "draft/multiline", params: ["#c"], commands: [] });
+  assert.equal(seen.length, 1);
 });

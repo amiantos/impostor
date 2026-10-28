@@ -1,7 +1,7 @@
 const IRC = require("irc-framework");
 const path = require("path");
 const { createIrcMessage, ircUserId } = require("./irc_message");
-const { splitMessage } = require("./message_splitter");
+const { splitMessage, splitForConcat } = require("./message_splitter");
 const { parseBridgedMessage } = require("./bridge_parser");
 const ContextUtils = require("./context_utils");
 const DatabaseManager = require("./database");
@@ -22,6 +22,9 @@ const { localParts } = require("./schedule");
  * client and the tools (see index.js).
  */
 class ImpostorClient {
+  /** A multiline piece stays under this many UTF-8 bytes so the relayed line fits in 512. */
+  static MULTILINE_PIECE_BYTES = 400;
+
   /**
    * @param {Object} logger - A logger tagged with this bot's id
    * @param {Object} config - This bot's resolved config (see bot_config.js)
@@ -144,6 +147,14 @@ class ImpostorClient {
     // advertises -3 too and answers either the same way, and every client we
     // know of asks for -2.
     this.ircClient.requestCap("draft/metadata-2");
+    // IRCv3 draft/multiline: a long reply goes out as one message (a BATCH
+    // of PRIVMSG pieces joined with draft/multiline-concat) instead of
+    // several lines, and other people's multiline messages arrive whole.
+    if (config.irc.multiline !== false) this.ircClient.requestCap("draft/multiline");
+    // Tags of multiline BATCH starts by batch id: irc-framework keeps the
+    // inner lines but drops the start line's tags, and that is where the
+    // msgid (and a +draft/reply) of a multiline message live.
+    this.batchTags = new Map();
 
     // Per-target typing refresh timers (PRIVMSG target -> setInterval id)
     this.typingTimers = new Map();
@@ -212,6 +223,8 @@ class ImpostorClient {
     });
 
     this.ircClient.on("privmsg", (event) => {
+      // A piece of a multiline message: the whole arrives at "batch end".
+      if (event.batch?.type === "draft/multiline") return;
       this.handleIrcMessage(event);
     });
 
@@ -248,7 +261,12 @@ class ImpostorClient {
       if (event.line) {
         // Both directions land here; "<-" is from the server, "->" is ours.
         this.logger.debug(`IRC RAW ${event.from_server ? "<-" : "->"} ${event.line}`);
+        if (event.from_server) this.noteBatchStart(event.line);
       }
+    });
+
+    this.ircClient.on("batch end draft/multiline", (batch) => {
+      this.handleMultilineBatch(batch).catch((err) => this.logger.error("Multiline batch failed:", err));
     });
 
     this.ircClient.on("irc error", (event) => {
@@ -524,6 +542,74 @@ class ImpostorClient {
       this.db.removeReaction(targetMsgid, authorId, unreact);
       this.logger.debug(`${event.nick} removed reaction ${unreact} from ${targetMsgid} in ${conversationId}`);
     }
+  }
+
+  /**
+   * A raw line from the server that starts a multiline batch: keep its tags
+   * (msgid, time, +draft/reply) under the batch id until the batch ends.
+   * @param {string} line
+   */
+  noteBatchStart(line) {
+    const m = line.match(/^(?:@(\S+) )?(?::\S+ )?BATCH \+(\S+) draft\/multiline\b/i);
+    if (!m) return;
+    const tags = {};
+    for (const part of (m[1] || "").split(";")) {
+      if (!part) continue;
+      const eq = part.indexOf("=");
+      const key = eq === -1 ? part : part.slice(0, eq);
+      const raw = eq === -1 ? "" : part.slice(eq + 1);
+      tags[key.toLowerCase()] = raw.replace(/\\(.)/g, (_, c) => ({ ":": ";", s: " ", r: "\r", n: "\n", "\\": "\\" })[c] ?? c);
+    }
+    this.batchTags.set(m[2], tags);
+    // A batch the server never closes must not pile up.
+    if (this.batchTags.size > 100) this.batchTags.delete(this.batchTags.keys().next().value);
+  }
+
+  /**
+   * The limits the server advertised for draft/multiline, or null when the
+   * capability is not enabled.
+   * @returns {{maxBytes: number, maxLines: number}|null}
+   */
+  multilineLimits() {
+    const cap = this.ircClient.network?.cap;
+    if (!cap?.isEnabled?.("draft/multiline")) return null;
+    const value = String(cap.available?.get?.("draft/multiline") || "");
+    const read = (key, fallback) => {
+      const m = value.match(new RegExp(`(?:^|,)${key}=(\\d+)`));
+      return m ? Number(m[1]) : fallback;
+    };
+    return { maxBytes: read("max-bytes", 4096), maxLines: read("max-lines", 24) };
+  }
+
+  /**
+   * A finished draft/multiline batch (irc-framework's "batch end" event):
+   * join its PRIVMSG pieces into one message, with the start line's tags,
+   * and handle it like any other line. Pieces tagged draft/multiline-concat
+   * continue the previous piece; the others start a new line.
+   * @param {{id: string, type: string, params: string[], commands: Object[]}} batch
+   */
+  async handleMultilineBatch(batch) {
+    const tags = this.batchTags.get(batch.id) || {};
+    this.batchTags.delete(batch.id);
+    const pieces = (batch.commands || []).filter((c) => c.command === "PRIVMSG" && c.params?.length >= 2);
+    if (pieces.length === 0) return;
+    let text = "";
+    pieces.forEach((c, i) => {
+      const body = c.params[c.params.length - 1];
+      const concat = c.tags && Object.prototype.hasOwnProperty.call(c.tags, "draft/multiline-concat");
+      text += i > 0 && !concat ? `\n${body}` : body;
+    });
+    const first = pieces[0];
+    await this.handleIrcMessage({
+      nick: first.nick,
+      ident: first.ident,
+      hostname: first.hostname,
+      target: first.params[0],
+      message: text,
+      tags: { ...tags, ...(first.getTag?.("account") ? { account: first.getTag("account") } : {}) },
+      time: tags.time ? Date.parse(tags.time) || undefined : undefined,
+      batch: { id: batch.id, type: batch.type, params: batch.params },
+    });
   }
 
   /**
@@ -1469,9 +1555,34 @@ class ImpostorClient {
       payload = payload.replace(new RegExp(`^${escaped}[:,]\\s+`, "i"), "");
     }
 
-    const lines = splitMessage(payload, maxLen);
-
     const echoes = Boolean(messageId && this.ircClient.network?.cap.isEnabled("echo-message"));
+
+    // With draft/multiline a long reply is one message: a batch of pieces
+    // joined with draft/multiline-concat, one msgid, no inter-line delay.
+    // Anything the server's limits can't hold falls back to plain lines.
+    const limits = this.multilineLimits();
+    if (limits) {
+      const pieces = splitForConcat(payload, { maxChars: maxLen, maxBytes: ImpostorClient.MULTILINE_PIECE_BYTES });
+      const bytes = Buffer.byteLength(pieces.join(""), "utf8");
+      if (pieces.length > 1 && pieces.length <= limits.maxLines && bytes <= limits.maxBytes) {
+        if (echoes) {
+          const key = channel.toLowerCase();
+          if (!this.pendingEchoes.has(key)) this.pendingEchoes.set(key, []);
+          this.pendingEchoes.get(key).push({ messageId, text: pieces.join(""), sentAt: Date.now() });
+        }
+        const id = Math.random().toString(36).slice(2, 10);
+        const startTags = replyToMsgid ? `@+draft/reply=${replyToMsgid} ` : "";
+        this.ircClient.raw(`${startTags}BATCH +${id} draft/multiline ${channel}`);
+        pieces.forEach((piece, i) => {
+          this.ircClient.raw(`@batch=${id}${i > 0 ? ";draft/multiline-concat" : ""} PRIVMSG ${channel} :${piece}`);
+        });
+        this.ircClient.raw(`BATCH -${id}`);
+        this.presence.noteSent();
+        return;
+      }
+    }
+
+    const lines = splitMessage(payload, maxLen);
     for (let i = 0; i < lines.length; i++) {
       if (echoes) {
         const key = channel.toLowerCase();

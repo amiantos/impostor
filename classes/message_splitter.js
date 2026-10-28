@@ -38,3 +38,37 @@ function splitMessage(text, maxLen) {
 }
 
 module.exports = { splitMessage };
+
+/**
+ * Split for an IRCv3 draft/multiline batch: the pieces concatenate back to
+ * the (whitespace-normalized) text exactly, so each piece after the first
+ * is sent with draft/multiline-concat and the reader sees one message. Each
+ * piece stays within both limits; the space at a split point stays at the
+ * head of the next piece.
+ * @param {string} text
+ * @param {{maxChars?: number, maxBytes?: number}} [limits]
+ * @returns {string[]}
+ */
+function splitForConcat(text, { maxChars = 350, maxBytes = 400 } = {}) {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length === 0) return [""];
+  const fits = (s) => s.length <= maxChars && Buffer.byteLength(s, "utf8") <= maxBytes;
+  if (fits(normalized)) return [normalized];
+
+  const pieces = [];
+  let remaining = normalized;
+  while (!fits(remaining)) {
+    // The longest prefix that fits, then back to the last space in it (not
+    // the leading one, which is the previous split).
+    let end = Math.min(remaining.length, maxChars);
+    while (end > 1 && !fits(remaining.slice(0, end))) end -= 1;
+    let splitAt = remaining.lastIndexOf(" ", end);
+    if (splitAt <= 0) splitAt = end; // a token longer than the limit: hard cut
+    pieces.push(remaining.slice(0, splitAt));
+    remaining = remaining.slice(splitAt);
+  }
+  if (remaining) pieces.push(remaining);
+  return pieces;
+}
+
+module.exports.splitForConcat = splitForConcat;

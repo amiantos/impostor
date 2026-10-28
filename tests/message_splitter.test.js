@@ -1,6 +1,6 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { splitMessage } = require("../classes/message_splitter");
+const { splitMessage, splitForConcat } = require("../classes/message_splitter");
 
 test("returns the input unchanged when it fits within maxLen", () => {
   const result = splitMessage("hello world", 100);
@@ -63,4 +63,18 @@ test("does not produce more chunks than necessary at the configured maxLen", () 
   for (const line of result) {
     assert.ok(line.length <= 350, `line over limit: ${line.length}`);
   }
+});
+
+test("splitForConcat pieces concatenate back to the text exactly and respect both limits", () => {
+  const text = "alpha beta gamma delta epsilon zeta eta theta iota kappa";
+  const pieces = splitForConcat(text, { maxChars: 20 });
+  assert.deepEqual(pieces, ["alpha beta gamma", " delta epsilon zeta", " eta theta iota", " kappa"]);
+  assert.equal(pieces.join(""), text);
+  const emoji = "😀".repeat(30) + " tail";
+  const byBytes = splitForConcat(emoji, { maxChars: 100, maxBytes: 40 });
+  assert.equal(byBytes.join(""), emoji);
+  assert.ok(byBytes.every((p) => Buffer.byteLength(p, "utf8") <= 40));
+  assert.deepEqual(splitForConcat("supercalifragilistic yes", { maxChars: 10 }), ["supercalif", "ragilistic", " yes"]);
+  assert.deepEqual(splitForConcat("short\n\nwith  breaks", { maxChars: 100 }), ["short with breaks"]);
+  assert.deepEqual(splitForConcat("", { maxChars: 10 }), [""]);
 });

@@ -422,6 +422,11 @@ Do not include any text outside of this JSON structure. The "message" field shou
    * @param {string} current - Timestamp of this line
    * @param {number} minMinutes
    */
+  /** A multiline message's later lines are indented under its first, so they don't look like new chatlog lines. */
+  static indentBreaks(content) {
+    return String(content ?? "").replace(/\r?\n/g, "\n    ");
+  }
+
   static lullMarker(previous, current, minMinutes) {
     if (!previous || !minMinutes) return null;
     const minutes = (new Date(current) - new Date(previous)) / 60000;
@@ -504,7 +509,7 @@ Do not include any text outside of this JSON structure. The "message" field shou
         : `[${this.formatTime(msg.created_at)}]`;
       const reply = ContextUtils.replyMarker(msg);
       const reactions = ContextUtils.reactionsSuffix(msg);
-      let content = msg.content;
+      let content = ContextUtils.indentBreaks(msg.content);
 
       if (isBotMessage) {
         lines.push(`${stamp} <${this.nick} (you)> ${reply}${content}${reactions}`);

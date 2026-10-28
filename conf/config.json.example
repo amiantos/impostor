@@ -19,6 +19,7 @@
         "port": 6697,
         "tls": true,
         "max_line_length": 340,
+        "multiline": true,
         "reactions": true,
         "reaction_max_length": 24,
         "reply_min_distance": 5,

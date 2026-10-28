@@ -235,3 +235,9 @@ test("the current time line is the same in the system prompt and in formatNow", 
   assert.equal(ctx.formatNow(now), "Tuesday, October 27, 2026 at 10:44 PM CDT");
   assert.match(ctx.buildInstructions(null, now), /CURRENT DATE\/TIME: Tuesday, October 27, 2026 at 10:44 PM CDT$/);
 });
+
+test("a message with line breaks keeps them, indented under its first line", () => {
+  const ctx = new ContextUtils(silent, persona, { timezone: "America/Chicago" });
+  const lines = ctx.renderChatlog([msg("bob", "first line\nsecond line")]);
+  assert.equal(lines.at(-1), "[05:00] <bob> first line\n    second line");
+});
