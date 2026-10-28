@@ -151,6 +151,23 @@ class Roster {
   }
 
   /**
+   * People who could read a line now: not away, or only auto-afk (lurker's
+   * "afk since …" means they stopped typing, not that they left). An
+   * explicit away message, or an away flag from WHO with no message, counts
+   * as gone.
+   */
+  reachable(channel) {
+    return this.others(channel).filter((nick) => {
+      const entry = this.awayOf(nick);
+      return !entry || Roster.isAutoAfk(entry);
+    });
+  }
+
+  static isAutoAfk(entry) {
+    return Boolean(entry && entry.message && /^afk since \d{4}-\d{2}-\d{2} /.test(entry.message));
+  }
+
+  /**
    * "afk for 23 minutes" for lurker's "afk since YYYY-MM-DD HH:MM:SS±ZZZZ",
    * otherwise the message itself, or "away" with none.
    */

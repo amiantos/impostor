@@ -9,7 +9,7 @@ const WebSearchTool = require("./classes/web_search_tool");
 const WebFetchTool = require("./classes/web_fetch_tool");
 const { listBots, resolveBotConfig } = require("./classes/bot_config");
 const { loadPersona } = require("./classes/persona");
-const { SilenceBroker } = require("./classes/spontaneity");
+const { SilenceDirector, NewsDesk } = require("./classes/spontaneity");
 const WebServer = require("./web/server");
 
 const logger = new Logger(true);
@@ -33,8 +33,10 @@ const tools = {
 
 const bots = listBots(config);
 
-// One broker for every bot, so only one of them fills a given silence.
-const broker = new SilenceBroker({ channelGapMinutes: config.spontaneous?.channel_gap_minutes ?? 30 });
+// One director for every bot, so one of them at a time is offered a quiet
+// channel, and one news cache so they don't all run the same search.
+const director = new SilenceDirector({ logger: logger.child("silence"), config: config.spontaneous || {} });
+const newsDesk = new NewsDesk({ search: tools.webSearchTool, ttlMinutes: config.spontaneous?.news_cache_minutes ?? 360 });
 
 // Before bots had ids the one database lived at data/impostor.db. Move it
 // under the first bot once, so a deployment keeps its history.
@@ -59,7 +61,8 @@ for (const bot of bots) {
     persona,
     tools,
     dataDir,
-    broker,
+    director,
+    newsDesk,
   });
   clients.set(client.id, client);
   logger.info(`Bot "${client.id}" is ${persona.name} as ${bot.nick} in ${(bot.channels || []).join(", ") || "no channels"}`);
@@ -74,10 +77,12 @@ if (config.web?.enabled) {
 for (const client of clients.values()) {
   client.connect();
 }
+director.start();
 
 function shutdown() {
   logger.info("Shutting down...");
   if (webServer) webServer.stop();
+  director.stop();
   for (const client of clients.values()) client.shutdown();
   process.exit(0);
 }

@@ -76,3 +76,16 @@ test("a Schedule section is parsed; none means no schedule", () => {
   const nightmare = loadPersona(path.join(__dirname, "..", "conf", "personas", "nightmare.md"));
   assert.ok(nightmare.schedule.blocks.some((b) => /grazing/.test(b.activity)));
 });
+
+test("Seeds and News sections are bullet lists; none means empty", () => {
+  const persona = parsePersona("# Bob\n\nYou are Bob.\n\n## Seeds\n\n# a comment\n- the weather\n* a book\n\n## News\n\n- bob news this week\n");
+  assert.deepEqual(persona.seeds, ["the weather", "a book"]);
+  assert.deepEqual(persona.news, ["bob news this week"]);
+  assert.deepEqual(parsePersona("# Bob\n\nYou are Bob.\n").seeds, []);
+  assert.deepEqual(parsePersona("# Bob\n\nYou are Bob.\n").news, []);
+  for (const name of ["isaac", "layla", "nightmare"]) {
+    const p = loadPersona(path.join(__dirname, "..", "conf", "personas", `${name}.md`));
+    assert.ok(p.seeds.length >= 10, `${name} has seeds`);
+    assert.ok(p.news.length >= 5, `${name} has news queries`);
+  }
+});

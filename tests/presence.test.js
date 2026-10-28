@@ -56,7 +56,7 @@ test("an away block: goodbye hook, away status, nothing until it ends, then the 
   const { presence, calls, advanceTo } = build({ schedule, start: at(9, 50) });
   await advanceTo(at(9, 50));
   assert.equal(presence.gone, false);
-  assert.match(presence.describe(), /Next up: in class, from about 10:00 AM/);
+  assert.match(presence.describe(), /Next up: in class, from about 10:00 AM \(in 10 minutes\)\./);
 
   await advanceTo(at(10, 0));
   assert.deepEqual(calls.left, ["in class"]);
@@ -148,7 +148,7 @@ test("a here block only changes the narrative", async () => {
   assert.deepEqual(calls.away, []);
   assert.equal(presence.snapshot().state, "here");
   assert.equal(presence.snapshot().activity, "mid-backup, sluggish");
-  assert.match(presence.describe(), /You're mid-backup, sluggish \(since 3:00 AM, until about 4:00 AM\)/);
+  assert.match(presence.describe(), /You're mid-backup, sluggish \(since 3:00 AM, until about 4:00 AM, in 30 minutes\)/);
   await advanceTo(at(4, 30));
   assert.match(presence.describe(), /Earlier: you were mid-backup, sluggish until 4:00 AM \(30 minutes ago\)/);
   assert.doesNotMatch(presence.describe(), /Next up/);
@@ -159,7 +159,7 @@ test("describe is null with nothing to say, and the leaving note replaces the cu
   await advanceTo(at(15, 0));
   assert.equal(presence.describe(), null, "class ended four hours ago, nothing tonight");
   const occurrence = presence.scheduled(at(10, 30)).current;
-  assert.match(presence.describe(clock(), { leaving: occurrence }), /^You're about to go: in class, until about 11:00 AM\.$/);
+  assert.match(presence.describe(clock(), { leaving: occurrence }), /^You're about to go: in class, until about 11:00 AM \(.*\)\.$/);
 });
 
 test("reconnecting puts the current status back", async () => {

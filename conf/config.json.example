@@ -60,14 +60,18 @@
         "enabled": true,
         "quiet_min_minutes": 15,
         "quiet_max_minutes": 45,
-        "max_per_day": 3,
-        "min_gap_minutes": 120,
         "channel_gap_minutes": 30,
         "typing_wait_seconds": 30,
+        "max_per_day": 5,
+        "min_gap_minutes": 60,
+        "weight": 1,
+        "seeds_per_day": 3,
+        "news": true,
+        "news_chance": 0.35,
+        "news_cache_minutes": 360,
         "return_delay_min_minutes": 1,
         "return_delay_max_minutes": 5,
-        "return_quiet_minutes": 5,
-        "news": true
+        "return_quiet_minutes": 5
     },
     "journal": {
         "enabled": true,
@@ -94,7 +98,8 @@
             "channels": ["#lurker"],
             "pm_allowed_users": [],
             "generator": { "temperature": 0.9 },
-            "autonomous": { "cooldown_seconds": 45 }
+            "autonomous": { "cooldown_seconds": 45 },
+            "spontaneous": { "weight": 1 }
         }
     ],
     "vision": {

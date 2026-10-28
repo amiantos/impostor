@@ -100,7 +100,7 @@ test("at bedtime a live channel gets a goodbye, then the bot is away and answers
   assert.equal(calls.evaluations.length, 1);
   assert.match(calls.evaluations[0], /about to go \(asleep\)/);
   assert.equal(calls.replies.length, 1);
-  assert.match(calls.replies[0].system, /RIGHT NOW: You're about to go: asleep, until about 7:00 AM\./);
+  assert.match(calls.replies[0].system, /RIGHT NOW: You're about to go: asleep, until about 7:00 AM \(in about 8 hours\)\./);
   assert.match(calls.replies[0].user, /Say a brief goodbye/);
   assert.deepEqual(said, [["#c", "ok bed. night"]]);
   assert.deepEqual(aways(), [["AWAY", "zzz"]]);
@@ -150,28 +150,35 @@ test("in the morning the status clears and the missed conversations get one look
   assert.equal(bot.presence.pending.size, 0);
 });
 
-test("after a quiet stretch the bot may say something unprompted, once, and the broker closes the channel", async () => {
+test("after a quiet stretch the director offers the bot the floor, once, and then closes the channel", async () => {
   const later = zonedDate(TZ, 2026, 10, 29, 9, 0);
   now = later;
-  Object.assign(bot.spontaneity, { clock: () => now, startedAt: zonedDate(TZ, 2026, 10, 29, 8, 0), random: () => 0 });
+  Object.assign(bot.spontaneity, { clock: () => now, random: () => 0 });
+  Object.assign(bot.director, { clock: () => now, startedAt: zonedDate(TZ, 2026, 10, 29, 8, 0), random: () => 0 });
   bot.roster.setUserlist("#c", ["amiantos", "bob", "Mabel"]);
-  bot.roster.setBack("bob");
+  // bob is only auto-afk: still someone to talk to.
+  bot.roster.setAway("bob", "afk since 2026-10-29 08:40:00-0500");
   // The newest line in #c was stored at the real clock (yesterday in test time), so #c has been quiet for ages.
   const replies = calls.replies.length;
-  bot.checkSilences(now);
-  assert.equal(bot.messageQueue.length + (bot.isProcessing ? 1 : 0) >= 1 || calls.replies.length > replies, true);
+  const picks = bot.checkSilences(now);
+  assert.equal(picks.get("#c").picked, "mabel");
   await new Promise((r) => setTimeout(r, 50));
   assert.equal(calls.replies.length, replies + 1);
-  assert.match(calls.replies.at(-1).user, /The channel has been quiet for \d+ minutes and nobody is talking to you/);
-  assert.match(calls.replies.at(-1).user, /In #c right now: amiantos, bob\./);
+  assert.match(calls.replies.at(-1).user, /The channel has been quiet for \d+ minutes and nobody is talking to you\. You have the floor if you want it/);
+  assert.match(calls.replies.at(-1).user, /The people here \(amiantos, bob\)/);
+  assert.match(calls.replies.at(-1).user, /In #c right now: amiantos, bob \(afk for \d+ minutes\)\./);
   assert.deepEqual(said.at(-1), ["#c", "class was so pointless today"]);
   assert.equal(bot.db.db.prepare("SELECT response_type FROM responses ORDER BY rowid DESC LIMIT 1").get().response_type, "spontaneous");
   assert.match(bot.db.db.prepare("SELECT reason FROM decision_log ORDER BY rowid DESC LIMIT 1").get().reason, /^\[spontaneous\] spoke after \d+ quiet minutes/);
   assert.equal(bot.spontaneity.spoken.length, 1);
+  assert.equal(bot.describe().spontaneous.spoken_today, 1);
 
-  // Right after, the channel is closed: the bot's own gap and the broker both say no.
-  now = new Date(later.getTime() + 60 * 60000);
-  bot.checkSilences(now);
+  // Right after, the channel is closed to everyone for the channel gap.
+  now = new Date(later.getTime() + 20 * 60000);
+  assert.match(bot.checkSilences(now).get("#c").reason, /mabel spoke unprompted 20 min ago/);
+  // After the gap the bot's own minimum gap still holds.
+  now = new Date(later.getTime() + 40 * 60000);
+  assert.match(bot.checkSilences(now).get("#c").reason, /nobody free \(mabel: spoke unprompted 40 min ago\)/);
   await new Promise((r) => setTimeout(r, 20));
   assert.equal(calls.replies.length, replies + 1);
 });

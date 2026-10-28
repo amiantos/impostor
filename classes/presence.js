@@ -226,13 +226,23 @@ class Presence {
       const h = Math.round(m / 60);
       return `${h} hour${h === 1 ? "" : "s"} ago`;
     };
+    // The models that read this have no clock of their own beyond the
+    // prompt's date line, so every clock time also says how far off it is.
+    const until = (d) => {
+      const m = minutes(d - now);
+      if (m < 1) return "any minute now";
+      if (m < 60) return `in ${m} minute${m === 1 ? "" : "s"}`;
+      const h = Math.round(m / 30) / 2;
+      if (h === 1) return "in about an hour";
+      return `in about ${h % 1 === 0 ? h : h.toFixed(1)} hours`;
+    };
     const parts = [];
     const { current, previous, next } = this.scheduled(now);
 
     if (leaving) {
-      parts.push(`You're about to go: ${leaving.block.activity}, until about ${clock(leaving.end)}.`);
+      parts.push(`You're about to go: ${leaving.block.activity}, until about ${clock(leaving.end)} (${until(leaving.end)}).`);
     } else if (current && current.block.kind === "here") {
-      parts.push(`You're ${current.block.activity} (since ${clock(current.start)}, until about ${clock(current.end)}).`);
+      parts.push(`You're ${current.block.activity} (since ${clock(current.start)}, until about ${clock(current.end)}, ${until(current.end)}).`);
     } else if (current && current.block.kind === "away" && !this.gone) {
       // Lingering past the start of an away block.
       parts.push(`You're meant to be ${current.block.activity} already; you'll head off shortly.`);
@@ -248,7 +258,7 @@ class Presence {
     }
 
     if (!leaving && next && next.start - now < 6 * 60 * 60000) {
-      parts.push(`Next up: ${next.block.activity}, from about ${clock(next.start)}.`);
+      parts.push(`Next up: ${next.block.activity}, from about ${clock(next.start)} (${until(next.start)}).`);
     }
 
     if (this.afk && !this.gone) {

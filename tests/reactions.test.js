@@ -221,7 +221,7 @@ test("the evaluator answers with line references and a reaction; the client gets
   assert.equal(decision.reply_to_message_id, "id-2");
   assert.equal(decision.reaction, "🫖");
   assert.match(lastPrompt[0].content, /HOW MABEL USES REACTIONS:\nonly 🫖\./);
-  assert.match(lastPrompt[1].content, /\[m1\] bob: tea time \[reactions: alice ☕\]\n\[m2\] alice: earl grey or nothing/);
+  assert.match(lastPrompt[1].content, /\[m1\] \[\d\d:\d\d\] bob: tea time \[reactions: alice ☕\]\n\[m2\] \[\d\d:\d\d\] alice: earl grey or nothing\n\nCURRENT DATE\/TIME: /);
 
   const blocked = await evaluator.shouldRespond(messages, "mabel", "#c", null, { canReact: false });
   assert.equal(blocked.action, "ignore", "no reacting inside the cooldown");
@@ -270,7 +270,7 @@ test("the evaluator marks where the lines since the bot last spoke begin", async
     { id: "3", author_name: "mabel", author_id: "mabel", is_bot_message: true, content: "hello", created_at: "2026-10-26T10:01:00Z" },
     { id: "4", author_name: "bob", content: "how are you", created_at: "2026-10-26T10:02:00Z" },
   ], "mabel", "#c");
-  assert.match(lastPrompt[1].content, /\[m1\] bob: old\n--- 4 hours later ---\n\[m2\] bob: hi\n\[m3\] mabel \(Mabel\): hello\n--- new since Mabel last spoke ---\n\[m4\] bob: how are you/);
+  assert.match(lastPrompt[1].content, /\[m1\] \[\d\d:\d\d\] bob: old\n--- 4 hours later ---\n\[m2\] \[\d\d:\d\d\] bob: hi\n\[m3\] \[\d\d:\d\d\] mabel \(Mabel\): hello\n--- new since Mabel last spoke ---\n\[m4\] \[\d\d:\d\d\] bob: how are you/);
 });
 
 test("the typing indicator pauses after typing_notifications.max_seconds", (t) => {

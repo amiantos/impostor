@@ -209,3 +209,29 @@ test("only the newest link summaries go in the reply prompt", () => {
   assert.doesNotMatch(message.content, /URL: u1/);
   assert.match(message.content, /URL: u2[\s\S]*URL: u3/);
 });
+
+test("the spontaneous instruction offers the floor with concrete material and leaves silence allowed, not default", () => {
+  const text = ContextUtils.spontaneousInstruction({
+    quietMinutes: 33,
+    seeds: ["the weather", "a book"],
+    news: { query: "robot news this week", answer: "A robot did a thing." },
+    people: ["alice", "bob"],
+  });
+  assert.match(text, /^The channel has been quiet for 33 minutes and nobody is talking to you\. You have the floor if you want it/);
+  assert.match(text, /- Things on your mind today: \(1\) the weather \(2\) a book/);
+  assert.match(text, /- Something you came across today \(you looked up "robot news this week"\): A robot did a thing\./);
+  assert.match(text, /- Your day \(see RIGHT NOW\)/);
+  assert.match(text, /- The people here \(alice, bob\)/);
+  assert.match(text, /return an empty "message"; that is allowed, but it is not the default\.$/);
+  assert.doesNotMatch(text, /nothing is the usual answer/);
+  const bare = ContextUtils.spontaneousInstruction({ quietMinutes: 5 });
+  assert.doesNotMatch(bare, /on your mind|came across|people here/);
+  assert.match(bare, /- Your day/);
+});
+
+test("the current time line is the same in the system prompt and in formatNow", () => {
+  const ctx = new ContextUtils(silent, persona, { timezone: "America/Chicago" });
+  const now = new Date("2026-10-28T03:44:00Z");
+  assert.equal(ctx.formatNow(now), "Tuesday, October 27, 2026 at 10:44 PM CDT");
+  assert.match(ctx.buildInstructions(null, now), /CURRENT DATE\/TIME: Tuesday, October 27, 2026 at 10:44 PM CDT$/);
+});

@@ -7,12 +7,15 @@ const { parseSchedule } = require("./schedule");
  * should-I-speak model, and an optional "## Reactions" section saying how
  * they use IRCv3 reactions (what they react to, which emoji or short text,
  * how often), shown to both the evaluator and the reply model, and an
- * optional "## Schedule" section with their routine (see schedule.js). Everything
- * about the medium (IRC, the chatlog, the JSON protocol, tools) lives in
- * code; the file holds only who the bot is.
+ * optional "## Schedule" section with their routine (see schedule.js), an
+ * optional "## Seeds" list (things they would bring up unprompted into a
+ * quiet channel; a few are drawn per day) and an optional "## News" list
+ * (search queries for what they'd keep up with; one is looked up before
+ * some unprompted turns). Everything about the medium (IRC, the chatlog,
+ * the JSON protocol, tools) lives in code; the file holds only who the bot is.
  *
  * @param {string} text - The file's contents
- * @returns {{name: string, character: string, evaluator: string, reactions: string|null, schedule: Object|null}}
+ * @returns {{name: string, character: string, evaluator: string, reactions: string|null, schedule: Object|null, seeds: string[], news: string[]}}
  */
 function parsePersona(text) {
   const lines = String(text ?? "").replace(/\r\n/g, "\n").split("\n");
@@ -52,6 +55,8 @@ function parsePersona(text) {
   } catch (err) {
     throw new Error(`Persona "${name}": ${err.message}`);
   }
+  const seeds = parseList(sections.get("seeds"));
+  const news = parseList(sections.get("news"));
 
   return {
     name,
@@ -62,7 +67,21 @@ function parsePersona(text) {
     reactions: reactions || null,
     // Without a section the bot is always around (afk still applies).
     schedule,
+    // Without these, unprompted turns draw only on the day, the screen and the notes.
+    seeds,
+    news,
   };
+}
+
+/** The items of a bulleted section ("- item" or "* item"); blank lines and "#" comments are skipped. */
+function parseList(lines) {
+  const out = [];
+  for (const raw of lines || []) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    out.push(line.replace(/^[-*]\s+/, ""));
+  }
+  return out;
 }
 
 function loadPersona(filePath) {

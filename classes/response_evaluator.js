@@ -17,7 +17,12 @@ class ResponseEvaluator {
    * @param {{name: string, evaluator: string}} persona
    * @param {Object} openaiClient
    */
-  constructor(logger, config, database, visionService, persona, openaiClient) {
+  /**
+   * @param {ContextUtils} [contextUtils] - Renders the clock the evaluator
+   *   sees (line stamps and the current time) in the bot's timezone; one is
+   *   built from the config when not given
+   */
+  constructor(logger, config, database, visionService, persona, openaiClient, contextUtils = null) {
     this.logger = logger;
     this.config = config;
     this.db = database;
@@ -25,6 +30,7 @@ class ResponseEvaluator {
     this.persona = persona;
     this.botName = persona.name;
     this.openai = openaiClient;
+    this.contextUtils = contextUtils || new ContextUtils(logger, persona, { timezone: config.timezone });
   }
 
   /**
@@ -82,7 +88,7 @@ IMPORTANT: ${name} should only speak when they have genuine insight, curiosity, 
 
 The conversation below is what is on ${name}'s screen, oldest first. When ${name} has spoken in it, a divider marks where the lines since ${name} last spoke begin: decide mainly on those. The lines above it are context ${name} has already had a turn on; react to or answer one of them only if it is plainly still live and nobody has dealt with it. A line like "--- 3 hours later ---" marks a lull; what is above it is an older conversation.
 
-Each message below starts with a reference in brackets ("[m3]"). A message may start with (replying to bob: "...") when it was sent as a reply to an earlier line, and may end with [reactions: alice 😂] listing the reactions on it.
+Each message below starts with a reference in brackets ("[m3]") and the time it was sent, in ${name}'s timezone. The current date and time, in the same zone, is stated after the conversation; use it, not a guess, for anything that depends on the hour (how late it is, how long ago a line was, how close ${name}'s next plan is). A message may start with (replying to bob: "...") when it was sent as a reply to an earlier line, and may end with [reactions: alice 😂] listing the reactions on it.
 
 You MUST respond with valid JSON only:
 {
@@ -199,7 +205,7 @@ reply_to_message_id is the reference of the single message that prompted the act
       byRef.set(ref, raw.id);
       const reply = ContextUtils.replyMarker(raw, this.botName);
       const reactions = ContextUtils.reactionsSuffix(raw, this.botName);
-      lines.push(`[${ref}] ${msg.author}${msg.is_bot ? ` (${this.botName})` : ""}: ${reply}${msg.content}${reactions}`);
+      lines.push(`[${ref}] [${this.contextUtils.formatTime(raw.created_at)}] ${msg.author}${msg.is_bot ? ` (${this.botName})` : ""}: ${reply}${msg.content}${reactions}`);
       if (i === lastBotIndex && i < messages.length - 1) {
         lines.push(`--- new since ${this.botName} last spoke ---`);
       }
@@ -249,11 +255,12 @@ reply_to_message_id is the reference of the single message that prompted the act
       : `Should ${this.botName} respond to this conversation? Remember to respond with valid JSON only.`;
 
     const whoContext = options.whoIsHere ? `${options.whoIsHere}\n\n` : "";
+    const nowContext = `\nCURRENT DATE/TIME: ${this.contextUtils.formatNow(options.now || new Date())}`;
 
     const userPrompt = `${journalContext}${whoContext}Here is the recent conversation (message references in brackets):
 
 ${conversationContext}
-${ratioContext}${restraintContext}${reactContext}${presenceContext}${leavingContext}
+${nowContext}${ratioContext}${restraintContext}${reactContext}${presenceContext}${leavingContext}
 
 ${question}`;
 

@@ -297,6 +297,20 @@ Do not include any text outside of this JSON structure. The "message" field shou
     });
   }
 
+  /** "Tuesday, October 27, 2026 at 10:40 PM PDT": the current time as every prompt states it. */
+  formatNow(now = new Date()) {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: this.timezone,
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZoneName: "short",
+    }).format(now);
+  }
+
   /** The zone's human name, e.g. "Pacific Time", for the prompt. */
   timezoneLabel() {
     try {
@@ -313,17 +327,8 @@ Do not include any text outside of this JSON structure. The "message" field shou
    * @param {string|null} [presence] - A line about the bot's day right now
    *   (see Presence.describe); appended after the date when given
    */
-  buildInstructions(presence = null) {
-    const dateStr = new Intl.DateTimeFormat("en-US", {
-      timeZone: this.timezone,
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-      timeZoneName: "short",
-    }).format(new Date());
+  buildInstructions(presence = null, now = new Date()) {
+    const dateStr = this.formatNow(now);
     // The persona's own text goes in last so nothing in it is taken for a placeholder.
     const medium = ContextUtils.medium_prompt
       .replaceAll("REPLY_MIN", String(this.replyMinDistance))
@@ -530,6 +535,37 @@ Do not include any text outside of this JSON structure. The "message" field shou
   }
 
   /**
+   * The closing instruction for an unprompted turn. The bot has been picked
+   * to fill a silence; it gets concrete material to speak from, and saying
+   * nothing is allowed but not presented as the default.
+   * @param {{quietMinutes: number, seeds?: string[], news?: {query: string, answer: string}|null, people?: string[]}} spontaneous
+   */
+  static spontaneousInstruction(spontaneous) {
+    const { quietMinutes, seeds = [], news = null, people = [] } = spontaneous;
+    const material = [];
+    if (seeds.length > 0) {
+      material.push(`Things on your mind today: ${seeds.map((s, i) => `(${i + 1}) ${s}`).join(" ")}`);
+    }
+    if (news && news.answer) {
+      material.push(`Something you came across today (you looked up "${news.query}"): ${news.answer}`);
+    }
+    material.push(`Your day (see RIGHT NOW), or a thought that follows from something on your screen earlier.`);
+    if (people.length > 0) {
+      material.push(
+        `The people here (${people.join(", ")}): if your notes on someone mention something coming up, unresolved, or worth asking after, asking them is a fine reason to speak.`
+      );
+    }
+    return (
+      `The channel has been quiet for ${quietMinutes} minutes and nobody is talking to you. You have the floor if you want it: one short line in your own voice, no nick prefix, as if you just thought of it. ` +
+      `Pick ONE of these to speak from, whichever is most you right now:\n` +
+      material.map((m) => `- ${m}`).join("\n") +
+      `\nSay it the way you'd actually say it, in passing; don't announce it as a topic, don't make it a question to the room unless you'd really ask. ` +
+      `Don't bring up anything you already brought up (check the chatlog and your journal), don't remark that it's quiet, don't ask if anyone's around, don't recap the conversation, don't address anyone who is away. ` +
+      `If none of this fits who you are at this hour, return an empty "message"; that is allowed, but it is not the default.`
+    );
+  }
+
+  /**
    * The journal and people blocks shown ahead of the chatlog, or "" when
    * there is nothing to show.
    * @param {string} conversationId
@@ -574,9 +610,10 @@ Do not include any text outside of this JSON structure. The "message" field shou
    *   off to: the turn is a goodbye, not a reply
    * @param {string|null} [options.whoIsHere] - Who is in the channel and who
    *   is away (see Roster.describe)
-   * @param {{quietMinutes: number, news: boolean}|null} [options.spontaneous] -
-   *   The channel has been quiet this long and nobody asked anything: an
-   *   unprompted line, or nothing
+   * @param {{quietMinutes: number, seeds?: string[], news?: {query: string, answer: string}|null, people?: string[]}|null} [options.spontaneous] -
+   *   The channel has been quiet this long and the bot has been offered the
+   *   floor: an unprompted line, drawing on today's seeds, something it saw
+   *   (a looked-up answer), its day, the screen, or the people present
    * @returns {Array} Single-element array with consolidated user message
    */
   buildChatMessagesConsolidated(dbMessages, clientUserId, triggerInfo, imageDescriptions = null, memory = null, options = {}) {
@@ -629,10 +666,7 @@ Do not include any text outside of this JSON structure. The "message" field shou
     // Add explicit instruction about who to respond to, quoting their message
     // so the model doesn't have to scan the chatlog to find what it's replying to.
     if (spontaneous) {
-      const news = spontaneous.news
-        ? ` If what you'd bring up is something current (news, a release, a result) you may use web_search once first so you're not making it up.`
-        : "";
-      consolidatedContent += `\n\nThe channel has been quiet for ${spontaneous.quietMinutes} minutes and nobody is talking to you. You may say something unprompted, or nothing, and nothing is the usual answer: return an empty "message" unless you have an actual reason in character to speak, like something from your day (see RIGHT NOW), a thought that follows from what was on your screen earlier, or something from your own interests you'd genuinely bring up.${news} Don't remark that it's quiet, don't ask if anyone's around, don't recap the conversation, don't address anyone who is away. One short line in your own voice, no nick prefix, as if you just thought of it.${reactNote} Reply with valid JSON in the format described above.`;
+      consolidatedContent += `\n\n${ContextUtils.spontaneousInstruction(spontaneous)}${reactNote} Reply with valid JSON in the format described above.`;
     } else if (leaving) {
       consolidatedContent += `\n\nYou're about to head off (${leaving}) and won't be reading the channel for a while. Say a brief goodbye in your own words - one short line, the way you'd actually leave a chat: it can answer or close off whatever you were in the middle of, but don't start anything new. If you'd rather just go without a word, return an empty "message".${reactNote} Reply with valid JSON in the format described above.`;
     } else if (triggerInfo.userName) {

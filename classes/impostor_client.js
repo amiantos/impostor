@@ -13,7 +13,8 @@ const { Archivist } = require("./archivist");
 const { debounceConfig, planEvaluation } = require("./eval_debounce");
 const { Presence } = require("./presence");
 const { Roster } = require("./roster");
-const { SilenceBroker, Spontaneity } = require("./spontaneity");
+const { SilenceDirector, Spontaneity, NewsDesk, seedsForDay } = require("./spontaneity");
+const { localParts } = require("./schedule");
 
 /**
  * One bot: its IRC connection, database, evaluator, reply pipeline and
@@ -29,9 +30,10 @@ class ImpostorClient {
    * @param {{name: string, character: string, evaluator: string}} deps.persona
    * @param {{pythonTool: Object, webSearchTool: Object, webFetchTool: Object}} deps.tools
    * @param {string} deps.dataDir - Root data directory; this bot's files go under its id
-   * @param {SilenceBroker} [deps.broker] - Shared between bots; private when absent
+   * @param {SilenceDirector} [deps.director] - Shared between bots; private when absent
+   * @param {NewsDesk} [deps.newsDesk] - Shared search cache for unprompted turns; private when absent
    */
-  constructor(logger, config, { openai, persona, tools, dataDir, broker = null }) {
+  constructor(logger, config, { openai, persona, tools, dataDir, director = null, newsDesk = null }) {
     this.persona = persona;
     this.id = config.bot?.id || config.irc.nick.toLowerCase();
     // What people call the bot in chat. The persona's name unless the config
@@ -88,7 +90,7 @@ class ImpostorClient {
 
     // Initialize message tracker with vision and URL summarize services
     this.messageTracker = new MessageTracker(logger, this.db, config, this.visionService, this.urlSummarizeService);
-    this.evaluator = new ResponseEvaluator(logger, config, this.db, this.visionService, persona, this.openai);
+    this.evaluator = new ResponseEvaluator(logger, config, this.db, this.visionService, persona, this.openai, this.contextUtils);
 
     // The journal and people notes, updated from the chatlog in the background.
     this.archivist = new Archivist(logger, config, this.db, this.openai, this.contextUtils);
@@ -98,15 +100,14 @@ class ImpostorClient {
     // by the IRC events below.
     this.roster = new Roster({ selfNick: config.irc.nick, bridgeNick: config.irc.bridge_nick || null });
 
-    // Unprompted lines into a quiet channel (see classes/spontaneity.js).
-    this.spontaneity = new Spontaneity({
-      logger,
-      botId: this.id,
-      broker: broker || new SilenceBroker({ channelGapMinutes: config.spontaneous?.channel_gap_minutes ?? 30 }),
-      config: config.spontaneous || {},
-    });
-    this.silenceInterval = setInterval(() => this.checkSilences(), 60 * 1000);
-    if (this.silenceInterval.unref) this.silenceInterval.unref();
+    // Unprompted lines into a quiet channel (see classes/spontaneity.js):
+    // this bot's own limits, and the director that hands out the floor.
+    this.spontaneity = new Spontaneity({ logger, botId: this.id, config: config.spontaneous || {} });
+    this.ownDirector = !director;
+    this.director = director || new SilenceDirector({ logger, config: config.spontaneous || {} });
+    this.director.register(this);
+    if (this.ownDirector) this.director.start();
+    this.newsDesk = newsDesk || new NewsDesk({ search: this.webSearchTool, ttlMinutes: config.spontaneous?.news_cache_minutes ?? 360 });
 
     // Where the bot is: its schedule (sleep, class, out grazing) and the
     // lurker-style afk status. See classes/presence.js.
@@ -1025,7 +1026,7 @@ class ImpostorClient {
           const newest = this.db.getRecentMessages(queueItem.channel, 1)[0];
           if (newest && new Date(newest.created_at).getTime() > queueItem.enqueuedAt) {
             this.logger.info(`Dropping spontaneous line for ${queueItem.channel} — someone spoke meanwhile`);
-            this.spontaneity.abandon(queueItem.channel);
+            this.director.abandon(queueItem.channel, this.id);
             continue;
           }
           this.generatingChannels.add(queueItem.channel);
@@ -1772,48 +1773,97 @@ Reply with valid JSON in the format described above.`,
     return this.db;
   }
 
-  /**
-   * Once a minute: is any channel quiet enough, and the bot allowed, to say
-   * something unprompted? A "go" is queued like any other generation.
-   * @param {Date} [now]
-   */
-  checkSilences(now = new Date()) {
-    for (const channel of this.config.irc.channels || []) {
-      if (this.generatingChannels.has(channel) || this.evaluationTimers.has(channel)) continue;
-      if (this.messageQueue.some((item) => item.channel === channel)) continue;
-      const newest = this.db.getRecentMessages(channel, 1)[0];
-      const decision = this.spontaneity.decide(
-        channel,
-        {
-          lastLineAt: newest ? new Date(newest.created_at) : null,
-          present: this.roster.present(channel).length,
-          typing: this.roster.someoneTyping(channel, this.spontaneity.typingWaitSeconds, now),
-          gone: this.presence.gone,
-        },
-        now
-      );
-      if (!decision.go) {
-        this.logger.debug(`No spontaneous line for ${channel}: ${decision.reason}`);
-        continue;
-      }
-      this.logger.info(`Queueing a spontaneous line for ${channel} (${decision.reason})`);
-      this.messageQueue.push({ channel, type: "spontaneous", quietMinutes: decision.quietMinutes, enqueuedAt: now.getTime() });
-      if (!this.isProcessing) this.processMessageQueue();
-    }
+  /** The channels this bot is in, for the director. */
+  get channels() {
+    return this.config.irc.channels || [];
   }
 
   /**
-   * Ask the reply model whether it has anything to say into a silence. An
-   * empty message is the expected answer most of the time.
+   * What the director needs to know about a channel from this bot's side.
+   * People who are merely auto-afk count as present: they stopped typing,
+   * they didn't leave, and a quiet channel is exactly when they're afk.
+   * @param {string} channel
+   * @param {Date} [now]
+   * @returns {import("./spontaneity").SilenceFacts}
+   */
+  silenceFacts(channel, now = new Date()) {
+    const inChannel = (this.config.irc.channels || []).some((c) => c.toLowerCase() === channel.toLowerCase());
+    if (!inChannel) return { inChannel: false };
+    const newest = this.db.getRecentMessages(channel, 1)[0];
+    return {
+      inChannel: true,
+      lastLineAt: newest ? new Date(newest.created_at) : null,
+      present: this.roster.reachable(channel).length,
+      typing: this.roster.someoneTyping(channel, this.director.typingWaitSeconds, now),
+      gone: this.presence.gone,
+      busy:
+        this.generatingChannels.has(channel) ||
+        this.evaluationTimers.has(channel) ||
+        this.messageQueue.some((item) => item.channel === channel),
+    };
+  }
+
+  /** The director picked this bot for a quiet channel: queue the turn like any other generation. */
+  takeSpontaneousTurn(channel, { quietMinutes, nudged = false }, now = new Date()) {
+    this.logger.info(`Queueing a spontaneous line for ${channel} (quiet ${quietMinutes} min${nudged ? ", just back" : ""})`);
+    this.messageQueue.push({ channel, type: "spontaneous", quietMinutes, nudged, enqueuedAt: now.getTime() });
+    if (!this.isProcessing) this.processMessageQueue();
+  }
+
+  /** One look at every channel now (the director normally ticks on its own). */
+  checkSilences(now = new Date()) {
+    return this.director.tick(now);
+  }
+
+  /**
+   * What an unprompted turn can draw on besides the screen: a few of the
+   * persona's seeds for today, sometimes something looked up from its news
+   * queries, and notes on everyone in the channel (not only whoever spoke
+   * in the window), so it can ask after someone.
    * @param {string} channelName
-   * @param {{quietMinutes: number}} item
+   * @param {{journal: string|null, people: Map<string, string>}} memory - Extended in place
+   */
+  async spontaneousMaterial(channelName, memory) {
+    const now = new Date();
+    const day = localParts(now, this.contextUtils.timezone);
+    const dateKey = `${day.year}-${String(day.month).padStart(2, "0")}-${String(day.day).padStart(2, "0")}`;
+    const seeds = seedsForDay(this.persona.seeds, `${this.id}|${dateKey}`, this.spontaneity.seedsPerDay);
+
+    let news = null;
+    const queries = this.persona.news || [];
+    if (this.spontaneity.news && queries.length > 0 && this.spontaneity.random() < this.spontaneity.newsChance) {
+      const query = queries[Math.floor(this.spontaneity.random() * queries.length)];
+      news = await this.newsDesk.lookup(query);
+      if (!news) this.logger.debug(`No news for "${query}"`);
+    }
+
+    const people = this.roster.others(channelName);
+    const known = new Set([...(memory.people?.keys() || [])].map((n) => n.toLowerCase()));
+    const missing = people.filter((nick) => !known.has(nick.toLowerCase()));
+    if (missing.length > 0) {
+      const notes = this.db.getPeople(missing);
+      memory.people = new Map([...(memory.people || []), ...notes]);
+    }
+    return { seeds, news, people };
+  }
+
+  /**
+   * The director offered this bot the floor: ask the reply model for an
+   * unprompted line, with material to speak from. An empty message is
+   * allowed and ends the turn quietly.
+   * @param {string} channelName
+   * @param {{quietMinutes: number, nudged?: boolean}} item
    */
   async processSpontaneousMessage(channelName, { quietMinutes }) {
     const { dbMessages, imageDescriptions, memory } = this.buildContextFromDatabase(channelName);
     const triggerInfo = { userId: null, userName: null, channelName };
     const refs = ContextUtils.assignRefs(dbMessages);
     let sent = false;
+    let news = null;
     try {
+      const material = await this.spontaneousMaterial(channelName, memory);
+      news = material.news;
+      const { seeds, people } = material;
       const { response, conversationLog, react, replyTo, systemPrompt } = await this.generateResponseWithChatCompletions({
         dbMessages,
         userName: "various",
@@ -1824,7 +1874,7 @@ Reply with valid JSON in the format described above.`,
         triggerInfo,
         refs,
         canReact: false,
-        spontaneous: { quietMinutes, news: this.spontaneity.news },
+        spontaneous: { quietMinutes, seeds, news, people },
       });
       const botMessage = createIrcMessage(this.botNick, channelName, response, { isBot: true });
       const responseId = this.db.logResponse(channelName, botMessage.id, "spontaneous", response, null);
@@ -1847,13 +1897,14 @@ Reply with valid JSON in the format described above.`,
         dbMessages.length,
         sent,
         null,
-        `[spontaneous] ${sent ? "spoke" : "stayed quiet"} after ${quietMinutes} quiet minutes`,
+        `[spontaneous] ${sent ? "spoke" : "stayed quiet"} after ${quietMinutes} quiet minutes${news ? ` (saw: "${news.query}")` : ""}`,
         dbMessages.map((m) => m.id)
       );
       if (sent) this.archivist.noteActivity(channelName);
       else this.logger.info(`Nothing to say into the quiet in ${channelName}`);
     } finally {
-      this.spontaneity.finish(channelName, sent);
+      if (sent) this.spontaneity.spoke();
+      this.director.release(channelName, this.id, sent);
     }
   }
 
@@ -1866,6 +1917,8 @@ Reply with valid JSON in the format described above.`,
       channels: this.config.irc.channels,
       connected: Boolean(this.ircClient?.connected),
       presence: this.presence.snapshot(),
+      spontaneous: this.spontaneity.snapshot(),
+      silences: this.ownDirector ? this.director.snapshot() : undefined,
     };
   }
 
@@ -1979,7 +2032,8 @@ Reply with valid JSON in the format described above.`,
   shutdown() {
     this.shuttingDown = true;
     this.presence.stop();
-    if (this.silenceInterval) clearInterval(this.silenceInterval);
+    this.director.unregister(this);
+    if (this.ownDirector) this.director.stop();
     this.archivist.shutdown();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
