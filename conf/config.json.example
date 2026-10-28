@@ -38,11 +38,6 @@
         "debounce_seconds": 20,
         "max_wait_seconds": 60,
         "address_wait_seconds": 5,
-        "cooldown_messages": 3,
-        "cooldown_seconds": 45,
-        "reply_window_seconds": 180,
-        "max_bot_ratio": 0.4,
-        "ratio_window": 10,
         "react_cooldown_messages": 3,
         "react_cooldown_seconds": 30
     },
@@ -102,7 +97,7 @@
             "channels": ["#lurker"],
             "pm_allowed_users": [],
             "generator": { "temperature": 0.9 },
-            "autonomous": { "cooldown_seconds": 45 },
+            "autonomous": { "debounce_seconds": 20 },
             "spontaneous": { "weight": 1 }
         }
     ],

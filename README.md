@@ -12,7 +12,7 @@ One Node process runs every bot in `conf/config.json`, each with its own IRC con
 
 **A memory.** The Archivist runs in the background and keeps, per conversation, a short first-person journal of what has been going on and what was left open, and per person a note on who they are and how the two of them get on. The reply model reads both ahead of the chatlog; the evaluator reads the journal. Every version is kept with the Archivist's rationale, and the dashboard lets you edit or forget any of it.
 
-**Manners.** Nothing is answered reflexively. Mentioning a bot's name gets a reply. Anything else goes through an evaluator that knows the persona and decides between a reply, a reaction and silence, with "one turn per thought" as the rule: a correction to something it already answered gets nothing. Unaddressed volunteering is also gated in code: a cooldown after speaking and a hard ceiling on the bot's share of the last ten lines. The evaluator sees the same clock the bot does, so "it's 3 AM for her" is only said at 3 AM.
+**Manners.** Nothing is answered reflexively. Mentioning a bot's name gets a reply. Anything else goes through an evaluator that knows the persona and decides between a reply, a reaction and silence, with "one turn per thought" as the rule: a correction to something it already answered gets nothing, but the person it is talking with picking the thread back up gets a hearing however recently it spoke. Nothing in code gates that call; whether a bot is talking too much is the evaluator's judgement from the conversation and the persona. The evaluator sees the same clock the bot does, so "it's 3 AM for her" is only said at 3 AM.
 
 **Who's here.** Both prompts get the channel's member list with away status (IRCv3 away-notify and WHO) and whether someone is typing, so a bot doesn't ask things of someone asleep, and a lurker who is merely auto-afk still counts as company.
 
@@ -29,11 +29,7 @@ One Node process runs every bot in `conf/config.json`, each with its own IRC con
 ## How it works
 
 ### Deciding to speak
-Every line in a configured channel is stored. A debounce waits for the conversation to settle (each new line pushes it back, up to a deadline; a line naming the bot pulls the deadline in). Then the bot classifies who, if anyone, is talking to it:
-
-- **named**: someone used its name or nick, or sent an IRCv3 reply to one of its lines. Straight to the evaluator.
-- **reply**: nobody named it, but within a few minutes of its last message a human used second person, asked a question, or was the only one speaking. Also to the evaluator, with a note to answer only if something new was raised when it spoke very recently.
-- **none**: it would be volunteering into a conversation that moved on. Only this case hits the hard gates: a cooldown of a few messages and seconds after it last spoke, and the ratio ceiling.
+Every line in a configured channel is stored. A debounce waits for the conversation to settle (each new line pushes it back, up to a deadline; a line naming the bot pulls the deadline in). Then the evaluator is asked. There is no gate in code before it: an earlier version held back unaddressed lines until a few messages and seconds had passed since the bot last spoke, and in a slow channel that gagged a bot for hours on the very person it was talking to. The evaluator is told the bot's share of recent lines as information, not as a limit, and that someone continuing a conversation with the bot without typing its name is still talking to it.
 
 The evaluator picks `respond`, `react` or `ignore` with a reason, which lands in the decision log. A `react` names the line and the reaction; reactions have their own cooldown and never go on a bot's own line or one it already reacted to. Replies are generated from the screen: the last 50 lines however old, reaching further back to anything the journal hasn't read yet, with lulls marked rather than cut.
 
@@ -101,7 +97,7 @@ See `conf/config.json.example` for every option. The ones that shape behaviour:
 | `timezone` | IANA zone the bots live in; every timestamp they see is in it (default `America/Los_Angeles`, per-bot override allowed) |
 | `irc` | Host, port, TLS; `max_line_length` (340); `multiline` (true: long replies go out as one IRCv3 message where the server supports it); `reactions` (true), `reaction_max_length` (24), `reply_min_distance` (5: a reply tag only when the line answered is at least this far back); `dm_delay_min_seconds`/`dm_delay_max_seconds` (2 to 6) before a DM reply; `typing_notifications`; optional `bridge_nick` and `bridge_tags` |
 | `bots` | One entry per bot: `id`, `nick`, `persona`, `account`, `channels`, `pm_allowed_users`, optional `watchword` (what people call it, when it differs from the persona name), `display_name` and `avatar_url` (IRCv3 metadata, set or deleted on every connect), and per-bot overrides of the shared sections |
-| `autonomous` | `debounce_seconds` (20), `max_wait_seconds` (60), `address_wait_seconds` (5); `cooldown_messages` (3) and `cooldown_seconds` (45) after speaking; `reply_window_seconds` (180); `max_bot_ratio` (0.4) of `ratio_window` (10); `react_cooldown_messages` (3) and `react_cooldown_seconds` (30) |
+| `autonomous` | `debounce_seconds` (20), `max_wait_seconds` (60), `address_wait_seconds` (5); `react_cooldown_messages` (3) and `react_cooldown_seconds` (30) |
 | `context` | `screen_lines` (50), `max_lines` (150), `lull_minutes` (30), `max_link_summaries` (5); `tic_lines` (30): how many of the bot's own lines the tic ledger reads, 0 disables it |
 | `journal` | When the Archivist runs (`messages_per_pass` 40, `quiet_minutes` 20, `min_messages` 5) and how long a journal (`journal_max_chars` 1500) and a note (`note_max_chars` 600) may get |
 | `presence` | `enabled`; `afk_minutes` (15) before the status becomes `afk_message` (`afk since {time}`; 0 disables); `linger_minutes` (15) past the start of an away block when mid-conversation; `goodbye_window_minutes` (10) |
@@ -112,7 +108,7 @@ See `conf/config.json.example` for every option. The ones that shape behaviour:
 
 ## Web dashboard
 
-At `http://localhost:3000` when enabled, with a picker for the bot. Per bot: recent decisions with the evaluator's reason (including `[spontaneous] …` and the cooldown and ratio suppressions), responses with the full prompt that produced them (the `SAY IT DIFFERENTLY` block and the `ON YOUR MIND TODAY` line are visible there), the message database, and the journals and people notes with every version and the Archivist's rationale, editable, with a pass on demand.
+At `http://localhost:3000` when enabled, with a picker for the bot. Per bot: recent decisions with the evaluator's reason (including `[spontaneous] …`), responses with the full prompt that produced them (the `SAY IT DIFFERENTLY` block and the `ON YOUR MIND TODAY` line are visible there), the message database, and the journals and people notes with every version and the Archivist's rationale, editable, with a pass on demand.
 
 ## Data
 

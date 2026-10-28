@@ -187,15 +187,17 @@ test("incoming reactions are stored and removed, typing notifications ignored", 
   assert.deepEqual(db.attachThreading([db.getMessage(line.id)])[0].reactions, []);
 });
 
-test("a reply to one of his lines counts as naming him", () => {
+test("a reply to one of his lines is threaded onto it, so the evaluator sees who it answers", () => {
   const db = freshDb();
-  const { bot } = fakeBot(db);
   const mine = store(db, "mabel", "tea is a soup", { isBot: true });
   store(db, "alice", "lunch plans");
   store(db, "bob", "pizza", {});
   store(db, "carol", "disagree", { replyTo: mine.id });
   const recent = db.getRecentMessages("#c", 50, true);
-  assert.equal(bot.addressSinceLastBotMessage(recent), "named");
+  const reply = recent[recent.length - 1];
+  assert.equal(reply.content, "disagree");
+  assert.equal(reply.reply_to_message_id, mine.id);
+  assert.equal(reply.reply_to.is_bot_message, true);
 });
 
 test("the evaluator answers with line references and a reaction; the client gets message ids", async () => {

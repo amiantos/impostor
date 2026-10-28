@@ -64,7 +64,7 @@ npm start
 
 ## Key Features
 
-- **Autonomous Responses**: Bot monitors conversations and decides when to naturally respond (debounced, cooldown- and ratio-gated)
+- **Autonomous Responses**: Bot monitors conversations and decides when to naturally respond (debounced; the evaluator alone decides, no gate in code)
 - **Direct Mentions**: Mentioning the bot's name (persona name or `watchword`) or nick triggers a direct response
 - **Journal**: The Archivist runs per conversation at 40 new lines, or 20 quiet minutes with 5+ new lines (`journal.*`); reads a backlog in passes of 200; a failed or unparseable answer leaves the watermark alone. The reply prompt gets the journal and the notes for the nicks in the window; the evaluator gets the journal. No memory is written on the reply path (the `remember` tool is gone)
 - **The screen**: the reply model and the evaluator both see `screenFor`: the last `context.screen_lines` (50) lines however old, reaching back further to every line the journal hasn't read yet (capped at `context.max_lines`, 150), so no line is in neither the chatlog nor memory. There is no age or gap cut: a silence of `context.lull_minutes` (30) shows as `--- 3 hours later ---`, and the evaluator gets a `--- new since NAME last spoke ---` divider and is told to decide mainly on what's below it. Only the newest `context.max_link_summaries` (5) link summaries go in the reply prompt
@@ -107,18 +107,11 @@ SQLite database per bot at `data/<id>/impostor.db`:
 ### Autonomous Response
 1. All messages tracked in configured channels
 2. Debounce timer (`autonomous.debounce_seconds`, default 20s) waits for conversation to settle. Each line pushes it back, but a wait has a deadline (`max_wait_seconds`, 60s) fixed when it began, and a line naming the bot pulls that deadline in (`address_wait_seconds`, 5s); otherwise a busy channel would reset the timer forever (`classes/eval_debounce.js`)
-3. `addressSinceLastBotMessage` classifies who, if anyone, is talking to him. Plain IRC has no reply threading, so this is mostly inferred:
-   - **`named`** — someone used his name/nick, or sent an IRCv3 reply to one of his lines. Straight to the evaluator, no dampers.
-   - **`reply`** — nobody named him, but within `reply_window_seconds` (180) of his last message a human used second person, asked a question, *or* was the only person speaking (a 1:1 exchange). Also goes to the evaluator.
-   - **`none`** — he'd be volunteering into a conversation that moved on without him.
-4. Only `none` hits the hard local gates, which run *before* the model is asked anything so a burst can't talk its way past them (and nothing at all runs while `presence.gone`):
-   - **Cooldown** — after speaking he needs `cooldown_messages` (3) new messages *and* `cooldown_seconds` (45) of wall clock
-   - **Ratio ceiling** — blocked when he's already `max_bot_ratio` (0.4) of the last `ratio_window` (10) messages
-5. `ResponseEvaluator` asks DeepSeek for `respond` / `react` / `ignore` (messages shown as `[m3] nick: …`; `react` also returns the line ref and the reaction). A `reply` that arrives inside the cooldown window passes `restraint: true`, which tells the evaluator to answer only if something genuinely new was raised. Inside the reaction cooldown it's told `react` is unavailable, and a `react` anyway becomes `ignore`.
-6. If `respond`, generates via the same pipeline as a direct mention
-7. Decision logged with reasoning — suppressions land in `decision_log` as `[ignore] cooldown: …` / `[ignore] bot ratio …`
+3. Nothing runs while `presence.gone`; otherwise the evaluator is asked. There is no gate in code before it. `ResponseEvaluator` asks DeepSeek for `respond` / `react` / `ignore` (messages shown as `[m3] nick: …`; `react` also returns the line ref and the reaction). It is told the bot's share of the last 20 lines as information, not a limit, and that someone continuing a conversation with the bot without typing its name is still talking to it. Inside the reaction cooldown it's told `react` is unavailable, and a `react` anyway becomes `ignore`.
+4. If `respond`, generates via the same pipeline as a direct mention
+5. Decision logged with reasoning
 
-His problem was never total volume (~11% of channel messages) but clustering: he'd answer a message, then answer the two-word correction that followed it. The split matters — **hard-blocking is reserved for the unaddressed case**, because going silent on someone plainly talking to you is a worse failure than being a little chatty. Everything else is handled by the evaluator prompt's "one turn per thought" rule. Tune `cooldown_messages`/`cooldown_seconds` to trade responsiveness against chattiness.
+Whether a bot is talking too much is the evaluator's judgement from the conversation and the persona ("one turn per thought": a correction to something already answered gets nothing; the person it is talking with asking something new gets a hearing however recently it spoke). Until 2026-10-28 an unaddressed line was first held to a code-side cooldown (3 new messages *and* 45 seconds since the bot last spoke) and a ratio ceiling. The message count had no expiry, so in a slow channel a bot that had just had a 1:1 exchange stayed silent on that same person for hours (layla and nightmare in #bots, 26 to 221 minutes); it was removed, along with the address classifier and the `restraint` evaluator mode that only existed to soften it. If two bots spiral, that is a prompt fix, by decision.
 
 ## IRC Details
 

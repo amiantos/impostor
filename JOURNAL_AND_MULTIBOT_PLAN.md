@@ -123,7 +123,7 @@ pass, like a Continuity's History tab. No restore button to start with; delete a
       "channels": ["#lurker"],
       "pm_allowed_users": ["amiantos"],
       "generator": { "temperature": 0.9 },
-      "autonomous": { "cooldown_seconds": 45 }
+      "autonomous": { "debounce_seconds": 20 }
     }
   ]
 }
@@ -175,11 +175,13 @@ loses nothing of the others'.
 
 ### Bots hearing bots
 
-No special handling. A line from another bot is a line like any other: the same cooldown and
-ratio gates on the unaddressed path, the same evaluator on the addressed one. Two bots talking
-should wind down because their personas and the evaluator's "one turn per thought" rule say so,
-not because a rule about bots says so. If a loop shows up on the live server it is a prompt fix.
-(Decided 2026-10-26; the earlier draft proposed a bots-share-the-ratio rule.)
+No special handling. A line from another bot is a line like any other: the same evaluator, no
+gate in code. Two bots talking should wind down because their personas and the evaluator's "one
+turn per thought" rule say so, not because a rule about bots says so. If a loop shows up on the
+live server it is a prompt fix. (Decided 2026-10-26; the earlier draft proposed a
+bots-share-the-ratio rule. The code-side cooldown and ratio ceiling on unaddressed lines were
+removed 2026-10-28: in a slow channel the cooldown's message count never cleared, so a bot went
+silent on the person it was talking to for hours.)
 
 ### Accounts on irc.lurker.chat
 

@@ -5,7 +5,7 @@ const { listBots, resolveBotConfig } = require("../classes/bot_config");
 const shared = {
   generator: { deepseek: { api_key: "k", model: "deepseek-flash", temperature: 0.9 } },
   irc: { host: "irc.lurker.chat", port: 6697, tls: true, bridge_nick: "EyeBridge", max_line_length: 340 },
-  autonomous: { enabled: true, cooldown_seconds: 45, debounce_seconds: 20 },
+  autonomous: { enabled: true, debounce_seconds: 20, max_wait_seconds: 60 },
   url_summarize: { enabled: true },
   journal: { messages_per_pass: 40 },
   kagi: { api_key: "kagi" },
@@ -20,7 +20,7 @@ test("a bot inherits every shared section and overrides key by key", () => {
     channels: ["#lurker"],
     account: { password: "pw" },
     generator: { temperature: 0.5 },
-    autonomous: { cooldown_seconds: 90 },
+    autonomous: { max_wait_seconds: 90 },
     journal: { quiet_minutes: 5 },
   });
   assert.equal(cfg.irc.host, "irc.lurker.chat");
@@ -33,7 +33,7 @@ test("a bot inherits every shared section and overrides key by key", () => {
   assert.equal(cfg.irc.password, "pw");
   assert.equal(cfg.generator.deepseek.model, "deepseek-flash");
   assert.equal(cfg.generator.deepseek.temperature, 0.5);
-  assert.equal(cfg.autonomous.cooldown_seconds, 90);
+  assert.equal(cfg.autonomous.max_wait_seconds, 90);
   assert.equal(cfg.autonomous.debounce_seconds, 20);
   assert.deepEqual(cfg.journal, { messages_per_pass: 40, quiet_minutes: 5 });
   assert.equal(cfg.kagi.api_key, "kagi");
