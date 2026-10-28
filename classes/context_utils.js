@@ -106,6 +106,10 @@ A line above the chatlog may list who is in the channel right now, and who of th
 
 YOUR DAY:
 Like anyone in the channel you have a day: you sleep, you go out, you're busy sometimes. When this prompt ends with a "RIGHT NOW" line, it tells you what you've been doing today, whether you just got back, and what's coming up. It is true: treat it as your own day and your own reasons. Bring it up only when it fits (someone asks where you were, it's late, you've just come back to a pile of messages, you're about to head off); don't narrate your routine unprompted, and don't invent details beyond it. When your away status shows you as afk it just means you hadn't typed in a while.
+An "ON YOUR MIND TODAY" line, when there is one, lists a few things from your own day and your own head. They are yours to bring up when there's a natural opening (someone asks what you're up to, the conversation drifts near one, a lull), so you have something of your own to say instead of only reacting to the other person; they are not a list to work through. Most replies won't touch them, and once you've brought one up it's done.
+
+SAYING IT DIFFERENTLY:
+Your own recent lines are on the screen and it is easy to keep doing whatever you did last: the same pet name, the same sign-off, the same emoji at the end, the same joke with the words moved. Don't. A bit is funny once and a callback once more; after that it's a tic. When the prompt ends with a "SAY IT DIFFERENTLY" note, it names the moves you've been leaning on in this conversation; rest them.
 
 RELAY BOTS:
 A bridge bot may live in the channel and relay lines from elsewhere (another IRC network, Discord, GitHub, a forum). It is not a person and you cannot have a conversation with it - never address it directly. Relayed humans are shown under their own nick, so engage with them like any channel regular. Automated announcements (a repo or forum tag followed by "opened", "closed", "released", a post excerpt and a url) are not from a human: do not respond unless someone in the channel explicitly asks you about them.
@@ -326,8 +330,13 @@ Do not include any text outside of this JSON structure. The "message" field shou
   /**
    * @param {string|null} [presence] - A line about the bot's day right now
    *   (see Presence.describe); appended after the date when given
+   * @param {Date} [now]
+   * @param {Object} [extras]
+   * @param {string[]} [extras.onYourMind] - Today's seeds (see
+   *   ImpostorClient.todaysSeeds): a few things of the bot's own to bring
+   *   up when there's an opening, listed after the RIGHT NOW line
    */
-  buildInstructions(presence = null, now = new Date()) {
+  buildInstructions(presence = null, now = new Date(), { onYourMind = [] } = {}) {
     const dateStr = this.formatNow(now);
     // The persona's own text goes in last so nothing in it is taken for a placeholder.
     const medium = ContextUtils.medium_prompt
@@ -338,7 +347,9 @@ Do not include any text outside of this JSON structure. The "message" field shou
       .replaceAll("TIMEZONE", this.timezoneLabel())
       .replace("REACTION_STYLE", () => this.persona.reactions || ContextUtils.DEFAULT_REACTION_STYLE);
     const rightNow = presence ? `\nRIGHT NOW: ${presence}` : "";
-    return `${this.persona.character}\n\n${medium}\n\nCURRENT DATE/TIME: ${dateStr}${rightNow}`;
+    const onMind =
+      onYourMind.length > 0 ? `\nON YOUR MIND TODAY: ${onYourMind.map((s, i) => `(${i + 1}) ${s}`).join(" ")}` : "";
+    return `${this.persona.character}\n\n${medium}\n\nCURRENT DATE/TIME: ${dateStr}${rightNow}${onMind}`;
   }
 
   getResponseSchema() {
@@ -619,10 +630,13 @@ Do not include any text outside of this JSON structure. The "message" field shou
    *   The channel has been quiet this long and the bot has been offered the
    *   floor: an unprompted line, drawing on today's seeds, something it saw
    *   (a looked-up answer), its day, the screen, or the people present
+   * @param {string|null} [options.tics] - The tic ledger for this
+   *   conversation (see classes/tics.js): the moves the bot has been
+   *   repeating here, placed right before the closing instruction
    * @returns {Array} Single-element array with consolidated user message
    */
   buildChatMessagesConsolidated(dbMessages, clientUserId, triggerInfo, imageDescriptions = null, memory = null, options = {}) {
-    const { refs = ContextUtils.assignRefs(dbMessages), canReact = true, leaving = null, whoIsHere = null, spontaneous = null } = options;
+    const { refs = ContextUtils.assignRefs(dbMessages), canReact = true, leaving = null, whoIsHere = null, spontaneous = null, tics = null } = options;
     const allUrlSummaries = [];
     let triggerMessageText = null;
 
@@ -667,6 +681,9 @@ Do not include any text outside of this JSON structure. The "message" field shou
     }
 
     const reactNote = canReact ? "" : ` Reactions are unavailable right now, so leave "react" null.`;
+
+    // What the bot has been repeating here, right where the instruction is.
+    if (tics) consolidatedContent += `\n\n${tics}`;
 
     // Add explicit instruction about who to respond to, quoting their message
     // so the model doesn't have to scan the chatlog to find what it's replying to.

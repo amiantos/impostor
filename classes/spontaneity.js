@@ -330,18 +330,24 @@ class SilenceDirector {
 }
 
 /**
- * A few of the bot's seeds for today: the same few all day (seeded by bot
- * and date), different tomorrow.
+ * A few of the bot's seeds for today: the day's order is fixed (seeded by
+ * bot and date, different tomorrow), and `offset` slides the window along
+ * it, so after the bot has spoken from the list once the first seed drops
+ * off and a fresh one comes in instead of the same three showing all day.
  * @param {string[]} seeds
  * @param {string} key - e.g. "layla|2026-10-28"
  * @param {number} n
+ * @param {number} [offset=0] - How many to skip from the front (wraps)
  */
-function seedsForDay(seeds, key, n) {
+function seedsForDay(seeds, key, n, offset = 0) {
   if (!seeds || seeds.length === 0 || n <= 0) return [];
   const ranked = seeds
     .map((seed, i) => ({ seed, u: hash01(`${key}|${i}|${seed}`) }))
-    .sort((a, b) => a.u - b.u);
-  return ranked.slice(0, n).map((r) => r.seed);
+    .sort((a, b) => a.u - b.u)
+    .map((r) => r.seed);
+  const out = [];
+  for (let i = 0; i < Math.min(n, ranked.length); i++) out.push(ranked[(offset + i) % ranked.length]);
+  return out;
 }
 
 class NewsDesk {

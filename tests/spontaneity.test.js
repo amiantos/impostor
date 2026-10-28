@@ -217,3 +217,12 @@ test("the news desk caches an answer per query and forgets failures", async () =
   assert.equal(calls.filter((q) => q === "nothing").length, 2, "a failure is not cached");
   assert.equal(await new NewsDesk({ search: {} }).lookup("x"), null);
 });
+
+test("seedsForDay slides its window by the offset, wrapping, so a used seed drops off", () => {
+  const seeds = ["a", "b", "c", "d", "e"];
+  const day = seedsForDay(seeds, "layla|2026-10-28", 5);
+  assert.deepEqual(seedsForDay(seeds, "layla|2026-10-28", 3, 0), day.slice(0, 3));
+  assert.deepEqual(seedsForDay(seeds, "layla|2026-10-28", 3, 1), day.slice(1, 4));
+  assert.deepEqual(seedsForDay(seeds, "layla|2026-10-28", 3, 4), [day[4], day[0], day[1]]);
+  assert.deepEqual(seedsForDay(["only"], "x", 3, 2), ["only"]);
+});

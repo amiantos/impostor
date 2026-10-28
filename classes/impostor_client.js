@@ -14,6 +14,7 @@ const { debounceConfig, planEvaluation } = require("./eval_debounce");
 const { Presence } = require("./presence");
 const { Roster } = require("./roster");
 const { SilenceDirector, Spontaneity, NewsDesk, seedsForDay } = require("./spontaneity");
+const { findTics, ticLedgerText } = require("./tics");
 const { localParts } = require("./schedule");
 
 /**
@@ -1612,7 +1613,11 @@ class ImpostorClient {
     leaving = null,
     spontaneous = null,
   }) {
-    const systemPrompt = this.contextUtils.buildInstructions(this.presence.describe(undefined, { leaving }));
+    // Today's seeds go in every prompt as ON YOUR MIND TODAY; a spontaneous
+    // turn lists them in its own instruction instead.
+    const systemPrompt = this.contextUtils.buildInstructions(this.presence.describe(undefined, { leaving }), new Date(), {
+      onYourMind: spontaneous ? [] : this.todaysSeeds(),
+    });
     this.logger.debug("Generated System Prompt...", systemPrompt);
 
     if (!dbMessages || !triggerInfo) {
@@ -1630,6 +1635,7 @@ class ImpostorClient {
         leaving: leaving ? leaving.block.activity : null,
         spontaneous,
         whoIsHere: triggerInfo.channelName ? this.roster.describe(triggerInfo.channelName) : null,
+        tics: triggerInfo.channelName ? this.ticLedger(triggerInfo.channelName) : null,
       }
     );
 
@@ -1738,6 +1744,10 @@ Reply with valid JSON in the format described above.`,
         messages: conversationLog,
         max_tokens: this.config.generator.deepseek.max_tokens,
         temperature: this.config.generator.deepseek.temperature,
+        // A mild frequency penalty leans against the bot echoing the phrases
+        // on its own screen; kept small so the JSON envelope isn't penalised.
+        frequency_penalty: this.config.generator.deepseek.frequency_penalty ?? 0.3,
+        presence_penalty: this.config.generator.deepseek.presence_penalty ?? 0,
         response_format: { type: "json_object" },
         // Flash thinks by default and its reasoning tokens are drawn from the
         // same max_tokens budget as the JSON reply, so a long think can starve
@@ -1935,10 +1945,7 @@ Reply with valid JSON in the format described above.`,
    * @param {{journal: string|null, people: Map<string, string>}} memory - Extended in place
    */
   async spontaneousMaterial(channelName, memory) {
-    const now = new Date();
-    const day = localParts(now, this.contextUtils.timezone);
-    const dateKey = `${day.year}-${String(day.month).padStart(2, "0")}-${String(day.day).padStart(2, "0")}`;
-    const seeds = seedsForDay(this.persona.seeds, `${this.id}|${dateKey}`, this.spontaneity.seedsPerDay);
+    const seeds = this.todaysSeeds();
 
     let news = null;
     const queries = this.persona.news || [];
@@ -1956,6 +1963,39 @@ Reply with valid JSON in the format described above.`,
       memory.people = new Map([...(memory.people || []), ...notes]);
     }
     return { seeds, news, people };
+  }
+
+  /**
+   * A few of the persona's seeds for today (`seeds_per_day`), in every
+   * prompt as ON YOUR MIND TODAY and in a spontaneous turn's material. The
+   * day's order is fixed by bot id and date; the window slides one along
+   * for each unprompted line spoken today, so a seed already used drops off.
+   * @param {Date} [now]
+   */
+  todaysSeeds(now = new Date()) {
+    const day = localParts(now, this.contextUtils.timezone);
+    const dateKey = `${day.year}-${String(day.month).padStart(2, "0")}-${String(day.day).padStart(2, "0")}`;
+    return seedsForDay(this.persona.seeds, `${this.id}|${dateKey}`, this.spontaneity.seedsPerDay, this.spontaneity.spokenInLastDay(now));
+  }
+
+  /**
+   * The tic ledger for a conversation (see classes/tics.js): the phrases,
+   * emoji and line shapes this bot has been repeating in its last
+   * `context.tic_lines` lines there, as the prompt block, or null.
+   * @param {string} channelId
+   */
+  ticLedger(channelId) {
+    const lines = this.config.context?.tic_lines ?? 30;
+    if (lines <= 0) return null;
+    try {
+      const ledger = findTics(this.db.getRecentBotLines(channelId, lines), {
+        reactions: this.db.getRecentBotReactions(channelId, 10),
+      });
+      return ticLedgerText(ledger);
+    } catch (err) {
+      this.logger.warn(`Tic ledger for ${channelId} failed: ${err.message}`);
+      return null;
+    }
   }
 
   /**
@@ -2029,6 +2069,7 @@ Reply with valid JSON in the format described above.`,
       connected: Boolean(this.ircClient?.connected),
       presence: this.presence.snapshot(),
       spontaneous: this.spontaneity.snapshot(),
+      on_your_mind: this.todaysSeeds(),
       silences: this.ownDirector ? this.director.snapshot() : undefined,
     };
   }

@@ -241,3 +241,24 @@ test("a message with line breaks keeps them, indented under its first line", () 
   const lines = ctx.renderChatlog([msg("bob", "first line\nsecond line")]);
   assert.equal(lines.at(-1), "[05:00] <bob> first line\n    second line");
 });
+
+test("the tic ledger goes right before the closing instruction, and today's seeds after RIGHT NOW", () => {
+  const ctx = new ContextUtils(silent, persona);
+  const [message] = ctx.buildChatMessagesConsolidated(
+    [msg("amiantos", "mabel: hey")],
+    "mabel",
+    { userName: "amiantos", channelName: "#lurker" },
+    null,
+    null,
+    { tics: 'SAY IT DIFFERENTLY: over your last 20 lines here you keep leaning on the same moves: "old man" (9 of them). Rest all of these for now.' }
+  );
+  assert.match(message.content, /<amiantos> mabel: hey\n\nSAY IT DIFFERENTLY: .*"old man" \(9 of them\)\. Rest all of these for now\.\n\nRespond to amiantos/s);
+  const [plain] = ctx.buildChatMessagesConsolidated([msg("amiantos", "mabel: hey")], "mabel", { userName: "amiantos", channelName: "#lurker" });
+  assert.doesNotMatch(plain.content, /SAY IT DIFFERENTLY/);
+
+  const system = ctx.buildInstructions("You're in bed.", new Date("2026-10-28T19:00:00Z"), { onYourMind: ["the dishes situation", "a song on repeat"] });
+  assert.match(system, /RIGHT NOW: You're in bed\.\nON YOUR MIND TODAY: \(1\) the dishes situation \(2\) a song on repeat$/);
+  assert.match(system, /An "ON YOUR MIND TODAY" line, when there is one/);
+  assert.match(system, /SAYING IT DIFFERENTLY:/);
+  assert.doesNotMatch(ctx.buildInstructions("x"), /ON YOUR MIND TODAY:/);
+});

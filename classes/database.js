@@ -547,6 +547,32 @@ class DatabaseManager {
     return messages;
   }
 
+  /**
+   * The bot's own last `limit` lines in a conversation, oldest first, as
+   * strings: what the tic ledger reads (classes/tics.js).
+   */
+  getRecentBotLines(channelId, limit = 30) {
+    return this.db
+      .prepare(`
+        SELECT content FROM (
+          SELECT content, created_at FROM messages
+          WHERE channel_id = ? AND is_bot_message = 1
+          ORDER BY created_at DESC
+          LIMIT ?
+        ) ORDER BY created_at ASC
+      `)
+      .all(channelId, limit)
+      .map((row) => row.content);
+  }
+
+  /** The bot's own last `limit` reactions in a conversation, newest first, as strings. */
+  getRecentBotReactions(channelId, limit = 10) {
+    return this.db
+      .prepare(`SELECT reaction FROM reactions WHERE channel_id = ? AND is_bot_message = 1 ORDER BY created_at DESC, id DESC LIMIT ?`)
+      .all(channelId, limit)
+      .map((row) => row.reaction);
+  }
+
   // IRCv3 msgids, reactions and replies
 
   /** Record that the server knows this message as `msgid`. */

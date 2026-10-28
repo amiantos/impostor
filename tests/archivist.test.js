@@ -408,3 +408,10 @@ test("pruning keeps an unread backlog but still bounds conversations without a j
   assert.equal(db.countMessagesAfterRowid("stranger", 0), 4);
   db.close();
 });
+
+test("the Archivist is told to paraphrase, never to quote the bot's own lines into its memory", () => {
+  const { system } = buildArchivistPrompt({
+    persona, conversationId: "bob", journal: "", people: new Map(), nicks: ["bob"], lines: ["x"], part: { index: 0, count: 1 }, cfg: journalConfig({}),
+  });
+  assert.match(system, /Voice means attitude, not vocabulary: paraphrase\. Never quote Isaac's own lines, and never carry Isaac's catchphrases, pet names, sign-offs or running jokes/);
+});
