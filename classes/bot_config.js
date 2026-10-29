@@ -1,7 +1,8 @@
 /**
  * One config file runs several bots. Top-level sections are shared; each
  * entry in `bots` names a bot and may override `irc`, `generator`,
- * `autonomous`, `url_summarize`, `journal`, `context`, `presence` and `spontaneous` key by key. The result for a
+ * `autonomous`, `url_summarize`, `journal`, `context`, `presence` and
+ * `spontaneous` key by key, and may give a `weather` place. The result for a
  * bot has the same shape the single-bot code always read (`config.irc.nick`,
  * `config.generator.deepseek.model`, ...), plus a `bot` block with its id and
  * persona path.
@@ -35,6 +36,15 @@ function listBots(config) {
     }
     if (bot.avatar_url !== undefined && !/^https?:\/\/\S+$/.test(bot.avatar_url)) {
       throw new Error(`Bot "${bot.id}": avatar_url must be an http(s) URL`);
+    }
+    if (bot.weather !== undefined) {
+      const w = bot.weather;
+      if (!w || typeof w !== "object" || !Number.isFinite(Number(w.latitude)) || !Number.isFinite(Number(w.longitude))) {
+        throw new Error(`Bot "${bot.id}": weather needs numeric latitude and longitude`);
+      }
+      if (w.units !== undefined && !["metric", "imperial"].includes(w.units)) {
+        throw new Error(`Bot "${bot.id}": weather.units must be "metric" or "imperial"`);
+      }
     }
     for (const key of ["api_key", "base_url"]) {
       if (bot.generator?.[key] !== undefined) {
@@ -105,6 +115,8 @@ function resolveBotConfig(shared, bot) {
     // The zone every timestamp the bot sees is rendered in; a bot may live
     // somewhere else than the others.
     timezone: bot.timezone || shared.timezone || undefined,
+    // Where the bot lives, for the weather line; nowhere means no weather.
+    weather: bot.weather || null,
     // Lowercased: it names the data directory and the dashboard's ?bot= key.
     bot: { id: bot.id.toLowerCase(), persona: bot.persona },
     bots: undefined,

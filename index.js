@@ -10,6 +10,7 @@ const WebFetchTool = require("./classes/web_fetch_tool");
 const { listBots, resolveBotConfig } = require("./classes/bot_config");
 const { loadPersona } = require("./classes/persona");
 const { SilenceDirector, NewsDesk } = require("./classes/spontaneity");
+const { WeatherDesk } = require("./classes/weather");
 const WebServer = require("./web/server");
 
 const logger = new Logger(true);
@@ -37,6 +38,8 @@ const bots = listBots(config);
 // channel, and one news cache so they don't all run the same search.
 const director = new SilenceDirector({ logger: logger.child("silence"), config: config.spontaneous || {} });
 const newsDesk = new NewsDesk({ search: tools.webSearchTool, ttlMinutes: config.spontaneous?.news_cache_minutes ?? 360 });
+// One weather cache: bots at the same place share a lookup.
+const weatherDesk = new WeatherDesk({ logger: logger.child("weather"), ttlMinutes: config.weather_cache_minutes ?? 60 });
 
 // Before bots had ids the one database lived at data/impostor.db. Move it
 // under the first bot once, so a deployment keeps its history.
@@ -63,6 +66,7 @@ for (const bot of bots) {
     dataDir,
     director,
     newsDesk,
+    weatherDesk,
   });
   clients.set(client.id, client);
   logger.info(`Bot "${client.id}" is ${persona.name} as ${bot.nick} in ${(bot.channels || []).join(", ") || "no channels"}`);

@@ -110,6 +110,15 @@ test("display_name is carried into irc and must be a non-empty string", () => {
   );
 });
 
+test("a bot may have a place for the weather, with numeric coordinates", () => {
+  const bot = { id: "nightmare", nick: "nightmare", persona: "p", weather: { latitude: 47.6, longitude: -122.3, units: "imperial" } };
+  assert.deepEqual(resolveBotConfig(shared, bot).weather, { latitude: 47.6, longitude: -122.3, units: "imperial" });
+  assert.equal(resolveBotConfig(shared, { id: "a", nick: "a", persona: "p" }).weather, null);
+  assert.doesNotThrow(() => listBots({ bots: [bot] }));
+  assert.throws(() => listBots({ bots: [{ ...bot, weather: { latitude: "here" } }] }), /weather needs numeric latitude and longitude/);
+  assert.throws(() => listBots({ bots: [{ ...bot, weather: { latitude: 1, longitude: 2, units: "kelvin" } }] }), /weather.units must be/);
+});
+
 test("avatar_url is carried into irc and must be an http(s) URL", () => {
   const cfg = resolveBotConfig(shared, { id: "b", nick: "Bob", persona: "p.md", avatar_url: "https://x.test/bob.png" });
   assert.equal(cfg.irc.avatar_url, "https://x.test/bob.png");

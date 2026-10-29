@@ -1,5 +1,6 @@
 const fs = require("fs");
 const { parseSchedule } = require("./schedule");
+const { parseCalendar } = require("./calendar");
 
 /**
  * A persona is a markdown file: the character under a top-level "# Name"
@@ -11,11 +12,13 @@ const { parseSchedule } = require("./schedule");
  * optional "## Seeds" list (things they would bring up unprompted into a
  * quiet channel; a few are drawn per day) and an optional "## News" list
  * (search queries for what they'd keep up with; one is looked up before
- * some unprompted turns). Everything about the medium (IRC, the chatlog,
- * the JSON protocol, tools) lives in code; the file holds only who the bot is.
+ * some unprompted turns), and an optional "## Calendar" list (dates that
+ * mean something to them, see calendar.js; the prompts say which are today
+ * or near). Everything about the medium (IRC, the chatlog, the JSON
+ * protocol, tools) lives in code; the file holds only who the bot is.
  *
  * @param {string} text - The file's contents
- * @returns {{name: string, character: string, evaluator: string, reactions: string|null, schedule: Object|null, seeds: string[], news: string[]}}
+ * @returns {{name: string, character: string, evaluator: string, reactions: string|null, schedule: Object|null, seeds: string[], news: string[], calendar: Array}}
  */
 function parsePersona(text) {
   const lines = String(text ?? "").replace(/\r\n/g, "\n").split("\n");
@@ -57,6 +60,12 @@ function parsePersona(text) {
   }
   const seeds = parseList(sections.get("seeds"));
   const news = parseList(sections.get("news"));
+  let calendar = [];
+  try {
+    calendar = parseCalendar(sections.get("calendar"));
+  } catch (err) {
+    throw new Error(`Persona "${name}": ${err.message}`);
+  }
 
   return {
     name,
@@ -70,6 +79,8 @@ function parsePersona(text) {
     // Without these, unprompted turns draw only on the day, the screen and the notes.
     seeds,
     news,
+    // Without one, no date means anything in particular.
+    calendar,
   };
 }
 
