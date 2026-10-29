@@ -41,6 +41,25 @@ test("away-notify sets and clears away with the message; WHO only sets the flag"
   assert.deepEqual(r.present("#c"), ["amiantos", "isaac", "nightmare"]);
 });
 
+test("someone who just arrived is marked for a few minutes", () => {
+  const r = make();
+  r.setUserlist("#c", ["amiantos", "isaac"]);
+  assert.equal(r.describe("#c"), "In #c right now: amiantos, isaac.", "the people who were here when the bot came are not arrivals");
+  r.join("bob", "#c", new Date(now.getTime() - 30 * 1000));
+  r.join("carol", "#c", new Date(now.getTime() - 6 * 60 * 1000));
+  r.join("dave", "#c", new Date(now.getTime() - 15 * 60 * 1000));
+  assert.equal(r.describe("#c"), "In #c right now: amiantos, isaac, bob (just joined), carol (joined 6 minutes ago), dave.");
+  r.setAway("bob", "afk since 2026-10-28 01:29:00-0500");
+  assert.equal(r.describe("#c"), "In #c right now: amiantos, isaac, bob (afk for 1 minute, just joined), carol (joined 6 minutes ago), dave.");
+  r.rename("carol", "caroline");
+  assert.match(r.describe("#c"), /caroline \(joined 6 minutes ago\)/);
+  r.leave("caroline", "#c");
+  r.join("caroline", "#c", new Date(now.getTime() - 20 * 60 * 1000));
+  assert.doesNotMatch(r.describe("#c"), /caroline \(/, "a leave forgets the arrival");
+  r.setUserlist("#c", ["amiantos", "bob"]);
+  assert.equal(r.describe("#c"), "In #c right now: amiantos, bob (afk for 1 minute, just joined).", "a fresh NAMES keeps known arrivals");
+});
+
 test("says when everyone is away, and describes a DM partner only when they are away", () => {
   const r = make();
   r.setUserlist("#c", ["amiantos", "isaac"]);

@@ -14,13 +14,15 @@ class Roster {
    * @param {string|null} [options.bridgeNick] - The relay bot, also left out
    * @param {() => Date} [options.clock]
    */
-  constructor({ selfNick, bridgeNick = null, clock = () => new Date() }) {
+  constructor({ selfNick, bridgeNick = null, clock = () => new Date(), recentJoinMinutes = 10 }) {
     this.selfNick = selfNick;
     this.bridgeNick = bridgeNick;
     this.clock = clock;
+    this.recentJoinMinutes = recentJoinMinutes;
     this.members = new Map(); // channel (lower) -> Map(nick lower -> nick as spelled)
     this.away = new Map(); // nick lower -> { message: string|null, since: Date }
     this.typing = new Map(); // channel (lower) -> { nick, at: Date }
+    this.joined = new Map(); // "channel|nick" (lower) -> Date someone arrived, after the bot was already there
   }
 
   static key(s) {
@@ -43,19 +45,31 @@ class Roster {
     this.members.set(Roster.key(channel), list);
   }
 
-  join(nick, channel) {
+  /** Someone arrived while the bot was in the channel (NAMES on the bot's own join is setUserlist). */
+  join(nick, channel, at = this.clock()) {
     this.channel(channel).set(Roster.key(nick), nick);
+    this.joined.set(`${Roster.key(channel)}|${Roster.key(nick)}`, at);
   }
 
   leave(nick, channel) {
     const list = this.members.get(Roster.key(channel));
     if (list) list.delete(Roster.key(nick));
+    this.joined.delete(`${Roster.key(channel)}|${Roster.key(nick)}`);
     if (!this.isAnywhere(nick)) this.away.delete(Roster.key(nick));
   }
 
   quit(nick) {
     for (const list of this.members.values()) list.delete(Roster.key(nick));
+    for (const key of [...this.joined.keys()]) if (key.endsWith(`|${Roster.key(nick)}`)) this.joined.delete(key);
     this.away.delete(Roster.key(nick));
+  }
+
+  /** Minutes since someone arrived, when it was within recentJoinMinutes; otherwise null. */
+  joinedAgo(nick, channel, now = this.clock()) {
+    const at = this.joined.get(`${Roster.key(channel)}|${Roster.key(nick)}`);
+    if (!at) return null;
+    const minutes = Math.max(0, Math.round((now - at) / 60000));
+    return minutes <= this.recentJoinMinutes ? minutes : null;
   }
 
   /** The bot itself left or was kicked: forget the channel. */
@@ -71,6 +85,12 @@ class Roster {
       if (list.has(from)) {
         list.delete(from);
         list.set(to, newNick);
+      }
+    }
+    for (const [key, at] of [...this.joined.entries()]) {
+      if (key.endsWith(`|${from}`)) {
+        this.joined.delete(key);
+        this.joined.set(key.slice(0, -from.length) + to, at);
       }
     }
     if (this.away.has(from)) {
@@ -188,8 +208,11 @@ class Roster {
 
   /**
    * One line for the prompts, or null when nothing is known. For a channel:
-   * "amiantos, isaac (afk for 23 minutes), nightmare (away: grazing)". For a
-   * DM: the other person's away status, when they are away.
+   * "amiantos, isaac (afk for 23 minutes), nightmare (away: grazing), bob
+   * (just joined)". Someone who arrived in the last few minutes is marked,
+   * so a bot can notice an arrival the way a person does, without a join
+   * line in the chatlog. For a DM: the other person's away status, when
+   * they are away.
    * @param {string} conversationId - "#channel" or a nick
    * @param {Date} [now]
    */
@@ -201,8 +224,12 @@ class Roster {
     const others = this.others(conversationId);
     if (others.length === 0) return null;
     const parts = others.map((nick) => {
-      const label = Roster.awayLabel(this.awayOf(nick), now);
-      return label ? `${nick} (${label})` : nick;
+      const labels = [];
+      const away = Roster.awayLabel(this.awayOf(nick), now);
+      if (away) labels.push(away);
+      const ago = this.joinedAgo(nick, conversationId, now);
+      if (ago !== null) labels.push(ago < 2 ? "just joined" : `joined ${ago} minutes ago`);
+      return labels.length > 0 ? `${nick} (${labels.join(", ")})` : nick;
     });
     const away = others.filter((nick) => this.isAway(nick)).length;
     const note = away === others.length ? " Everyone else is away right now." : "";
