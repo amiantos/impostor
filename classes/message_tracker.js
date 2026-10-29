@@ -179,6 +179,10 @@ class MessageTracker {
   runMaintenance() {
     const maxMessages = this.config.max_messages_stored || 1000;
     this.db.pruneOldMessages(maxMessages);
+    // Stored prompts are the dashboard's "why did it say that"; they run to
+    // megabytes a day, so they go after a while.
+    const days = this.config.prompt_retention_days ?? 30;
+    if (days > 0) this.db.pruneOldPrompts(days);
     this.logger.debug("Message tracker maintenance completed");
   }
 }

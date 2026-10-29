@@ -46,9 +46,8 @@ function fakeBot(db) {
     presence: { gone: false, notePending() {}, describe() { return null; } },
     roster: { describe() { return null; } },
     evaluator: {
-      calculateBotRatio: () => 0.6,
-      shouldRespond: async (messages, botUserId, channel, ratio, options) => {
-        asked.push({ messages, ratio, options });
+      shouldRespond: async (messages, botUserId, channel, options) => {
+        asked.push({ messages, options });
         return { action: "ignore", reason: "test", decisionId: null };
       },
     },
@@ -73,7 +72,6 @@ test("an unaddressed line right after the bot spoke still goes to the evaluator:
   await bot.evaluateAutonomousResponse("#c");
 
   assert.equal(asked.length, 1, "the evaluator was asked");
-  assert.equal(asked[0].ratio, 0.6, "it is told the ratio as information");
   assert.equal(asked[0].options.restraint, undefined, "no restraint mode");
   assert.equal(asked[0].messages[asked[0].messages.length - 1].content, "what if it's a hostage");
   const suppressed = db.getDecisionsByChannel("#c", 10).filter((d) => /cooldown|ratio/.test(d.reason));

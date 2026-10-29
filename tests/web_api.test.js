@@ -89,6 +89,58 @@ test("a journal can be read with its history, edited, and forgotten", async () =
   assert.equal((await api(`/api/journals/${id}?bot=isaac`, { method: "DELETE" })).status, 404);
 });
 
+test("every model call stores what it cost, and /api/usage adds it up by kind of call", async () => {
+  const DatabaseManager = require("../classes/database");
+  const db = mabel.getDatabase();
+  const response = {
+    usage: { prompt_tokens: 1000, completion_tokens: 50, prompt_cache_hit_tokens: 900, prompt_cache_miss_tokens: 100, completion_tokens_details: { reasoning_tokens: 10 } },
+  };
+  const usage = DatabaseManager.usageOf(response, 1200);
+  assert.deepEqual(usage, { prompt_tokens: 1000, completion_tokens: 50, cache_hit_tokens: 900, cache_miss_tokens: 100, reasoning_tokens: 10, duration_ms: 1200, calls: 1 });
+  // A reply that took two calls adds them up.
+  DatabaseManager.usageOf(response, 800, usage);
+  assert.equal(usage.prompt_tokens, 2000);
+  assert.equal(usage.calls, 2);
+  // An answer without usage adds nothing and still counts the call.
+  assert.equal(DatabaseManager.usageOf({ choices: [] }, 5).calls, 1);
+  assert.equal(DatabaseManager.usageOf(null).calls, 0);
+
+  db.storePrompt({ promptType: "response", systemPrompt: "s", messagesJson: [{ role: "user", content: "u" }], model: "pro", temperature: 0.9, usage });
+  db.storePrompt({ promptType: "evaluation", conversationId: "#c", systemPrompt: "s", messagesJson: [], model: "flash", temperature: 0.7, usage: DatabaseManager.usageOf(response, 300) });
+  db.storePrompt({ promptType: "evaluation", conversationId: "#c", systemPrompt: "s", messagesJson: [], model: "flash", temperature: 0.7 });
+
+  const { status, body } = await api("/api/usage?bot=mabel&hours=1");
+  assert.equal(status, 200);
+  assert.equal(body.hours, 1);
+  const byType = Object.fromEntries(body.rows.map((r) => [r.prompt_type, r]));
+  assert.equal(byType.response.calls, 1);
+  assert.equal(byType.response.prompt_tokens, 2000);
+  assert.equal(byType.response.cache_hit_tokens, 1800);
+  assert.equal(byType.response.avg_duration_ms, 2000);
+  assert.equal(byType.evaluation.calls, 2, "a call stored without usage still counts");
+  assert.equal(byType.evaluation.prompt_tokens, 1000);
+  assert.equal(byType.evaluation.model, "flash");
+
+  // Old prompts are pruned; new ones stay.
+  db.db.prepare("UPDATE prompts SET created_at = ? WHERE prompt_type = 'response'").run(new Date(Date.now() - 40 * 24 * 3600 * 1000).toISOString());
+  assert.equal(db.pruneOldPrompts(30), 1);
+  assert.equal(db.getUsage(24 * 365).length, 1);
+});
+
+test("a note follows a nick change unless the new nick already has one", () => {
+  const db = isaac.getDatabase();
+  db.setPerson("layla", "a zoomer bot who is smarter than she lets on");
+  assert.equal(db.inheritPerson("layla", "notlayla"), true);
+  assert.equal(db.getPerson("notlayla").content, "a zoomer bot who is smarter than she lets on");
+  assert.equal(db.getPerson("layla").content, "a zoomer bot who is smarter than she lets on", "the old note stays");
+  assert.equal(db.getPersonVersions("notlayla")[0].source, "nick-change");
+  assert.equal(db.getPersonVersions("notlayla")[0].rationale, "was layla");
+  db.setPerson("ayeka_", "the other one");
+  assert.equal(db.inheritPerson("Ayeka", "ayeka_"), false, "an existing note is not overwritten");
+  assert.equal(db.inheritPerson("nobody", "someone"), false, "nothing to copy");
+  assert.equal(db.inheritPerson("layla", "LAYLA"), false, "a case change is the same key");
+});
+
 test("a pass can be run from the dashboard", async () => {
   const db = isaac.getDatabase();
   db.insertMessageEnhanced({ id: "m1", channelId: "#run", authorId: "amiantos", authorName: "amiantos", content: "hi", createdAt: new Date().toISOString() });

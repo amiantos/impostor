@@ -16,6 +16,8 @@ const { Roster } = require("./roster");
 const { SilenceDirector, Spontaneity, NewsDesk, seedsForDay } = require("./spontaneity");
 const { findTics, ticLedgerText } = require("./tics");
 const { localParts } = require("./schedule");
+const { calendarLine } = require("./calendar");
+const { WeatherDesk } = require("./weather");
 
 /**
  * One bot: its IRC connection, database, evaluator, reply pipeline and
@@ -36,9 +38,13 @@ class ImpostorClient {
    * @param {string} deps.dataDir - Root data directory; this bot's files go under its id
    * @param {SilenceDirector} [deps.director] - Shared between bots; private when absent
    * @param {NewsDesk} [deps.newsDesk] - Shared search cache for unprompted turns; private when absent
+   * @param {WeatherDesk} [deps.weatherDesk] - Shared weather cache; private when absent
+   * @param {() => Date} [deps.clock] - Stamps every message the bot stores or
+   *   sends; tests inject one so the chatlog and the schedule share a clock
    */
-  constructor(logger, config, { openai, persona, tools, dataDir, director = null, newsDesk = null }) {
+  constructor(logger, config, { openai, persona, tools, dataDir, director = null, newsDesk = null, weatherDesk = null, clock = null }) {
     this.persona = persona;
+    this.clock = clock || (() => new Date());
     this.id = config.bot?.id || config.irc.nick.toLowerCase();
     // What people call the bot in chat. The persona's name unless the config
     // says otherwise; mentioning it or the nick is always an address.
@@ -112,6 +118,8 @@ class ImpostorClient {
     this.director.register(this);
     if (this.ownDirector) this.director.start();
     this.newsDesk = newsDesk || new NewsDesk({ search: this.webSearchTool, ttlMinutes: config.spontaneous?.news_cache_minutes ?? 360 });
+    // The weather where this bot lives (config.weather), for the prompts.
+    this.weatherDesk = weatherDesk || new WeatherDesk({ logger, ttlMinutes: config.weather_cache_minutes ?? 60 });
 
     // Where the bot is: its schedule (sleep, class, out grazing) and the
     // lurker-style afk status. See classes/presence.js.
@@ -245,6 +253,11 @@ class ImpostorClient {
       if (event.nick === this.botNick) {
         this.logger.info(`Nick changed from ${this.botNick} to ${event.new_nick}`);
         this.botNick = event.new_nick;
+        return;
+      }
+      // The same person under a new nick keeps their note.
+      if (this.db.inheritPerson(event.nick, event.new_nick)) {
+        this.logger.info(`${event.nick} is now ${event.new_nick}; their note follows them`);
       }
     });
 
@@ -437,6 +450,7 @@ class ImpostorClient {
       ident: event.ident,
       hostname: event.hostname,
       isBot: false,
+      createdAt: this.clock(),
     });
 
     // Stored ahead of the message itself: a link summary can hold the
@@ -810,15 +824,7 @@ class ImpostorClient {
     }
 
     const botUserId = this.botNick.toLowerCase();
-
-    // Get ALL recent messages for ratio calculation (50 messages)
     const recentMessages = this.db.getRecentMessages(channelName, 50, true);
-
-    // Calculate bot dominance ratio (passed to AI evaluator for context)
-    const botRatio = this.evaluator.calculateBotRatio(
-      recentMessages,
-      botUserId
-    );
 
     // Check if there are any messages after the bot's last response
     const hasNewMessages = this.hasMessagesSinceLastBotResponse(recentMessages);
@@ -845,12 +851,11 @@ class ImpostorClient {
     // read as sulking: a worse failure than a line too many.)
     const evaluationMessages = this.screenFor(channelName);
 
-    // Ask AI if we should respond (pass ratio and the journal for context)
+    // Ask the evaluator, with the journal for what came before the screen.
     const decision = await this.evaluator.shouldRespond(
       evaluationMessages,
       botUserId,
       channelName,
-      botRatio,
       {
         journal: this.db.getJournalText(channelName),
         canReact: !this.reactionCooldown(channelName).blocked,
@@ -914,6 +919,13 @@ class ImpostorClient {
    * hours later ---" marker, not a cut), reaching further back when the
    * journal hasn't read that far yet, so no line is in neither the chatlog
    * nor his memory. `context.max_lines` caps the reach.
+   *
+   * The top of the screen moves in steps of `context.screen_step` lines,
+   * not one line per message: the model caches prompt prefixes, and a
+   * chatlog whose first line changes every call misses the cache every
+   * call. With a step of 10 the same opening lines are sent for ten
+   * messages running, so the screen is screen_lines to screen_lines + 9
+   * lines long.
    * @param {string} channelId
    * @returns {Array} Parsed messages, chronological
    */
@@ -924,6 +936,12 @@ class ImpostorClient {
     if (this.config.journal?.enabled !== false) {
       const watermark = this.db.getJournal(channelId)?.watermark_rowid ?? 0;
       lines = Math.min(maxLines, Math.max(screenLines, this.db.countMessagesAfterRowid(channelId, watermark)));
+    }
+    const step = Math.max(1, this.config.context?.screen_step ?? 10);
+    const total = this.db.countMessagesAfterRowid(channelId, 0);
+    if (step > 1 && total > lines) {
+      const start = Math.floor((total - lines) / step) * step;
+      lines = total - start;
     }
     return this.db.getRecentMessages(channelId, lines, true);
   }
@@ -1078,9 +1096,9 @@ class ImpostorClient {
     const refs = ContextUtils.assignRefs(dbMessages);
 
     this.startTyping(channelName);
-    let response, conversationLog, react, replyTo, systemPrompt;
+    let response, conversationLog, react, replyTo, systemPrompt, usage;
     try {
-      ({ response, conversationLog, react, replyTo, systemPrompt } = await this.generateResponseWithChatCompletions({
+      ({ response, conversationLog, react, replyTo, systemPrompt, usage } = await this.generateResponseWithChatCompletions({
         dbMessages,
         userName: user_name,
         characterName: character_name,
@@ -1103,6 +1121,7 @@ class ImpostorClient {
     // but still log to the dashboard for transparency.
     const botMessage = createIrcMessage(this.botNick, channelName, response, {
       isBot: true,
+      createdAt: this.clock(),
     });
 
     const responseId = this.db.logResponse(
@@ -1119,7 +1138,8 @@ class ImpostorClient {
       systemPrompt,
       messagesJson: conversationLog,
       model: this.config.generator.deepseek.model,
-      temperature: this.config.generator.deepseek.temperature
+      temperature: this.config.generator.deepseek.temperature,
+      usage,
     });
 
     const { sent, reacted } = await this.deliverResponse(channelName, { response, react, replyTo, refs, botMessage });
@@ -1225,9 +1245,9 @@ class ImpostorClient {
     const refs = ContextUtils.assignRefs(dbMessages);
 
     this.startTyping(channelName);
-    let response, conversationLog, react, replyTo, systemPrompt;
+    let response, conversationLog, react, replyTo, systemPrompt, usage;
     try {
-      ({ response, conversationLog, react, replyTo, systemPrompt } = await this.generateResponseWithChatCompletions({
+      ({ response, conversationLog, react, replyTo, systemPrompt, usage } = await this.generateResponseWithChatCompletions({
         dbMessages,
         userName: "various",
         characterName: this.watchword,
@@ -1250,6 +1270,7 @@ class ImpostorClient {
     // and chatlog tracking but still log for the dashboard.
     const botMessage = createIrcMessage(this.botNick, channelName, response, {
       isBot: true,
+      createdAt: this.clock(),
     });
 
     const responseId = this.db.logResponse(
@@ -1266,7 +1287,8 @@ class ImpostorClient {
       systemPrompt,
       messagesJson: conversationLog,
       model: this.config.generator.deepseek.model,
-      temperature: this.config.generator.deepseek.temperature
+      temperature: this.config.generator.deepseek.temperature,
+      usage,
     });
 
     if (decisionId) {
@@ -1353,6 +1375,7 @@ class ImpostorClient {
     } else if (result.reason === "unsupported") {
       const botMessage = createIrcMessage(this.botNick, channelName, result.reaction, {
         isBot: true,
+        createdAt: this.clock(),
       });
       await this.sendIrcMessage(channelName, result.reaction, { messageId: botMessage.id });
       this.db.logResponse(channelName, botMessage.id, "reaction", result.reaction, target?.id || null);
@@ -1447,10 +1470,19 @@ class ImpostorClient {
     leaving = null,
     spontaneous = null,
   }) {
-    // Today's seeds go in every prompt as ON YOUR MIND TODAY; a spontaneous
-    // turn lists them in its own instruction instead.
-    const systemPrompt = this.contextUtils.buildInstructions(this.presence.describe(undefined, { leaving }), new Date(), {
-      onYourMind: spontaneous ? [] : this.todaysSeeds(),
+    // The system prompt never changes between calls (the model caches the
+    // prefix); the moment goes after the chatlog. Today's seeds go in every
+    // prompt as ON YOUR MIND TODAY; a spontaneous turn lists them in its own
+    // instruction instead.
+    const systemPrompt = this.contextUtils.buildInstructions();
+    const now = this.clock();
+    const nowBlock = this.contextUtils.nowBlock({
+      now,
+      whoIsHere: triggerInfo?.channelName ? this.roster.describe(triggerInfo.channelName, now) : null,
+      presence: this.presence.describe(undefined, { leaving }),
+      onYourMind: spontaneous ? [] : this.todaysSeeds(now),
+      calendar: this.calendarToday(now),
+      weather: await this.weatherNow(),
     });
     this.logger.debug("Generated System Prompt...", systemPrompt);
 
@@ -1468,7 +1500,7 @@ class ImpostorClient {
         canReact,
         leaving: leaving ? leaving.block.activity : null,
         spontaneous,
-        whoIsHere: triggerInfo.channelName ? this.roster.describe(triggerInfo.channelName) : null,
+        nowBlock,
         tics: triggerInfo.channelName ? this.ticLedger(triggerInfo.channelName) : null,
       }
     );
@@ -1483,7 +1515,11 @@ class ImpostorClient {
 
     this.logger.debug("Generated Messages...", conversationLog);
 
+    // What this reply cost, over every call it takes (tools mean more than one).
+    const usage = DatabaseManager.emptyUsage();
+    let startedAt = Date.now();
     let response = await this.callDeepSeek(conversationLog);
+    DatabaseManager.usageOf(response, Date.now() - startedAt, usage);
     let structuredResponse = await this.parseStructuredResponse(response);
 
     let iterationCount = 0;
@@ -1542,7 +1578,9 @@ Reply with valid JSON in the format described above.`,
         });
       }
 
+      startedAt = Date.now();
       response = await this.callDeepSeek(conversationLog);
+      DatabaseManager.usageOf(response, Date.now() - startedAt, usage);
       structuredResponse = await this.parseStructuredResponse(response);
     }
 
@@ -1563,6 +1601,7 @@ Reply with valid JSON in the format described above.`,
       response: replyMessage,
       conversationLog,
       systemPrompt,
+      usage,
       react: structuredResponse.react || null,
       replyTo: structuredResponse.reply_to || null,
     };
@@ -1773,10 +1812,16 @@ Reply with valid JSON in the format described above.`,
   /**
    * What an unprompted turn can draw on besides the screen: a few of the
    * persona's seeds for today, sometimes something looked up from its news
-   * queries, and notes on everyone in the channel (not only whoever spoke
-   * in the window), so it can ask after someone.
+   * queries, notes on everyone in the channel (not only whoever spoke in
+   * the window), and, `address_chance` of the time, one person who is here
+   * to say it to. Everyone's unprompted lines were dispatches into the room
+   * (a recharge report, something at the fence) that nobody answered; a
+   * line to someone, asking after a thing from the notes, is how a person
+   * starts a conversation in a quiet channel. People with a note are
+   * preferred, since the note is what there is to ask after.
    * @param {string} channelName
    * @param {{journal: string|null, people: Map<string, string>}} memory - Extended in place
+   * @returns {Promise<{seeds: string[], news: Object|null, people: string[], to: string|null}>}
    */
   async spontaneousMaterial(channelName, memory) {
     const seeds = this.todaysSeeds();
@@ -1796,7 +1841,16 @@ Reply with valid JSON in the format described above.`,
       const notes = this.db.getPeople(missing);
       memory.people = new Map([...(memory.people || []), ...notes]);
     }
-    return { seeds, news, people };
+
+    let to = null;
+    if (channelName.startsWith("#") && this.spontaneity.random() < this.spontaneity.addressChance) {
+      const reachable = this.roster.reachable(channelName);
+      const noted = new Set([...(memory.people?.entries() || [])].filter(([, note]) => note && note.trim()).map(([nick]) => nick.toLowerCase()));
+      const pool = reachable.filter((nick) => noted.has(nick.toLowerCase()));
+      const from = pool.length > 0 ? pool : reachable;
+      if (from.length > 0) to = from[Math.floor(this.spontaneity.random() * from.length)] || null;
+    }
+    return { seeds, news, people, to };
   }
 
   /**
@@ -1810,6 +1864,26 @@ Reply with valid JSON in the format described above.`,
     const day = localParts(now, this.contextUtils.timezone);
     const dateKey = `${day.year}-${String(day.month).padStart(2, "0")}-${String(day.day).padStart(2, "0")}`;
     return seedsForDay(this.persona.seeds, `${this.id}|${dateKey}`, this.spontaneity.seedsPerDay, this.spontaneity.spokenInLastDay(now));
+  }
+
+  /**
+   * The weather where the bot lives, as the THE WEATHER OUTSIDE line, or
+   * null when no place is configured or the lookup failed (see weather.js).
+   */
+  async weatherNow() {
+    if (!this.config.weather) return null;
+    return this.weatherDesk.lookup(this.config.weather);
+  }
+
+  /**
+   * What the persona's calendar says about today and the week ahead (see
+   * classes/calendar.js), as the ON THE CALENDAR line, or null.
+   * @param {Date} [now]
+   */
+  calendarToday(now = this.clock()) {
+    return calendarLine(this.persona.calendar || [], now, this.contextUtils.timezone, {
+      horizonDays: this.config.context?.calendar_horizon_days ?? 7,
+    });
   }
 
   /**
@@ -1848,8 +1922,8 @@ Reply with valid JSON in the format described above.`,
     try {
       const material = await this.spontaneousMaterial(channelName, memory);
       news = material.news;
-      const { seeds, people } = material;
-      const { response, conversationLog, react, replyTo, systemPrompt } = await this.generateResponseWithChatCompletions({
+      const { seeds, people, to } = material;
+      const { response, conversationLog, react, replyTo, systemPrompt, usage } = await this.generateResponseWithChatCompletions({
         dbMessages,
         userName: "various",
         characterName: this.watchword,
@@ -1859,9 +1933,9 @@ Reply with valid JSON in the format described above.`,
         triggerInfo,
         refs,
         canReact: false,
-        spontaneous: { quietMinutes, seeds, news, people },
+        spontaneous: { quietMinutes, seeds, news, people, to },
       });
-      const botMessage = createIrcMessage(this.botNick, channelName, response, { isBot: true });
+      const botMessage = createIrcMessage(this.botNick, channelName, response, { isBot: true, createdAt: this.clock() });
       const responseId = this.db.logResponse(channelName, botMessage.id, "spontaneous", response, null);
       this.db.storePrompt({
         responseId,
@@ -1870,6 +1944,7 @@ Reply with valid JSON in the format described above.`,
         messagesJson: conversationLog,
         model: this.config.generator.deepseek.model,
         temperature: this.config.generator.deepseek.temperature,
+        usage,
       });
       if (response) this.startTyping(channelName);
       try {
@@ -1877,14 +1952,15 @@ Reply with valid JSON in the format described above.`,
       } finally {
         this.stopTyping(channelName, sent ? null : "done");
       }
-      this.db.logDecision(
+      const decisionId = this.db.logDecision(
         channelName,
         dbMessages.length,
         sent,
         null,
-        `[spontaneous] ${sent ? "spoke" : "stayed quiet"} after ${quietMinutes} quiet minutes${news ? ` (saw: "${news.query}")` : ""}`,
+        `[spontaneous] ${sent ? "spoke" : "stayed quiet"} after ${quietMinutes} quiet minutes${to ? ` (to ${to})` : ""}${news ? ` (saw: "${news.query}")` : ""}`,
         dbMessages.map((m) => m.id)
       );
+      if (sent) this.db.markDecisionResponseSent(decisionId);
       if (sent) this.archivist.noteActivity(channelName);
       else this.logger.info(`Nothing to say into the quiet in ${channelName}`);
     } finally {
@@ -1946,7 +2022,6 @@ Reply with valid JSON in the format described above.`,
           this.screenFor(channel),
           this.botNick.toLowerCase(),
           channel,
-          null,
           {
             journal: this.db.getJournalText(channel),
             canReact: false,

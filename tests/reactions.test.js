@@ -223,25 +223,25 @@ test("the evaluator answers with line references and a reaction; the client gets
   ];
 
   answer = { action: "react", reply_to_message_id: "m2", reaction: "🫖", reason: "tea" };
-  const decision = await evaluator.shouldRespond(messages, "mabel", "#c", null, {});
+  const decision = await evaluator.shouldRespond(messages, "mabel", "#c", {});
   assert.equal(decision.action, "react");
   assert.equal(decision.reply_to_message_id, "id-2");
   assert.equal(decision.reaction, "🫖");
   assert.match(lastPrompt[0].content, /HOW MABEL USES REACTIONS:\nonly 🫖\./);
   assert.match(lastPrompt[1].content, /\[m1\] \[\d\d:\d\d\] bob: tea time \[reactions: alice ☕\]\n\[m2\] \[\d\d:\d\d\] alice: earl grey or nothing\n\nCURRENT DATE\/TIME: /);
 
-  const blocked = await evaluator.shouldRespond(messages, "mabel", "#c", null, { canReact: false });
+  const blocked = await evaluator.shouldRespond(messages, "mabel", "#c", { canReact: false });
   assert.equal(blocked.action, "ignore", "no reacting inside the cooldown");
   assert.match(lastPrompt[1].content, /"react" is not available right now/);
 
   answer = { action: "react", reply_to_message_id: "m1", reason: "no reaction given" };
-  assert.equal((await evaluator.shouldRespond(messages, "mabel", "#c", null, {})).action, "ignore");
+  assert.equal((await evaluator.shouldRespond(messages, "mabel", "#c", {})).action, "ignore");
 });
 
 test("the screen is the last screen_lines lines, however old, reaching back to whatever the journal hasn't read", () => {
   const db = freshDb();
   const { bot } = fakeBot(db, { config: {} });
-  bot.config.context = { screen_lines: 4, max_lines: 8 };
+  bot.config.context = { screen_lines: 4, max_lines: 8, screen_step: 1 };
   bot.config.journal = { enabled: true };
   for (let i = 0; i < 12; i++) store(db, "bob", `line ${i}`, { at: Date.now() - (12 - i) * 3 * 60 * 60 * 1000 });
 
@@ -261,6 +261,27 @@ test("the screen is the last screen_lines lines, however old, reaching back to w
 
   bot.config.journal.enabled = false;
   assert.equal(bot.screenFor("#c").length, 4, "no journal, no reach");
+});
+
+test("the top of the screen moves in steps, so the same opening lines are sent for several calls running", () => {
+  const db = freshDb();
+  const { bot } = fakeBot(db, { config: {} });
+  bot.config.context = { screen_lines: 4, max_lines: 8, screen_step: 3 };
+  bot.config.journal = { enabled: false };
+  const first = (n) => {
+    store(db, "bob", `line ${n}`, { at: Date.now() - (100 - n) * 60 * 1000 });
+    return bot.screenFor("#c")[0].content;
+  };
+  // Up to the screen length, everything shows.
+  for (let i = 0; i < 4; i++) assert.equal(first(i), "line 0");
+  // Then the top stays put until a whole step has gone by.
+  assert.equal(first(4), "line 0", "5 lines: top anchored at a step boundary");
+  assert.equal(first(5), "line 0", "6 lines");
+  assert.equal(first(6), "line 3", "7 lines: the top moves by a step");
+  assert.equal(first(7), "line 3");
+  assert.equal(first(8), "line 3");
+  assert.equal(first(9), "line 6");
+  assert.equal(bot.screenFor("#c").length, 4, "never shorter than the screen");
 });
 
 test("the evaluator marks where the lines since the bot last spoke begin", async () => {

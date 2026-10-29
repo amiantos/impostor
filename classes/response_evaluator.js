@@ -1,4 +1,5 @@
 const ContextUtils = require("./context_utils");
+const DatabaseManager = require("./database");
 
 /**
  * ResponseEvaluator - AI-driven decision making for autonomous responses
@@ -81,7 +82,7 @@ IGNORE - ${name} should stay silent. Pick this when:
 - A response would mock or belittle someone's interests or enthusiasm
 - The latest message is an automated announcement from a relay bot (a line tagged with a repo name or forum title about a PR, issue, fork, release, or forum post). These should be ignored unless a human in the channel has asked about them. Humans relayed by the bridge under their own nick are real people and are treated like any other user.
 
-WHO'S AWAY: a line above the conversation may say who is in the channel and who is marked away or afk. An away person isn't reading: a line addressed to them is not an opening for ${name}, their silence is not ${name}'s cue, and if everyone else is away there is nobody to talk to. In a DM with someone who is away, answer a direct question (they'll read it when back) but don't chase.
+WHO'S AWAY: a line after the conversation may say who is in the channel and who is marked away or afk. An away person isn't reading: a line addressed to them is not an opening for ${name}, their silence is not ${name}'s cue, and if everyone else is away there is nobody to talk to. In a DM with someone who is away, answer a direct question (they'll read it when back) but don't chase.
 
 ONE TURN PER THOUGHT: ${name} gets one contribution per topic, not a running commentary. If their last message already made its point, the correct action is "ignore" even when the conversation continues - especially when the new messages are refinements of what they just replied to. Let other people have the last word. This is about the thought, not the person: when the person ${name} is talking with asks something new or takes the conversation somewhere new, ${name} is back in, however recently they spoke.
 
@@ -100,35 +101,6 @@ You MUST respond with valid JSON only:
 }
 
 reply_to_message_id is the reference of the single message that prompted the action, or null if it's the conversation as a whole. For "react" it is required: it is the line the reaction goes on. "reaction" is set only for "react": one emoji, or a word or two, in ${name}'s style.`;
-  }
-
-  /**
-   * Calculate the bot's message ratio in recent history
-   * @param {Array} allRecentMessages - All recent messages (with parsed JSON), newest first
-   * @param {string} botUserId - Bot's user ID
-   * @param {number} maxMessages - Maximum messages to consider (default 20)
-   * @param {number} maxAgeMinutes - Only count messages within this many minutes (default 30)
-   * @returns {number} Ratio from 0.0 to 1.0
-   */
-  calculateBotRatio(allRecentMessages, botUserId, maxMessages = 20, maxAgeMinutes = 30) {
-    if (!allRecentMessages || allRecentMessages.length === 0) return 0;
-
-    const cutoffTime = Date.now() - maxAgeMinutes * 60 * 1000;
-
-    // Filter to recent messages within time window, limit to maxMessages
-    const recentMessages = allRecentMessages
-      .slice(0, maxMessages)
-      .filter((m) => {
-        const msgTime = new Date(m.created_at).getTime();
-        return msgTime >= cutoffTime;
-      });
-
-    if (recentMessages.length === 0) return 0;
-
-    const botMessages = recentMessages.filter(
-      (m) => m.is_bot_message || m.author_id === botUserId
-    );
-    return botMessages.length / recentMessages.length;
   }
 
   /**
@@ -167,7 +139,6 @@ reply_to_message_id is the reference of the single message that prompted the act
    * @param {Array} messages - Array of message objects from database (with parsed JSON)
    * @param {string} botUserId - The bot's user ID
    * @param {string} channelId - The channel ID
-   * @param {number|null} botRatio - Bot's message ratio in recent history (0.0-1.0)
    * @param {Object} options - { journal, canReact, presence, whoIsHere, leaving } -
    *   journal is the bot's journal for this conversation, if any; canReact
    *   false takes "react" off the table (the bot reacted moments ago);
@@ -177,7 +148,7 @@ reply_to_message_id is the reference of the single message that prompted the act
    *   question into "say goodbye first, or just go?"
    * @returns {Object} Decision object { action, should_respond, reply_to_message_id, reaction, reason, decisionId }
    */
-  async shouldRespond(messages, botUserId, channelId, botRatio = null, options = {}) {
+  async shouldRespond(messages, botUserId, channelId, options = {}) {
     if (!messages || messages.length === 0) {
       this.logger.debug("No messages to evaluate");
       return { should_respond: false, reply_to_message_id: null, reason: "No messages to evaluate", decisionId: null };
@@ -220,12 +191,6 @@ reply_to_message_id is the reference of the single message that prompted the act
       ? `${this.botName}'s journal for this conversation (what happened before the messages below):\n${options.journal.trim()}\n\n`
       : "";
 
-    // Add ratio context if provided
-    const ratioContext =
-      botRatio !== null
-        ? `\n${this.botName}'s recent message ratio: ${(botRatio * 100).toFixed(0)}% of the last 20 messages. The channel has several people in it and ${this.botName} is one voice among them, not the host: when the ratio is high and nobody is engaging with them, they should be picking only the conversations they genuinely add to. It is information, not a limit. In a back-and-forth with one person it sits near half, which is what a conversation looks like; what matters is whether someone is still talking to ${this.botName}.`
-        : "";
-
     // He reacted moments ago; the client would drop another one anyway.
     const reactContext = options.canReact === false
       ? `\n${this.botName} reacted to something moments ago, so "react" is not available right now. Choose "respond" or "ignore".`
@@ -246,13 +211,16 @@ reply_to_message_id is the reference of the single message that prompted the act
       ? `Should ${this.botName} say goodbye before going? Remember to respond with valid JSON only.`
       : `Should ${this.botName} respond to this conversation? Remember to respond with valid JSON only.`;
 
-    const whoContext = options.whoIsHere ? `${options.whoIsHere}\n\n` : "";
+    // Everything about the moment goes after the conversation: the lines
+    // before it change rarely (journal) or append-only (the chatlog), so the
+    // model's prefix cache can hold them.
+    const whoContext = options.whoIsHere ? `\n${options.whoIsHere}` : "";
     const nowContext = `\nCURRENT DATE/TIME: ${this.contextUtils.formatNow(options.now || new Date())}`;
 
-    const userPrompt = `${journalContext}${whoContext}Here is the recent conversation (message references in brackets):
+    const userPrompt = `${journalContext}Here is the recent conversation (message references in brackets):
 
 ${conversationContext}
-${nowContext}${ratioContext}${reactContext}${presenceContext}${leavingContext}
+${whoContext}${nowContext}${reactContext}${presenceContext}${leavingContext}
 
 ${question}`;
 
@@ -269,6 +237,7 @@ ${question}`;
     try {
       this.logger.debug("Evaluating conversation for autonomous response...");
 
+      const startedAt = Date.now();
       const response = await this.openai.chat.completions.create({
         model: evaluatorModel,
         messages: promptMessages,
@@ -283,6 +252,7 @@ ${question}`;
           : { thinking: { type: "disabled" } }),
       });
 
+      const usage = DatabaseManager.usageOf(response, Date.now() - startedAt);
       const rawResponse = response.choices[0].message.content;
       this.logger.debug("Evaluation response:", rawResponse);
 
@@ -337,11 +307,13 @@ ${question}`;
 
       this.db.storePrompt({
         decisionId,
+        conversationId: channelId,
         promptType: "evaluation",
         systemPrompt,
         messagesJson: promptMessages,
         model: evaluatorModel,
-        temperature: 0.7
+        temperature: 0.7,
+        usage,
       });
 
       this.logger.info(

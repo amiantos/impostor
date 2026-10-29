@@ -12,6 +12,17 @@ router.get("/stats", (req, res) => {
   }
 });
 
+// What the model calls cost: by kind of call, over the last ?hours (24)
+router.get("/usage", (req, res) => {
+  try {
+    const hours = Math.min(24 * 90, Math.max(1, Number(req.query.hours) || 24));
+    res.json({ hours, rows: req.db.getUsage(hours) });
+  } catch (error) {
+    req.logger.error("Error fetching usage:", error);
+    res.status(500).json({ error: "Failed to fetch usage" });
+  }
+});
+
 // Get list of active channels
 router.get("/channels", (req, res) => {
   try {

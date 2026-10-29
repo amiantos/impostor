@@ -39,15 +39,19 @@
         "max_wait_seconds": 60,
         "address_wait_seconds": 5,
         "react_cooldown_messages": 3,
-        "react_cooldown_seconds": 30
+        "react_cooldown_seconds": 30,
+        "prompt_retention_days": 30
     },
     "context": {
         "screen_lines": 50,
+        "screen_step": 10,
         "max_lines": 150,
         "lull_minutes": 30,
         "max_link_summaries": 5,
-        "tic_lines": 30
+        "tic_lines": 30,
+        "calendar_horizon_days": 7
     },
+    "weather_cache_minutes": 60,
     "presence": {
         "enabled": true,
         "afk_minutes": 15,
@@ -64,6 +68,7 @@
         "max_per_day": 5,
         "min_gap_minutes": 60,
         "weight": 1,
+        "address_chance": 0.5,
         "seeds_per_day": 3,
         "news": true,
         "news_chance": 0.35,
@@ -96,6 +101,7 @@
             },
             "channels": ["#lurker"],
             "pm_allowed_users": [],
+            "weather": { "latitude": 47.6062, "longitude": -122.3321, "units": "imperial" },
             "generator": { "temperature": 0.9 },
             "autonomous": { "debounce_seconds": 20 },
             "spontaneous": { "weight": 1 }

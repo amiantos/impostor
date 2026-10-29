@@ -577,6 +577,47 @@
       font-size: 0.9rem;
     }
 
+    /* Usage view */
+    .usage-container {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 20px;
+    }
+    .usage-container h3 {
+      font-size: 1rem;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .usage-container select {
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      border: 1px solid var(--bg-card);
+      border-radius: 4px;
+      padding: 4px 8px;
+    }
+    .usage-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+      background: var(--bg-secondary);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .usage-table th, .usage-table td {
+      padding: 8px 12px;
+      text-align: right;
+      border-bottom: 1px solid var(--bg-card);
+      white-space: nowrap;
+    }
+    .usage-table th:first-child, .usage-table td:first-child,
+    .usage-table th:nth-child(2), .usage-table td:nth-child(2) { text-align: left; }
+    .usage-table th { color: var(--text-secondary); font-weight: normal; }
+    .usage-table tr.total td { font-weight: bold; border-top: 2px solid var(--bg-card); }
+    .usage-note { color: var(--text-secondary); font-size: 0.85rem; margin-top: 12px; line-height: 1.5; }
+
     /* Memories View */
     .memories-container {
       display: flex;
@@ -849,6 +890,20 @@
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- Usage: what the model calls cost (hidden by default) -->
+  <div class="usage-container" id="usage-container" style="display: none;">
+    <h3>Model calls
+      <select id="usage-hours" onchange="loadUsage()">
+        <option value="1">last hour</option>
+        <option value="24" selected>last 24 hours</option>
+        <option value="168">last 7 days</option>
+        <option value="720">last 30 days</option>
+      </select>
+    </h3>
+    <div id="usage-table"><div class="loading-spinner">Loading...</div></div>
+    <p class="usage-note">Tokens as the API reports them. "cached" is the share of input tokens served from the model's prefix cache (billed at a fraction of a miss); a low share on a kind of call means its prompt changes near the top from one call to the next. Calls stored before usage was recorded count as calls with zero tokens.</p>
   </div>
 
   <!-- Jump to Bottom Button -->
@@ -1655,6 +1710,7 @@
       memoryView = view;
       memorySelected = null;
       document.getElementById('chat-container').style.display = 'none';
+      document.getElementById('usage-container').style.display = 'none';
       document.getElementById('memories-container').style.display = 'flex';
       document.getElementById('jump-to-bottom').style.display = 'none';
       renderChannelTabs();
@@ -1665,6 +1721,65 @@
       memoryView = null;
       document.getElementById('chat-container').style.display = 'flex';
       document.getElementById('memories-container').style.display = 'none';
+      document.getElementById('usage-container').style.display = 'none';
+    }
+
+    // The usage view: what the model calls cost, by kind of call.
+    function switchToUsageView() {
+      memoryView = 'usage';
+      memorySelected = null;
+      document.getElementById('chat-container').style.display = 'none';
+      document.getElementById('memories-container').style.display = 'none';
+      document.getElementById('usage-container').style.display = 'block';
+      document.getElementById('jump-to-bottom').style.display = 'none';
+      renderChannelTabs();
+      loadUsage();
+    }
+
+    function fmtTokens(n) {
+      n = Number(n) || 0;
+      if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+      if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+      return String(n);
+    }
+
+    async function loadUsage() {
+      const hours = document.getElementById('usage-hours').value;
+      const table = document.getElementById('usage-table');
+      try {
+        const bot = currentBot;
+        const data = await fetchJson(`${API_BASE}/usage?hours=${hours}`);
+        if (bot !== currentBot || memoryView !== 'usage') return;
+        if (!data.rows.length) {
+          table.innerHTML = '<p class="no-data">No model calls in this window.</p>';
+          return;
+        }
+        const total = { calls: 0, prompt_tokens: 0, completion_tokens: 0, cache_hit_tokens: 0, reasoning_tokens: 0, chars: 0 };
+        const rows = data.rows.map(r => {
+          for (const k of Object.keys(total)) total[k] += Number(r[k]) || 0;
+          const cached = r.prompt_tokens ? Math.round(100 * r.cache_hit_tokens / r.prompt_tokens) : null;
+          return `<tr>
+            <td>${escapeHtml(r.prompt_type)}</td>
+            <td>${escapeHtml(r.model)}</td>
+            <td>${r.calls}</td>
+            <td>${fmtTokens(r.prompt_tokens)}</td>
+            <td>${cached === null ? '–' : cached + '%'}</td>
+            <td>${fmtTokens(r.completion_tokens)}</td>
+            <td>${fmtTokens(r.reasoning_tokens)}</td>
+            <td>${fmtTokens(Math.round(r.prompt_tokens / Math.max(1, r.calls)))}</td>
+            <td>${r.avg_duration_ms ? (r.avg_duration_ms / 1000).toFixed(1) + 's' : '–'}</td>
+          </tr>`;
+        }).join('');
+        const cachedTotal = total.prompt_tokens ? Math.round(100 * total.cache_hit_tokens / total.prompt_tokens) : null;
+        table.innerHTML = `<table class="usage-table">
+          <thead><tr><th>call</th><th>model</th><th>calls</th><th>tokens in</th><th>cached</th><th>tokens out</th><th>of which reasoning</th><th>in / call</th><th>avg time</th></tr></thead>
+          <tbody>${rows}
+            <tr class="total"><td>total</td><td></td><td>${total.calls}</td><td>${fmtTokens(total.prompt_tokens)}</td><td>${cachedTotal === null ? '–' : cachedTotal + '%'}</td><td>${fmtTokens(total.completion_tokens)}</td><td>${fmtTokens(total.reasoning_tokens)}</td><td></td><td></td></tr>
+          </tbody></table>`;
+      } catch (error) {
+        console.error('Failed to load usage:', error);
+        table.innerHTML = '<p class="no-data">Failed to load usage.</p>';
+      }
     }
 
     // Override selectChannel to leave the memory views
@@ -1697,6 +1812,7 @@
 
       html += `<button class="channel-tab ${memoryView === 'journals' ? 'active' : ''}" onclick="switchToMemoryView('journals')">Journals</button>`;
       html += `<button class="channel-tab ${memoryView === 'people' ? 'active' : ''}" onclick="switchToMemoryView('people')">People</button>`;
+      html += `<button class="channel-tab ${memoryView === 'usage' ? 'active' : ''}" onclick="switchToUsageView()">Usage</button>`;
 
       container.innerHTML = html;
     };

@@ -25,7 +25,8 @@ test("the system prompt is the persona's character, then the medium with the nam
   assert.match(prompt, /your normal Mabel response/);
   assert.doesNotMatch(prompt, /NAME/);
   assert.doesNotMatch(prompt, /remember/i);
-  assert.match(prompt, /CURRENT DATE\/TIME: /);
+  assert.doesNotMatch(prompt, /CURRENT DATE\/TIME: /, "the clock is not in the system prompt (it would break the prefix cache)");
+  assert.equal(ctx.buildInstructions(), prompt, "the system prompt is the same on every call");
 });
 
 test("the response schema no longer offers a remember tool", () => {
@@ -112,7 +113,7 @@ test("every timestamp the model sees is in the configured zone, not the process 
   );
   assert.match(message.content, /--- Mon, Oct 26, 2026 ---\n\[17:03\] m1 <amiantos> hey/);
   assert.match(ctx.buildInstructions(), /Timestamps are in Pacific Time/);
-  assert.match(ctx.buildInstructions(), /CURRENT DATE\/TIME: .* P[DS]T$/);
+  assert.match(ctx.nowBlock(), /CURRENT DATE\/TIME: .* P[DS]T$/);
 
   const tokyo = new ContextUtils(silent, persona, { timezone: "Asia/Tokyo" });
   assert.equal(tokyo.formatTime("2026-10-27T00:03:00.000Z"), "09:03");
@@ -227,13 +228,62 @@ test("the spontaneous instruction offers the floor with concrete material and le
   const bare = ContextUtils.spontaneousInstruction({ quietMinutes: 5 });
   assert.doesNotMatch(bare, /on your mind|came across|people here/);
   assert.match(bare, /- Your day/);
+
+  // Said to someone: lead with their nick, pick up something of theirs.
+  const directed = ContextUtils.spontaneousInstruction({ quietMinutes: 33, seeds: ["the weather"], people: ["alice", "bob"], to: "alice" });
+  assert.match(directed, /^The channel has been quiet for 33 minutes/);
+  assert.match(directed, /This time say it to alice, who is here: lead with "alice: "/);
+  assert.match(directed, /A question is the normal way to start something/);
+  assert.match(directed, /something of yours will do as an opener to them: \(1\) the weather/);
+  assert.doesNotMatch(directed, /Pick ONE of these|The people here/);
+  assert.match(directed, /return an empty "message"; that is allowed, but it is not the default\.$/);
 });
 
-test("the current time line is the same in the system prompt and in formatNow", () => {
+test("the current time line is the same in the now block and in formatNow", () => {
   const ctx = new ContextUtils(silent, persona, { timezone: "America/Chicago" });
   const now = new Date("2026-10-28T03:44:00Z");
   assert.equal(ctx.formatNow(now), "Tuesday, October 27, 2026 at 10:44 PM CDT");
-  assert.match(ctx.buildInstructions(null, now), /CURRENT DATE\/TIME: Tuesday, October 27, 2026 at 10:44 PM CDT$/);
+  assert.equal(ctx.nowBlock({ now }), "CURRENT DATE/TIME: Tuesday, October 27, 2026 at 10:44 PM CDT");
+});
+
+test("the now block goes after the chatlog and the link summaries, before the tic ledger and the instruction", () => {
+  const ctx = new ContextUtils(silent, persona);
+  const now = new Date("2026-10-28T19:00:00Z");
+  const nowBlock = ctx.nowBlock({
+    now,
+    whoIsHere: "In #lurker right now: amiantos, bob (afk for 3 minutes).",
+    presence: "You're in bed.",
+    onYourMind: ["the dishes situation", "a song on repeat"],
+    calendar: "halloween is in 3 days",
+    weather: "overcast, 9°C",
+  });
+  assert.equal(
+    nowBlock,
+    [
+      "In #lurker right now: amiantos, bob (afk for 3 minutes).",
+      "CURRENT DATE/TIME: Wednesday, October 28, 2026 at 12:00 PM PDT",
+      "RIGHT NOW: You're in bed.",
+      "ON YOUR MIND TODAY: (1) the dishes situation (2) a song on repeat",
+      "ON THE CALENDAR: halloween is in 3 days",
+      "THE WEATHER OUTSIDE: overcast, 9°C",
+    ].join("\n")
+  );
+  const [message] = ctx.buildChatMessagesConsolidated(
+    [msg("amiantos", "mabel: hey", { url_summaries: [{ url: "u", success: true, summary: "s" }] })],
+    "mabel",
+    { userName: "amiantos", channelName: "#lurker" },
+    null,
+    { journal: "we argued.", people: new Map() },
+    { nowBlock, tics: "SAY IT DIFFERENTLY: x. Rest all of these for now." }
+  );
+  assert.match(
+    message.content,
+    /^--- YOUR JOURNAL FOR #LURKER ---[\s\S]*<amiantos> mabel: hey\n\n--- LINK SUMMARIES[\s\S]*--- END LINK SUMMARIES ---\n\nIn #lurker right now: amiantos, bob \(afk for 3 minutes\)\.\nCURRENT DATE\/TIME: [^\n]*\nRIGHT NOW: You're in bed\.\nON YOUR MIND TODAY: [^\n]*\nON THE CALENDAR: [^\n]*\nTHE WEATHER OUTSIDE: overcast, 9°C\n\nSAY IT DIFFERENTLY: x\. Rest all of these for now\.\n\nRespond to amiantos/
+  );
+  assert.match(ctx.buildInstructions(), /An "ON YOUR MIND TODAY" line, when there is one/);
+  assert.match(ctx.buildInstructions(), /An "ON THE CALENDAR" line/);
+  assert.match(ctx.buildInstructions(), /"THE WEATHER OUTSIDE", when there is one/);
+  assert.doesNotMatch(ctx.nowBlock({ now }), /ON YOUR MIND TODAY:|RIGHT NOW:|ON THE CALENDAR:|THE WEATHER/);
 });
 
 test("a message with line breaks keeps them, indented under its first line", () => {
@@ -242,7 +292,7 @@ test("a message with line breaks keeps them, indented under its first line", () 
   assert.equal(lines.at(-1), "[05:00] <bob> first line\n    second line");
 });
 
-test("the tic ledger goes right before the closing instruction, and today's seeds after RIGHT NOW", () => {
+test("the tic ledger goes right before the closing instruction", () => {
   const ctx = new ContextUtils(silent, persona);
   const [message] = ctx.buildChatMessagesConsolidated(
     [msg("amiantos", "mabel: hey")],
@@ -255,10 +305,5 @@ test("the tic ledger goes right before the closing instruction, and today's seed
   assert.match(message.content, /<amiantos> mabel: hey\n\nSAY IT DIFFERENTLY: .*"old man" \(9 of them\)\. Rest all of these for now\.\n\nRespond to amiantos/s);
   const [plain] = ctx.buildChatMessagesConsolidated([msg("amiantos", "mabel: hey")], "mabel", { userName: "amiantos", channelName: "#lurker" });
   assert.doesNotMatch(plain.content, /SAY IT DIFFERENTLY/);
-
-  const system = ctx.buildInstructions("You're in bed.", new Date("2026-10-28T19:00:00Z"), { onYourMind: ["the dishes situation", "a song on repeat"] });
-  assert.match(system, /RIGHT NOW: You're in bed\.\nON YOUR MIND TODAY: \(1\) the dishes situation \(2\) a song on repeat$/);
-  assert.match(system, /An "ON YOUR MIND TODAY" line, when there is one/);
-  assert.match(system, /SAYING IT DIFFERENTLY:/);
-  assert.doesNotMatch(ctx.buildInstructions("x"), /ON YOUR MIND TODAY:/);
+  assert.match(ctx.buildInstructions(), /SAYING IT DIFFERENTLY:/);
 });

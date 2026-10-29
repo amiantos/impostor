@@ -144,6 +144,27 @@ class DatabaseManager {
       CREATE INDEX IF NOT EXISTS idx_prompts_decision ON prompts(decision_id);
     `);
 
+    // What each call cost: the token counts the API reports (with the
+    // prefix-cache split) and how long it took, so spend per bot and per
+    // kind of call can be read off the dashboard. conversation_id is for
+    // calls with neither a response nor a decision (the Archivist).
+    const promptColumns = this.db.pragma("table_info(prompts)").map((c) => c.name);
+    for (const [name, type] of [
+      ["conversation_id", "TEXT"],
+      ["prompt_tokens", "INTEGER"],
+      ["completion_tokens", "INTEGER"],
+      ["cache_hit_tokens", "INTEGER"],
+      ["cache_miss_tokens", "INTEGER"],
+      ["reasoning_tokens", "INTEGER"],
+      ["duration_ms", "INTEGER"],
+    ]) {
+      if (!promptColumns.includes(name)) {
+        this.db.exec(`ALTER TABLE prompts ADD COLUMN ${name} ${type}`);
+        this.logger.info(`Migration: Added ${name} column to prompts`);
+      }
+    }
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_prompts_created ON prompts(created_at)`);
+
     // Migration: Add url_summaries column to messages
     if (!columnNames.includes("url_summaries")) {
       this.db.exec(`ALTER TABLE messages ADD COLUMN url_summaries TEXT`);
@@ -939,29 +960,101 @@ class DatabaseManager {
   storePrompt({
     responseId = null,
     decisionId = null,
+    conversationId = null,
     promptType,
     systemPrompt,
     messagesJson,
     model,
-    temperature
+    temperature,
+    usage = null,
   }) {
     const stmt = this.db.prepare(`
-      INSERT INTO prompts (response_id, decision_id, prompt_type, system_prompt, messages_json, model, temperature, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO prompts (response_id, decision_id, conversation_id, prompt_type, system_prompt, messages_json, model, temperature, created_at,
+        prompt_tokens, completion_tokens, cache_hit_tokens, cache_miss_tokens, reasoning_tokens, duration_ms)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
+    const u = usage || {};
+    const num = (v) => (Number.isFinite(v) ? Math.round(v) : null);
     const result = stmt.run(
       responseId,
       decisionId,
+      conversationId,
       promptType,
       systemPrompt,
       JSON.stringify(messagesJson),
       model,
       temperature,
-      new Date().toISOString()
+      new Date().toISOString(),
+      num(u.prompt_tokens),
+      num(u.completion_tokens),
+      num(u.cache_hit_tokens),
+      num(u.cache_miss_tokens),
+      num(u.reasoning_tokens),
+      num(u.duration_ms)
     );
 
     return result.lastInsertRowid;
+  }
+
+  /**
+   * The token counts out of one API response, in the shape storePrompt
+   * takes, added onto `into` when given (a reply can take several calls).
+   * DeepSeek reports the prefix-cache split as prompt_cache_hit_tokens /
+   * prompt_cache_miss_tokens and reasoning under completion_tokens_details.
+   * @param {Object|null} response - A chat completion
+   * @param {number|null} [durationMs]
+   * @param {Object|null} [into]
+   */
+  static usageOf(response, durationMs = null, into = null) {
+    const u = response?.usage || {};
+    const out = into || DatabaseManager.emptyUsage();
+    const add = (key, value) => {
+      if (Number.isFinite(value)) out[key] += value;
+    };
+    add("prompt_tokens", u.prompt_tokens);
+    add("completion_tokens", u.completion_tokens);
+    add("cache_hit_tokens", u.prompt_cache_hit_tokens ?? u.prompt_tokens_details?.cached_tokens);
+    add("cache_miss_tokens", u.prompt_cache_miss_tokens ?? (Number.isFinite(u.prompt_tokens) && Number.isFinite(u.prompt_tokens_details?.cached_tokens) ? u.prompt_tokens - u.prompt_tokens_details.cached_tokens : undefined));
+    add("reasoning_tokens", u.completion_tokens_details?.reasoning_tokens);
+    add("duration_ms", durationMs);
+    if (response) out.calls += 1;
+    return out;
+  }
+
+  /** A zero usage record, for usageOf to add onto. */
+  static emptyUsage() {
+    return { prompt_tokens: 0, completion_tokens: 0, cache_hit_tokens: 0, cache_miss_tokens: 0, reasoning_tokens: 0, duration_ms: 0, calls: 0 };
+  }
+
+  /**
+   * Spend by kind of call over the last `hours`: calls, tokens in and out,
+   * how much of the input was a cache hit, and the average call time.
+   * @param {number} [hours]
+   * @returns {Array<{prompt_type: string, model: string, calls: number, prompt_tokens: number, completion_tokens: number, cache_hit_tokens: number, cache_miss_tokens: number, reasoning_tokens: number, avg_duration_ms: number|null, chars: number}>}
+   */
+  getUsage(hours = 24) {
+    const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+    return this.db.prepare(`
+      SELECT prompt_type, COALESCE(model, '') AS model, COUNT(*) AS calls,
+        COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
+        COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
+        COALESCE(SUM(cache_hit_tokens), 0) AS cache_hit_tokens,
+        COALESCE(SUM(cache_miss_tokens), 0) AS cache_miss_tokens,
+        COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens,
+        ROUND(AVG(duration_ms)) AS avg_duration_ms,
+        COALESCE(SUM(LENGTH(system_prompt) + LENGTH(messages_json)), 0) AS chars
+      FROM prompts WHERE created_at >= ?
+      GROUP BY prompt_type, model ORDER BY prompt_tokens DESC
+    `).all(since);
+  }
+
+  /** Prompts older than `days` go; they are for debugging, and they are big. */
+  pruneOldPrompts(days = 30) {
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const result = this.db.prepare(`DELETE FROM prompts WHERE created_at < ?`).run(cutoff);
+    if (result.changes > 0) this.logger.info(`Pruned ${result.changes} prompts older than ${days} days`);
+    return result.changes;
   }
 
   /**
@@ -1311,6 +1404,22 @@ class DatabaseManager {
         INSERT INTO people_versions (nick_key, content, source, rationale, created_at) VALUES (?, ?, ?, ?, ?)
       `).run(key, content, source, rationale, now);
     })();
+  }
+
+  /**
+   * Someone changed nick: unless the new nick already has a note, the old
+   * nick's note is copied under it, so the bot still knows who this is.
+   * (layla and notlayla were two strangers to every bot before this.) The
+   * old note stays, since nicks come back.
+   * @returns {boolean} Whether a note was copied
+   */
+  inheritPerson(oldNick, newNick) {
+    if (!oldNick || !newNick || DatabaseManager.nickKey(oldNick) === DatabaseManager.nickKey(newNick)) return false;
+    const from = this.getPerson(oldNick);
+    if (!from || !from.content?.trim()) return false;
+    if (this.getPerson(newNick)?.content?.trim()) return false;
+    this.setPerson(newNick, from.content, { source: "nick-change", rationale: `was ${from.nick}` });
+    return true;
   }
 
   listPeople() {

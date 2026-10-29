@@ -116,6 +116,27 @@ test("buildArchivistPrompt names the conversation, shows notes, and tags the bot
   assert.match(dm.user, /\(nobody but you spoke\)/);
 });
 
+test("a journal or note over budget is called out with the numbers, so the pass condenses it", () => {
+  const cfg = journalConfig({ journal: { journal_max_chars: 100, note_max_chars: 40 } });
+  const { user } = buildArchivistPrompt({
+    persona,
+    conversationId: "#lurker",
+    journal: "x".repeat(250),
+    people: new Map([["amiantos", "y".repeat(90)], ["bob", "short"]]),
+    nicks: ["amiantos", "bob"],
+    lines: ["[10:00] <amiantos> hi"],
+    part: { index: 0, count: 1 },
+    cfg,
+  });
+  assert.match(user, /The journal above is 250 characters against a budget of 100\. This pass, condense/);
+  assert.match(user, /over their budget of 40 characters: amiantos \(90\)\. Rewrite each shorter/);
+  assert.doesNotMatch(user, /bob \(/);
+  const fine = buildArchivistPrompt({
+    persona, conversationId: "#lurker", journal: "short", people: new Map([["bob", "short"]]), nicks: ["bob"], lines: ["x"], part: { index: 0, count: 1 }, cfg,
+  });
+  assert.doesNotMatch(fine.user, /budget/);
+});
+
 test("a pass rewrites the journal and the notes of people present, and moves the watermark", async () => {
   const db = tempDb();
   say(db, "#lurker", "amiantos", "i run a lurker instance for friends");

@@ -48,6 +48,9 @@ class Spontaneity {
     this.returnQuietMinutes = config.return_quiet_minutes ?? 5;
     this.news = config.news !== false;
     this.newsChance = Math.min(1, Math.max(0, Number(config.news_chance ?? 0.35)));
+    // How often an unprompted line is said to someone present rather than
+    // into the room: a line to a person invites a reply; a dispatch does not.
+    this.addressChance = Math.min(1, Math.max(0, Number(config.address_chance ?? 0.5)));
     this.seedsPerDay = Math.max(0, config.seeds_per_day ?? 3);
     this.nudges = new Map(); // channel (lower) -> { at: Date, quietMinutes }
     this.spoken = []; // Dates the bot spoke unprompted (any channel)

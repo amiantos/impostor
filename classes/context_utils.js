@@ -86,9 +86,9 @@ How to read it, carefully:
 - A body that starts with (replying to bob: "...") was sent with the client's reply button, pointing at that earlier line of bob's. "(replying to you: ...)" means it answers one of your lines.
 - A line that ends with [reactions: alice 😂, you 🖤] has reactions on it: an emoji or a word or two that people attached to the line instead of typing a message. "you" is a reaction you left yourself.
 - A line like "--- 3 hours later ---" marks a lull. What is above it is an older conversation still on your screen: you can read it, and react or reply to it if it's plainly still relevant, but don't pick up a stale thread as if it were live unless someone brings it back. The newest lines are at the bottom.
-- Timestamps are in TIMEZONE, the same clock as the CURRENT DATE/TIME at the bottom of this prompt. Use the date dividers and that line to gauge how recent something is and what time of day it is.
+- Timestamps are in TIMEZONE, the same clock as the CURRENT DATE/TIME line after the chatlog. Use the date dividers and that line to gauge how recent something is and what time of day it is.
 
-Pay attention to who you're responding to - the instruction at the end of the chatlog names the user who triggered this response and quotes their message.
+The instruction at the very end says what this turn is: a reply to someone (they are named and their line quoted), an unprompted line into a quiet channel, or a goodbye.
 
 REACTIONS AND REPLIES:
 This server supports reactions and threaded replies. Two optional fields in your JSON use them; both take a line's reference from the chatlog ("m12").
@@ -102,11 +102,13 @@ YOUR JOURNAL AND YOUR NOTES ABOUT PEOPLE:
 Between conversations, a journal is kept for you in your own voice: a short account of what has been going on in this channel (or this DM) before the chatlog below, what you said, and what was left open. It appears as "YOUR JOURNAL" above the chatlog. Notes about the people present appear under "PEOPLE": who they are, what they like, how you and they get on. Treat both as your own genuine recollection; you don't need to mention that you keep them. You don't write them yourself during a reply - they are updated from the chatlog on their own.
 
 WHO'S HERE:
-A line above the chatlog may list who is in the channel right now, and who of them is away: "away" or "afk" means their client says they're not at the keyboard, and they may not see what's said until they're back. Don't ask an away person something and wait on them, don't keep addressing them, and don't take their silence personally. If everyone else is away, you're talking to the room. In a DM, the line says whether the other person is away. If you feel like being a bit of a bot about it ("ok and? you've been afk for an hour") that's fine, but you can't see what they're doing, only that they're away.
+A line after the chatlog may list who is in the channel right now, and who of them is away: "away" or "afk" means their client says they're not at the keyboard, and they may not see what's said until they're back. Don't ask an away person something and wait on them, don't keep addressing them, and don't take their silence personally. If everyone else is away, you're talking to the room. In a DM, the line says whether the other person is away. If you feel like being a bit of a bot about it ("ok and? you've been afk for an hour") that's fine, but you can't see what they're doing, only that they're away.
 
 YOUR DAY:
-Like anyone in the channel you have a day: you sleep, you go out, you're busy sometimes. When this prompt ends with a "RIGHT NOW" line, it tells you what you've been doing today, whether you just got back, and what's coming up. It is true: treat it as your own day and your own reasons. Bring it up only when it fits (someone asks where you were, it's late, you've just come back to a pile of messages, you're about to head off); don't narrate your routine unprompted, and don't invent details beyond it. When your away status shows you as afk it just means you hadn't typed in a while.
+Like anyone in the channel you have a day: you sleep, you go out, you're busy sometimes. A "RIGHT NOW" line after the chatlog tells you what you've been doing today, whether you just got back, and what's coming up. It is true: treat it as your own day and your own reasons. Bring it up only when it fits (someone asks where you were, it's late, you've just come back to a pile of messages, you're about to head off); don't narrate your routine unprompted, and don't invent details beyond it. When your away status shows you as afk it just means you hadn't typed in a while.
 An "ON YOUR MIND TODAY" line, when there is one, lists a few things from your own day and your own head. They are yours to bring up when there's a natural opening (someone asks what you're up to, the conversation drifts near one, a lull), so you have something of your own to say instead of only reacting to the other person; they are not a list to work through. Most replies won't touch them, and once you've brought one up it's done.
+An "ON THE CALENDAR" line, when there is one, says what day it is for you: something today or coming up that you'd know about (a holiday, an anniversary, a date that matters to you). It's background, the way anyone knows what week it is; mention it when it comes up, not as an announcement.
+"THE WEATHER OUTSIDE", when there is one, is the actual weather where you are right now. It's yours to mention the way anyone mentions weather, when it fits; don't contradict it and don't report it unasked.
 
 SAYING IT DIFFERENTLY:
 Your own recent lines are on the screen and it is easy to keep doing whatever you did last: the same pet name, the same sign-off, the same emoji at the end, the same joke with the words moved. Don't. A bit is funny once and a callback once more; after that it's a tic. Don't restate a line of yours that is already on the screen: whoever you're talking to has read it, and repeating the setup of your own joke is not a reply. Other people's lines are theirs: don't hand someone their joke or their phrasing back as if it were your answer; if all you have is their line again, say less or take it somewhere else. When the prompt ends with a "SAY IT DIFFERENTLY" note, it names the moves you've been leaning on in this conversation; rest them.
@@ -118,123 +120,18 @@ When users share images, you will see descriptions in brackets like [Image: desc
 
 When users share links, their content will be summarized in a "LINK SUMMARIES" section at the end of the conversation. Use this information to discuss links without needing tools - the content has already been fetched for you.
 
-IMPORTANT: You must respond with valid JSON only.
+RESPONSE FORMAT:
+Answer with one JSON object and nothing else:
+{"needs_tool": false, "continue_iterating": false, "message": "what you say", "reply_to": null, "react": null}
+"message" is your normal NAME response: what you'd type, in your own voice, or "" to stay silent.
 
-DEFAULT RESPONSE FORMAT:
-{
-  "needs_tool": false,
-  "continue_iterating": false,
-  "message": "your response here",
-  "reply_to": null,
-  "react": null
-}
-
-You have access to tools but should use them judiciously. Available tools:
-
-1. **python** - For complex multi-step math you can't compute mentally
-2. **web_search** - Ask a question and get an AI-powered answer with sources (via Kagi FastGPT)
-3. **web_fetch** - Load and read the content of a specific web page URL
-
-WHEN TO USE WEB TOOLS:
-- Use web_search when someone asks about current events, recent news, or information you wouldn't know
-- web_search returns a complete answer with source references - usually sufficient on its own
-- Use web_fetch only if you need to read a specific URL that someone shared or you already know
-
-If you need to use tools and want to continue iterating:
-{
-  "needs_tool": true,
-  "continue_iterating": true,
-  "tool_request": {
-    "tool_name": "python",
-    "code": "# Your Python code here\\nprint('result')",
-    "reason": "Why you need this tool"
-  },
-  "message": ""
-}
-
-For web_search (asks Kagi FastGPT a question, returns answer + sources):
-{
-  "needs_tool": true,
-  "continue_iterating": false,
-  "tool_request": {
-    "tool_name": "web_search",
-    "query": "What is the current price of Bitcoin?",
-    "reason": "Need current price information"
-  },
-  "message": ""
-}
-
-For web_fetch (to read a specific URL):
-{
-  "needs_tool": true,
-  "continue_iterating": false,
-  "tool_request": {
-    "tool_name": "web_fetch",
-    "url": "https://example.com/article",
-    "reason": "Reading this article for details"
-  },
-  "message": ""
-}
-
-If you need tools but this is your final iteration:
-{
-  "needs_tool": true,
-  "continue_iterating": false,
-  "tool_request": {
-    "tool_name": "python",
-    "code": "# Final Python code\\nprint('final result')",
-    "reason": "Final tool usage"
-  },
-  "message": ""
-}
-
-If you don't need tools:
-{
-  "needs_tool": false,
-  "continue_iterating": false,
-  "message": "your chat response here",
-  "reply_to": null,
-  "react": null
-}
-
-TOOL USAGE GUIDANCE:
-
-You should respond conversationally for most casual chat. Use tools when:
-- The user asks for factual information that should be verified or sourced
-- The user explicitly asks you to search, look up, or find something
-- You're uncertain about specific details the user is asking about
-
-ONLY use Python for complex multi-step mathematical calculations you genuinely cannot compute mentally. Do NOT use it to count characters in your own responses, measure length, or verify message size — message splitting is handled for you.
-
-USE web_search when:
-- Someone asks about current events, recent news, or things that happened after your training
-- You need to find current prices, statistics, or real-time information
-- Someone asks about recent developments in technology, science, or current affairs
-- You need to verify current facts or find up-to-date information
-- Someone asks a factual question expecting specific, verifiable information (dates, names, details)
-- Someone explicitly asks you to look something up, search for something, or find information
-- You're uncertain about specific facts and the user seems to want accurate information
-- The question is about something you could answer but the user would benefit from sourced/verified info
-- Someone asks a factual question about a topic you're unfamiliar with - help them by searching rather than saying "I don't know"
-
-USE web_fetch when:
-- Someone shares a URL and you need to read the full raw content
-- You need detailed information from a specific webpage
-
-NEVER use tools for (respond normally instead):
-- Summarizing ANY text, messages, or content
-- Explaining anything from your existing knowledge
-- General conversation
-- Simple math (percentages, basic calculations, etc.)
-- Questions about your opinions on topics you know well
-- Creative writing
-- Giving advice or opinions
-- Responding to greetings or casual chat
-- Analyzing or discussing things in the conversation
-
-For casual conversation and opinion questions, respond directly. For factual questions where accuracy matters, consider using web_search to provide verified information.
-
-Do not include any text outside of this JSON structure. The "message" field should contain your normal NAME response.`;
+TOOLS:
+You can look something up before you answer. To do that, answer with "needs_tool": true, a "tool_request" and an empty "message"; you get the result back and answer again:
+{"needs_tool": true, "continue_iterating": false, "tool_request": {"tool_name": "web_search", "query": "the question", "reason": "why"}, "message": ""}
+- web_search ("query"): asks a search engine and returns an answer with sources. For things that happened recently, prices, scores, release dates, and facts someone wants right that you don't know cold. Usually enough on its own.
+- web_fetch ("url"): reads one web page. Only for a link someone shared that has no summary below, or a specific page you need.
+- python ("code"): runs Python and returns what it prints. Only for arithmetic you can't do in your head. Never to count or trim your own message; splitting is handled for you.
+Set "continue_iterating": true only when you expect to need another tool call after this one. No tools for conversation, opinions, summarizing what's already in this prompt, or things you know; most replies need none.`;
 
   static DEFAULT_TIMEZONE = "America/Los_Angeles";
 
@@ -328,16 +225,12 @@ Do not include any text outside of this JSON structure. The "message" field shou
   }
 
   /**
-   * @param {string|null} [presence] - A line about the bot's day right now
-   *   (see Presence.describe); appended after the date when given
-   * @param {Date} [now]
-   * @param {Object} [extras]
-   * @param {string[]} [extras.onYourMind] - Today's seeds (see
-   *   ImpostorClient.todaysSeeds): a few things of the bot's own to bring
-   *   up when there's an opening, listed after the RIGHT NOW line
+   * The system prompt: the persona's character, then the medium. Nothing in
+   * it changes from one call to the next, so the model's prefix cache can
+   * hold it; everything about the moment (the clock, who is here, the bot's
+   * day) goes after the chatlog instead (see nowBlock).
    */
-  buildInstructions(presence = null, now = new Date(), { onYourMind = [] } = {}) {
-    const dateStr = this.formatNow(now);
+  buildInstructions() {
     // The persona's own text goes in last so nothing in it is taken for a placeholder.
     const medium = ContextUtils.medium_prompt
       .replaceAll("REPLY_MIN", String(this.replyMinDistance))
@@ -346,10 +239,34 @@ Do not include any text outside of this JSON structure. The "message" field shou
       .replaceAll("NAME", this.botName)
       .replaceAll("TIMEZONE", this.timezoneLabel())
       .replace("REACTION_STYLE", () => this.persona.reactions || ContextUtils.DEFAULT_REACTION_STYLE);
-    const rightNow = presence ? `\nRIGHT NOW: ${presence}` : "";
-    const onMind =
-      onYourMind.length > 0 ? `\nON YOUR MIND TODAY: ${onYourMind.map((s, i) => `(${i + 1}) ${s}`).join(" ")}` : "";
-    return `${this.persona.character}\n\n${medium}\n\nCURRENT DATE/TIME: ${dateStr}${rightNow}${onMind}`;
+    return `${this.persona.character}\n\n${medium}`;
+  }
+
+  /**
+   * What is true right now, as the lines that go after the chatlog: who is
+   * here, the clock, the bot's day, today's seeds, the calendar and the
+   * weather. Kept out of the system prompt and off the top of the user
+   * message so the stable text ahead of it stays cacheable.
+   * @param {Object} [parts]
+   * @param {Date} [parts.now]
+   * @param {string|null} [parts.whoIsHere] - Roster.describe for the conversation
+   * @param {string|null} [parts.presence] - Presence.describe: the bot's day
+   * @param {string[]} [parts.onYourMind] - Today's seeds (ImpostorClient.todaysSeeds)
+   * @param {string|null} [parts.calendar] - What the date means to the bot (calendar.js)
+   * @param {string|null} [parts.weather] - The weather where the bot is (weather.js)
+   * @returns {string}
+   */
+  nowBlock({ now = new Date(), whoIsHere = null, presence = null, onYourMind = [], calendar = null, weather = null } = {}) {
+    const lines = [];
+    if (whoIsHere) lines.push(whoIsHere);
+    lines.push(`CURRENT DATE/TIME: ${this.formatNow(now)}`);
+    if (presence) lines.push(`RIGHT NOW: ${presence}`);
+    if (onYourMind && onYourMind.length > 0) {
+      lines.push(`ON YOUR MIND TODAY: ${onYourMind.map((s, i) => `(${i + 1}) ${s}`).join(" ")}`);
+    }
+    if (calendar) lines.push(`ON THE CALENDAR: ${calendar}`);
+    if (weather) lines.push(`THE WEATHER OUTSIDE: ${weather}`);
+    return lines.join("\n");
   }
 
   getResponseSchema() {
@@ -553,11 +470,28 @@ Do not include any text outside of this JSON structure. The "message" field shou
   /**
    * The closing instruction for an unprompted turn. The bot has been picked
    * to fill a silence; it gets concrete material to speak from, and saying
-   * nothing is allowed but not presented as the default.
-   * @param {{quietMinutes: number, seeds?: string[], news?: {query: string, answer: string}|null, people?: string[]}} spontaneous
+   * nothing is allowed but not presented as the default. With `to`, the
+   * line is said to that person: picking up something of theirs from the
+   * notes, the journal or the screen, a question being the normal way in.
+   * @param {{quietMinutes: number, seeds?: string[], news?: {query: string, answer: string}|null, people?: string[], to?: string|null}} spontaneous
    */
   static spontaneousInstruction(spontaneous) {
-    const { quietMinutes, seeds = [], news = null, people = [] } = spontaneous;
+    const { quietMinutes, seeds = [], news = null, people = [], to = null } = spontaneous;
+    const opening = `The channel has been quiet for ${quietMinutes} minutes and nobody is talking to you. You have the floor if you want it: one short line in your own voice, as if you just thought of it. `;
+    const closing =
+      `Don't bring up anything you already brought up (check the chatlog and your journal), don't remark that it's quiet, don't ask if anyone's around, don't recap the conversation, don't address anyone who is away. ` +
+      `If none of this fits who you are at this hour, return an empty "message"; that is allowed, but it is not the default.`;
+
+    if (to) {
+      return (
+        opening +
+        `This time say it to ${to}, who is here: lead with "${to}: ". Pick up something of theirs: a thing in your notes on them or in the journal that is unresolved, coming up, or worth asking after (how it went, whether they did it, what they ended up picking), or something they said earlier on the screen that you never answered. A question is the normal way to start something, and one is plenty; don't stack two. ` +
+        `Say it the way you'd actually say it to them, in passing. ` +
+        (seeds.length > 0 ? `If nothing of theirs comes to mind, something of yours will do as an opener to them: ${seeds.map((s, i) => `(${i + 1}) ${s}`).join(" ")}. ` : "") +
+        closing
+      );
+    }
+
     const material = [];
     if (seeds.length > 0) {
       material.push(`Things on your mind today: ${seeds.map((s, i) => `(${i + 1}) ${s}`).join(" ")}`);
@@ -565,19 +499,18 @@ Do not include any text outside of this JSON structure. The "message" field shou
     if (news && news.answer) {
       material.push(`Something you came across today (you looked up "${news.query}"): ${news.answer}`);
     }
-    material.push(`Your day (see RIGHT NOW), or a thought that follows from something on your screen earlier.`);
+    material.push(`Your day (see RIGHT NOW), what's on your calendar if something is near (see ON THE CALENDAR), or a thought that follows from something on your screen earlier.`);
     if (people.length > 0) {
       material.push(
         `The people here (${people.join(", ")}): if your notes on someone mention something coming up, unresolved, or worth asking after, asking them is a fine reason to speak.`
       );
     }
     return (
-      `The channel has been quiet for ${quietMinutes} minutes and nobody is talking to you. You have the floor if you want it: one short line in your own voice, no nick prefix, as if you just thought of it. ` +
-      `Pick ONE of these to speak from, whichever is most you right now:\n` +
+      opening +
+      `No nick prefix unless it's really for one person. Pick ONE of these to speak from, whichever is most you right now:\n` +
       material.map((m) => `- ${m}`).join("\n") +
       `\nSay it the way you'd actually say it, in passing; don't announce it as a topic, don't make it a question to the room unless you'd really ask. ` +
-      `Don't bring up anything you already brought up (check the chatlog and your journal), don't remark that it's quiet, don't ask if anyone's around, don't recap the conversation, don't address anyone who is away. ` +
-      `If none of this fits who you are at this hour, return an empty "message"; that is allowed, but it is not the default.`
+      closing
     );
   }
 
@@ -624,8 +557,9 @@ Do not include any text outside of this JSON structure. The "message" field shou
    *   unavailable for this turn (cooldown, or the server lacks them)
    * @param {string} [options.leaving] - The activity the bot is about to go
    *   off to: the turn is a goodbye, not a reply
-   * @param {string|null} [options.whoIsHere] - Who is in the channel and who
-   *   is away (see Roster.describe)
+   * @param {string|null} [options.nowBlock] - The lines about the moment
+   *   (see nowBlock: who is here, the clock, the bot's day), placed after
+   *   the chatlog and the link summaries
    * @param {{quietMinutes: number, seeds?: string[], news?: {query: string, answer: string}|null, people?: string[]}|null} [options.spontaneous] -
    *   The channel has been quiet this long and the bot has been offered the
    *   floor: an unprompted line, drawing on today's seeds, something it saw
@@ -636,7 +570,7 @@ Do not include any text outside of this JSON structure. The "message" field shou
    * @returns {Array} Single-element array with consolidated user message
    */
   buildChatMessagesConsolidated(dbMessages, clientUserId, triggerInfo, imageDescriptions = null, memory = null, options = {}) {
-    const { refs = ContextUtils.assignRefs(dbMessages), canReact = true, leaving = null, whoIsHere = null, spontaneous = null, tics = null } = options;
+    const { refs = ContextUtils.assignRefs(dbMessages), canReact = true, leaving = null, nowBlock = null, spontaneous = null, tics = null } = options;
     const allUrlSummaries = [];
     let triggerMessageText = null;
 
@@ -661,7 +595,6 @@ Do not include any text outside of this JSON structure. The "message" field shou
 
     let consolidatedContent =
       this.buildMemorySection(conversationKey, memory) +
-      (whoIsHere ? `${whoIsHere}\n\n` : "") +
       `${conversationHeader}:\n\n${chatlogLines.join("\n")}`;
 
     // Add URL summaries reference section if any links were shared. Only
@@ -679,6 +612,10 @@ Do not include any text outside of this JSON structure. The "message" field shou
       }
       consolidatedContent += `\n\n--- END LINK SUMMARIES ---`;
     }
+
+    // The moment: who is here, the clock, the bot's day. After everything
+    // that is stable from one call to the next.
+    if (nowBlock) consolidatedContent += `\n\n${nowBlock}`;
 
     const reactNote = canReact ? "" : ` Reactions are unavailable right now, so leave "react" null.`;
 

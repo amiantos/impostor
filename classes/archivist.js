@@ -16,6 +16,7 @@
  */
 
 const ContextUtils = require("./context_utils");
+const DatabaseManager = require("./database");
 
 const DEFAULTS = {
   enabled: true,
@@ -89,6 +90,21 @@ function buildArchivistPrompt({ persona, conversationId, journal, people, nicks,
   ].join("\n\n");
 
   const noteLines = nicks.map((nick) => `${nick}: ${people.get(nick) ? people.get(nick) : "(no note yet)"}`);
+  // "Under about N characters" alone did not hold: journals and notes
+  // settled at two to three times their budget, and every reply prompt
+  // carried the excess. Over budget, the pass is told so, with the numbers.
+  const overBudget = [];
+  if (journal.trim().length > cfg.journal_max_chars) {
+    overBudget.push(
+      `The journal above is ${journal.trim().length} characters against a budget of ${cfg.journal_max_chars}. This pass, condense: fold the older part into a sentence or two of what still matters, keep the newest part, and come in under ${cfg.journal_max_chars}.`
+    );
+  }
+  const longNotes = nicks.filter((nick) => (people.get(nick) || "").length > cfg.note_max_chars);
+  if (longNotes.length > 0) {
+    overBudget.push(
+      `These notes are over their budget of ${cfg.note_max_chars} characters: ${longNotes.map((n) => `${n} (${people.get(n).length})`).join(", ")}. Rewrite each shorter this pass even if nothing new was learned: keep what would be true of the person in any conversation, drop what was one evening's bit.`
+    );
+  }
   const heading =
     part && part.count > 1
       ? `# The chatlog, part ${part.index + 1} of ${part.count}`
@@ -101,6 +117,7 @@ function buildArchivistPrompt({ persona, conversationId, journal, people, nicks,
       : []),
     `# Notes about the people in this stretch`,
     noteLines.length > 0 ? noteLines.join("\n") : "(nobody but you spoke)",
+    ...overBudget,
     heading,
     lines.join("\n"),
     `# Your answer`,
@@ -334,7 +351,7 @@ class Archivist {
       cfg: this.cfg,
     });
 
-    const answer = await this.ask(system, user);
+    const answer = await this.ask(system, user, conversationId);
     if (!answer) {
       this.failedAt.set(conversationId, Date.now());
       this.logger.warn(`Archivist: no usable answer for ${conversationId} (part ${part.index + 1}/${part.count}); will reread after ${this.cfg.quiet_minutes} quiet minutes`);
@@ -400,17 +417,22 @@ class Archivist {
     return { ok: true, changed };
   }
 
-  /** Ask the model, once more if the answer isn't the JSON asked for. */
-  async ask(system, user) {
+  /**
+   * Ask the model, once more if the answer isn't the JSON asked for. The
+   * prompt and what it cost go in the prompts table like any other call.
+   */
+  async ask(system, user, conversationId = null) {
     const messages = [
       { role: "system", content: system },
       { role: "user", content: user },
     ];
+    const model = this.cfg.model || this.generator.model;
     for (let attempt = 1; attempt <= 2; attempt++) {
       let response;
+      const startedAt = Date.now();
       try {
         response = await this.openai.chat.completions.create({
-          model: this.cfg.model || this.generator.model,
+          model,
           messages,
           max_tokens: this.cfg.max_tokens,
           temperature: this.cfg.temperature,
@@ -424,6 +446,17 @@ class Archivist {
         continue;
       }
       const content = response?.choices?.[0]?.message?.content;
+      if (typeof this.db.storePrompt === "function") {
+        this.db.storePrompt({
+          conversationId,
+          promptType: "archivist",
+          systemPrompt: system,
+          messagesJson: [messages[1], { role: "assistant", content: content || "" }],
+          model,
+          temperature: this.cfg.temperature,
+          usage: DatabaseManager.usageOf(response, Date.now() - startedAt),
+        });
+      }
       const parsed = parseArchivistAnswer(content);
       if (parsed) return parsed;
       this.logger.warn(`Archivist answer wasn't the JSON asked for (attempt ${attempt}): ${String(content || "").slice(0, 200)}`);

@@ -22,10 +22,11 @@ function ircUserId(nick, ident, hostname) {
  * @param {string} options.ident - IRC ident (user) string
  * @param {string} options.hostname - IRC hostname
  * @param {boolean} options.isBot - Whether this message is from the bot itself
+ * @param {Date} [options.createdAt] - When it was sent; now by default
  * @returns {Object} Normalized message object
  */
 function createIrcMessage(nick, channel, text, options = {}) {
-  const { ident, hostname, isBot = false } = options;
+  const { ident, hostname, isBot = false, createdAt = null } = options;
 
   const userId = ircUserId(nick, ident, hostname);
 
@@ -41,7 +42,7 @@ function createIrcMessage(nick, channel, text, options = {}) {
       bot: isBot,
     },
     content: text,
-    createdAt: new Date(),
+    createdAt: createdAt || new Date(),
     attachments: new Map(),
     reference: null,
   };

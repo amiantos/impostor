@@ -59,7 +59,7 @@ before(() => {
     },
     { id: "mabel", nick: "Mabel", persona: "p", channels: ["#c"], pm_allowed_users: ["bob"] }
   );
-  bot = new ImpostorClient(silent, config, { openai, tools, dataDir, persona });
+  bot = new ImpostorClient(silent, config, { openai, tools, dataDir, persona, clock: () => now });
   // The constructor ticked once with the real clock; start over on ours.
   bot.presence.stop();
   now = at(22, 50);
@@ -100,7 +100,8 @@ test("at bedtime a live channel gets a goodbye, then the bot is away and answers
   assert.equal(calls.evaluations.length, 1);
   assert.match(calls.evaluations[0], /about to go \(asleep\)/);
   assert.equal(calls.replies.length, 1);
-  assert.match(calls.replies[0].system, /RIGHT NOW: You're about to go: asleep, until about 7:00 AM \(in about 8 hours\)\./);
+  assert.match(calls.replies[0].user, /RIGHT NOW: You're about to go: asleep, until about 7:00 AM \(in about 8 hours\)\./);
+  assert.doesNotMatch(calls.replies[0].system, /RIGHT NOW: |CURRENT DATE\/TIME: /, "the system prompt carries nothing about the moment");
   assert.match(calls.replies[0].user, /Say a brief goodbye/);
   assert.deepEqual(said, [["#c", "ok bed. night"]]);
   assert.deepEqual(aways(), [["AWAY", "zzz"]]);
@@ -141,9 +142,9 @@ test("in the morning the status clears and the missed conversations get one look
   bot.cancelEvaluationTimer("#c");
   await bot.evaluateAutonomousResponse("#c");
   assert.equal(calls.replies.length, before.replies + 1, "bob's DM got an answer");
-  assert.match(calls.replies.at(-1).system, /RIGHT NOW: You just got back \(just now\): you were asleep until 7:00 AM/);
+  assert.match(calls.replies.at(-1).user, /RIGHT NOW: You just got back \(just now\): you were asleep until 7:00 AM/);
   assert.equal(said.at(-1)[0], "bob");
-  assert.match(calls.replies.at(-1).user, /^bob is away: zzz, so they may not see this until they're back\.\n\nRecent conversation/m);
+  assert.match(calls.replies.at(-1).user, /<bob> psst\n\nbob is away: zzz, so they may not see this until they're back\.\nCURRENT DATE\/TIME: /);
   assert.equal(calls.evaluations.length, before.evaluations + 1, "the channel got one evaluation");
   assert.match(calls.evaluations.at(-1), /Mabel's day right now: You just got back/);
   assert.match(calls.evaluations.at(-1), /In #c right now: amiantos, bob \(away: zzz\)\./);
@@ -160,6 +161,8 @@ test("after a quiet stretch the director offers the bot the floor, once, and the
   bot.roster.setAway("bob", "afk since 2026-10-29 08:40:00-0500");
   // The newest line in #c was stored at the real clock (yesterday in test time), so #c has been quiet for ages.
   const replies = calls.replies.length;
+  // Above news_chance and address_chance: a plain line into the room, no lookup.
+  bot.spontaneity.random = () => 0.99;
   const picks = bot.checkSilences(now);
   assert.equal(picks.get("#c").picked, "mabel");
   await new Promise((r) => setTimeout(r, 50));
