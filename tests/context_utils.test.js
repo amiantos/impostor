@@ -23,6 +23,7 @@ test("the system prompt is the persona's character, then the medium with the nam
   assert.ok(prompt.startsWith("You are Mabel, a cheerful bot.\n\nHOW IRC WORKS HERE:"));
   assert.match(prompt, /<Mabel \(you\)>/);
   assert.match(prompt, /your normal Mabel response/);
+  assert.match(prompt, /Goodnights and goodbyes get answered/);
   assert.doesNotMatch(prompt, /NAME/);
   assert.doesNotMatch(prompt, /remember/i);
   assert.doesNotMatch(prompt, /CURRENT DATE\/TIME: /, "the clock is not in the system prompt (it would break the prefix cache)");

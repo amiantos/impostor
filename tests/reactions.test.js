@@ -299,6 +299,9 @@ test("the evaluator marks where the lines since the bot last spoke begin", async
     { id: "4", author_name: "bob", content: "how are you", created_at: "2026-10-26T10:02:00Z" },
   ], "mabel", "#c");
   assert.match(lastPrompt[1].content, /\[m1\] \[\d\d:\d\d\] bob: old\n--- 4 hours later ---\n\[m2\] \[\d\d:\d\d\] bob: hi\n\[m3\] \[\d\d:\d\d\] mabel \(Mabel\): hello\n--- new since Mabel last spoke ---\n\[m4\] \[\d\d:\d\d\] bob: how are you/);
+  // A goodnight to the room is one of the few things the evaluator is told always gets a reply.
+  assert.match(lastPrompt[0].content, /Someone says goodnight or goodbye to the room[^\n]*This one is not optional/);
+  assert.match(lastPrompt[0].content, /or when someone is saying goodnight, goodbye or hello to the room/);
 });
 
 test("the typing indicator pauses after typing_notifications.max_seconds", (t) => {

@@ -114,6 +114,8 @@ SQLite database per bot at `data/<id>/impostor.db`:
 4. If `respond`, generates via the same pipeline as a direct mention
 5. Decision logged with reasoning
 
+A goodnight, goodbye or hello said to the room is the one thing the evaluator is told always gets a "respond" from a bot that is here and not away, with the person's nick, substance not required: on 2026-10-29 amiantos said "night everybody" and all three bots reasoned "just a goodnight, nothing to add" and ignored it, which reads as not having noticed him leave. The reply prompt says what a goodnight back looks like (short, by nick, in voice).
+
 Whether a bot is talking too much is the evaluator's judgement from the conversation and the persona ("one turn per thought": a correction to something already answered gets nothing; the person it is talking with asking something new gets a hearing however recently it spoke). Until 2026-10-28 an unaddressed line was first held to a code-side cooldown (3 new messages *and* 45 seconds since the bot last spoke) and a ratio ceiling. The message count had no expiry, so in a slow channel a bot that had just had a 1:1 exchange stayed silent on that same person for hours (layla and nightmare in #bots, 26 to 221 minutes); it was removed, along with the address classifier and the `restraint` evaluator mode that only existed to soften it. If two bots spiral, that is a prompt fix, by decision.
 
 ## IRC Details
