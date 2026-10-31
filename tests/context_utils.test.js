@@ -235,9 +235,28 @@ test("the spontaneous instruction offers the floor with concrete material and le
   assert.match(directed, /^The channel has been quiet for 33 minutes/);
   assert.match(directed, /This time say it to alice, who is here: lead with "alice: "/);
   assert.match(directed, /A question is the normal way to start something/);
-  assert.match(directed, /something of yours will do as an opener to them: \(1\) the weather/);
+  assert.match(directed, /something of yours will do as an opener to them, told to them: things on your mind: \(1\) the weather/);
+  assert.match(directed, /Not something you've already asked them about/);
   assert.doesNotMatch(directed, /Pick ONE of these|The people here/);
   assert.match(directed, /return an empty "message"; that is allowed, but it is not the default\.$/);
+  assert.doesNotMatch(directed, /Threads you have already started|is a bot|are bots/);
+
+  // What happened today, the threads already started, and the other bots.
+  const full = ContextUtils.spontaneousInstruction({
+    quietMinutes: 20,
+    seeds: ["the weather"],
+    happenings: ["the farrier came and was rude about the back left hoof"],
+    people: ["alice"],
+    spent: ["alice: did the generator ever show up?", "something  knocked twice\nby the fence"],
+    bots: ["isaac", "Ayeka"],
+  });
+  assert.match(full, /- What happened to you today: the farrier came and was rude about the back left hoof\. Said the way you'd tell someone, not as a lesson\./);
+  assert.match(full, /Threads you have already started here unprompted in the last few days, which are spent: "alice: did the generator ever show up\?"; "something knocked twice by the fence"\. Don't reopen any of them/);
+  assert.match(full, /isaac, Ayeka are bots: not who this is for\./);
+  assert.match(full, /Say the concrete thing and stop there; no closing moral/);
+  const toWithHappening = ContextUtils.spontaneousInstruction({ quietMinutes: 20, happenings: ["the farrier came."], to: "alice", bots: ["isaac"] });
+  assert.match(toWithHappening, /told to them: what happened to you today: the farrier came\.\s/);
+  assert.match(toWithHappening, /isaac is a bot: not who this is for\./);
 });
 
 test("the current time line is the same in the now block and in formatNow", () => {
@@ -255,6 +274,7 @@ test("the now block goes after the chatlog and the link summaries, before the ti
     whoIsHere: "In #lurker right now: amiantos, bob (afk for 3 minutes).",
     presence: "You're in bed.",
     onYourMind: ["the dishes situation", "a song on repeat"],
+    today: ["a roommate's cousin is sleeping on the couch and nobody will say for how long"],
     calendar: "halloween is in 3 days",
     weather: "overcast, 9°C",
   });
@@ -264,6 +284,7 @@ test("the now block goes after the chatlog and the link summaries, before the ti
       "In #lurker right now: amiantos, bob (afk for 3 minutes).",
       "CURRENT DATE/TIME: Wednesday, October 28, 2026 at 12:00 PM PDT",
       "RIGHT NOW: You're in bed.",
+      "TODAY: a roommate's cousin is sleeping on the couch and nobody will say for how long.",
       "ON YOUR MIND TODAY: (1) the dishes situation (2) a song on repeat",
       "ON THE CALENDAR: halloween is in 3 days",
       "THE WEATHER OUTSIDE: overcast, 9°C",
@@ -279,12 +300,15 @@ test("the now block goes after the chatlog and the link summaries, before the ti
   );
   assert.match(
     message.content,
-    /^--- YOUR JOURNAL FOR #LURKER ---[\s\S]*<amiantos> mabel: hey\n\n--- LINK SUMMARIES[\s\S]*--- END LINK SUMMARIES ---\n\nIn #lurker right now: amiantos, bob \(afk for 3 minutes\)\.\nCURRENT DATE\/TIME: [^\n]*\nRIGHT NOW: You're in bed\.\nON YOUR MIND TODAY: [^\n]*\nON THE CALENDAR: [^\n]*\nTHE WEATHER OUTSIDE: overcast, 9°C\n\nSAY IT DIFFERENTLY: x\. Rest all of these for now\.\n\nRespond to amiantos/
+    /^--- YOUR JOURNAL FOR #LURKER ---[\s\S]*<amiantos> mabel: hey\n\n--- LINK SUMMARIES[\s\S]*--- END LINK SUMMARIES ---\n\nIn #lurker right now: amiantos, bob \(afk for 3 minutes\)\.\nCURRENT DATE\/TIME: [^\n]*\nRIGHT NOW: You're in bed\.\nTODAY: [^\n]*\nON YOUR MIND TODAY: [^\n]*\nON THE CALENDAR: [^\n]*\nTHE WEATHER OUTSIDE: overcast, 9°C\n\nSAY IT DIFFERENTLY: x\. Rest all of these for now\.\n\nRespond to amiantos/
   );
   assert.match(ctx.buildInstructions(), /An "ON YOUR MIND TODAY" line, when there is one/);
+  assert.match(ctx.buildInstructions(), /A "TODAY" line, when there is one, is something that actually happened to you today/);
+  assert.match(ctx.buildInstructions(), /Someone marked "\(bot\)" is another chatbot/);
+  assert.match(ctx.buildInstructions(), /If the last sentence you wrote could go on a fortune cookie, cut it\./);
   assert.match(ctx.buildInstructions(), /An "ON THE CALENDAR" line/);
   assert.match(ctx.buildInstructions(), /"THE WEATHER OUTSIDE", when there is one/);
-  assert.doesNotMatch(ctx.nowBlock({ now }), /ON YOUR MIND TODAY:|RIGHT NOW:|ON THE CALENDAR:|THE WEATHER/);
+  assert.doesNotMatch(ctx.nowBlock({ now }), /ON YOUR MIND TODAY:|RIGHT NOW:|ON THE CALENDAR:|THE WEATHER|TODAY:/);
 });
 
 test("a message with line breaks keeps them, indented under its first line", () => {

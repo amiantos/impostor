@@ -113,8 +113,8 @@ test("one bot at a time gets a channel, and after it speaks the channel is close
 test("the draw is weighted: a heavier bot wins more often, and a bot that spoke today less", () => {
   const counts = { layla: 0, isaac: 0 };
   let r = 0;
-  const layla = participant("layla", { config: { weight: 3, min_gap_minutes: 0 } });
-  const isaac = participant("isaac", { config: { weight: 1, min_gap_minutes: 0 } });
+  const layla = participant("layla", { config: { weight: 3, min_gap_minutes: 0, max_per_day: 10 } });
+  const isaac = participant("isaac", { config: { weight: 1, min_gap_minutes: 0, max_per_day: 10 } });
   const d = director({ bots: [layla, isaac], random: () => r });
   for (let i = 0; i < 100; i++) {
     r = (i + 0.5) / 100;
@@ -225,4 +225,24 @@ test("seedsForDay slides its window by the offset, wrapping, so a used seed drop
   assert.deepEqual(seedsForDay(seeds, "layla|2026-10-28", 3, 1), day.slice(1, 4));
   assert.deepEqual(seedsForDay(seeds, "layla|2026-10-28", 3, 4), [day[4], day[0], day[1]]);
   assert.deepEqual(seedsForDay(["only"], "x", 3, 2), ["only"]);
+});
+
+test("happeningsForDay rotates: the same all day, every item once per cycle, a new order each cycle", () => {
+  const { happeningsForDay } = require("../classes/spontaneity");
+  const list = ["farrier", "fence", "rain", "owl", "apple"];
+  const day = (d, n = 1) => happeningsForDay(list, "nightmare", d, n);
+  assert.deepEqual(day(100), day(100));
+  assert.equal(day(100).length, 1);
+  const cycle = [100, 101, 102, 103, 104].map((d) => day(d)[0]);
+  assert.deepEqual([...cycle].sort(), [...list].sort(), "five days use each happening once");
+  const next = [105, 106, 107, 108, 109].map((d) => day(d)[0]);
+  assert.deepEqual([...next].sort(), [...list].sort());
+  assert.notDeepEqual(next, cycle, "the next cycle is in a different order");
+  assert.equal(happeningsForDay(list, "isaac", 100, 1)[0] === day(100)[0] && happeningsForDay(list, "isaac", 101, 1)[0] === day(101)[0] && happeningsForDay(list, "isaac", 102, 1)[0] === day(102)[0], false, "two bots don't share an order");
+  // Two a day: still every item once per cycle.
+  const twos = [50, 51, 52].flatMap((d) => day(d, 2));
+  assert.equal(new Set(twos.slice(0, 5)).size, 5);
+  assert.deepEqual(happeningsForDay([], "x", 1, 1), []);
+  assert.deepEqual(happeningsForDay(list, "x", 1, 0), []);
+  assert.deepEqual(happeningsForDay(["one"], "x", 7, 3), ["one"]);
 });

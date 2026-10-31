@@ -586,6 +586,25 @@ class DatabaseManager {
       .map((row) => row.content);
   }
 
+  /**
+   * What the bot said unprompted in a conversation in the last `days`,
+   * oldest first: the threads it has already started there, which the next
+   * unprompted turn is told not to reopen.
+   */
+  getRecentSpontaneousLines(channelId, days = 3, now = new Date()) {
+    if (!(days > 0)) return [];
+    const since = new Date(now.getTime() - days * 86400000).toISOString();
+    return this.db
+      .prepare(`
+        SELECT content FROM responses
+        WHERE channel_id = ? AND response_type = 'spontaneous' AND created_at >= ?
+          AND content IS NOT NULL AND trim(content) != ''
+        ORDER BY created_at ASC
+      `)
+      .all(channelId, since)
+      .map((row) => row.content);
+  }
+
   /** The bot's own last `limit` reactions in a conversation, newest first, as strings. */
   getRecentBotReactions(channelId, limit = 10) {
     return this.db

@@ -13,7 +13,7 @@ const { Archivist } = require("./archivist");
 const { debounceConfig, planEvaluation } = require("./eval_debounce");
 const { Presence } = require("./presence");
 const { Roster } = require("./roster");
-const { SilenceDirector, Spontaneity, NewsDesk, seedsForDay } = require("./spontaneity");
+const { SilenceDirector, Spontaneity, NewsDesk, seedsForDay, happeningsForDay } = require("./spontaneity");
 const { findTics, ticLedgerText } = require("./tics");
 const { localParts } = require("./schedule");
 const { calendarLine } = require("./calendar");
@@ -108,7 +108,11 @@ class ImpostorClient {
 
     // Who is in each channel and who is away (see classes/roster.js); fed
     // by the IRC events below.
-    this.roster = new Roster({ selfNick: config.irc.nick, bridgeNick: config.irc.bridge_nick || null });
+    this.roster = new Roster({
+      selfNick: config.irc.nick,
+      bridgeNick: config.irc.bridge_nick || null,
+      botNicks: config.irc.bot_nicks || [],
+    });
 
     // Unprompted lines into a quiet channel (see classes/spontaneity.js):
     // this bot's own limits, and the director that hands out the floor.
@@ -195,8 +199,11 @@ class ImpostorClient {
       this.roster.join(event.nick, event.channel);
       if (event.nick.toLowerCase() === this.botNick.toLowerCase()) {
         this.logger.info(`Joined ${event.channel}`);
-        // NAMES says who is here; WHO says who of them is away.
+        // NAMES says who is here; WHO says who of them is away, and which are bots.
         this.ircClient.who(event.channel, (who) => this.roster.setWho(who?.users));
+      } else {
+        // Someone arrived: WHO them for the away and bot flags (irc-framework queues these).
+        this.ircClient.who(event.nick, (who) => this.roster.setWho(who?.users));
       }
     });
 
@@ -1481,6 +1488,7 @@ class ImpostorClient {
       whoIsHere: triggerInfo?.channelName ? this.roster.describe(triggerInfo.channelName, now) : null,
       presence: this.presence.describe(undefined, { leaving }),
       onYourMind: spontaneous ? [] : this.todaysSeeds(now),
+      today: spontaneous ? [] : this.todaysHappenings(now),
       calendar: this.calendarToday(now),
       weather: await this.weatherNow(),
     });
@@ -1787,7 +1795,7 @@ Reply with valid JSON in the format described above.`,
     return {
       inChannel: true,
       lastLineAt: newest ? new Date(newest.created_at) : null,
-      present: this.roster.reachable(channel).length,
+      present: this.roster.humans(channel).length,
       typing: this.roster.someoneTyping(channel, this.director.typingWaitSeconds, now),
       gone: this.presence.gone,
       busy:
@@ -1818,13 +1826,20 @@ Reply with valid JSON in the format described above.`,
    * (a recharge report, something at the fence) that nobody answered; a
    * line to someone, asking after a thing from the notes, is how a person
    * starts a conversation in a quiet channel. People with a note are
-   * preferred, since the note is what there is to ask after.
+   * preferred, since the note is what there is to ask after. Other bots are
+   * never the person: in prod more unprompted lines went bot to bot than to
+   * anyone else, each asking after the other's last bit (the fence, the
+   * actuator) for the third day running. For the same reason the bot's own
+   * unprompted lines from the last few days come along as `spent`: threads
+   * it has already started and must not reopen.
    * @param {string} channelName
    * @param {{journal: string|null, people: Map<string, string>}} memory - Extended in place
-   * @returns {Promise<{seeds: string[], news: Object|null, people: string[], to: string|null}>}
+   * @returns {Promise<{seeds: string[], happenings: string[], news: Object|null, people: string[], to: string|null, spent: string[]}>}
    */
   async spontaneousMaterial(channelName, memory) {
     const seeds = this.todaysSeeds();
+    const happenings = this.todaysHappenings();
+    const spent = this.db.getRecentSpontaneousLines(channelName, this.spontaneity.spentDays, this.clock());
 
     let news = null;
     const queries = this.persona.news || [];
@@ -1834,7 +1849,9 @@ Reply with valid JSON in the format described above.`,
       if (!news) this.logger.debug(`No news for "${query}"`);
     }
 
-    const people = this.roster.others(channelName);
+    // The people in the channel, bots left out: the notes on them are what
+    // there is to ask after, and the other bots' things are not.
+    const people = this.roster.others(channelName).filter((nick) => !this.roster.isBot(nick));
     const known = new Set([...(memory.people?.keys() || [])].map((n) => n.toLowerCase()));
     const missing = people.filter((nick) => !known.has(nick.toLowerCase()));
     if (missing.length > 0) {
@@ -1844,13 +1861,28 @@ Reply with valid JSON in the format described above.`,
 
     let to = null;
     if (channelName.startsWith("#") && this.spontaneity.random() < this.spontaneity.addressChance) {
-      const reachable = this.roster.reachable(channelName);
+      const humans = this.roster.humans(channelName);
       const noted = new Set([...(memory.people?.entries() || [])].filter(([, note]) => note && note.trim()).map(([nick]) => nick.toLowerCase()));
-      const pool = reachable.filter((nick) => noted.has(nick.toLowerCase()));
-      const from = pool.length > 0 ? pool : reachable;
+      const pool = humans.filter((nick) => noted.has(nick.toLowerCase()));
+      const from = pool.length > 0 ? pool : humans;
       if (from.length > 0) to = from[Math.floor(this.spontaneity.random() * from.length)] || null;
     }
-    return { seeds, news, people, to };
+    const bots = this.roster.others(channelName).filter((nick) => this.roster.isBot(nick));
+    return { seeds, happenings, news, people, to, spent, bots };
+  }
+
+  /**
+   * What happened to the bot today (`happenings_per_day` of the persona's
+   * `## Happenings`), the same all day, a different one tomorrow, every
+   * item once before any repeats (see happeningsForDay). In every prompt as
+   * the TODAY line, so the bot has a day of its own to mention and can be
+   * asked about it consistently.
+   * @param {Date} [now]
+   */
+  todaysHappenings(now = this.clock()) {
+    const day = localParts(now, this.contextUtils.timezone);
+    const dayIndex = Math.floor(Date.UTC(day.year, day.month - 1, day.day) / 86400000);
+    return happeningsForDay(this.persona.happenings, this.id, dayIndex, this.spontaneity.happeningsPerDay);
   }
 
   /**
@@ -1860,7 +1892,7 @@ Reply with valid JSON in the format described above.`,
    * for each unprompted line spoken today, so a seed already used drops off.
    * @param {Date} [now]
    */
-  todaysSeeds(now = new Date()) {
+  todaysSeeds(now = this.clock()) {
     const day = localParts(now, this.contextUtils.timezone);
     const dateKey = `${day.year}-${String(day.month).padStart(2, "0")}-${String(day.day).padStart(2, "0")}`;
     return seedsForDay(this.persona.seeds, `${this.id}|${dateKey}`, this.spontaneity.seedsPerDay, this.spontaneity.spokenInLastDay(now));
@@ -1922,7 +1954,7 @@ Reply with valid JSON in the format described above.`,
     try {
       const material = await this.spontaneousMaterial(channelName, memory);
       news = material.news;
-      const { seeds, people, to } = material;
+      const { seeds, happenings, people, to, spent, bots } = material;
       const { response, conversationLog, react, replyTo, systemPrompt, usage } = await this.generateResponseWithChatCompletions({
         dbMessages,
         userName: "various",
@@ -1933,7 +1965,7 @@ Reply with valid JSON in the format described above.`,
         triggerInfo,
         refs,
         canReact: false,
-        spontaneous: { quietMinutes, seeds, news, people, to },
+        spontaneous: { quietMinutes, seeds, happenings, news, people, to, spent, bots },
       });
       const botMessage = createIrcMessage(this.botNick, channelName, response, { isBot: true, createdAt: this.clock() });
       const responseId = this.db.logResponse(channelName, botMessage.id, "spontaneous", response, null);
@@ -1980,6 +2012,7 @@ Reply with valid JSON in the format described above.`,
       presence: this.presence.snapshot(),
       spontaneous: this.spontaneity.snapshot(),
       on_your_mind: this.todaysSeeds(),
+      today: this.todaysHappenings(),
       silences: this.ownDirector ? this.director.snapshot() : undefined,
     };
   }

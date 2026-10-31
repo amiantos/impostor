@@ -10,7 +10,10 @@ const { parseCalendar } = require("./calendar");
  * how often), shown to both the evaluator and the reply model, and an
  * optional "## Schedule" section with their routine (see schedule.js), an
  * optional "## Seeds" list (things they would bring up unprompted into a
- * quiet channel; a few are drawn per day) and an optional "## News" list
+ * quiet channel; a few are drawn per day), an optional "## Happenings" list
+ * (small things that happen to them; one or so is true each day, rotating
+ * so each is used once before any repeats, shown as the TODAY line so they
+ * have a day of their own) and an optional "## News" list
  * (search queries for what they'd keep up with; one is looked up before
  * some unprompted turns), and an optional "## Calendar" list (dates that
  * mean something to them, see calendar.js; the prompts say which are today
@@ -18,7 +21,7 @@ const { parseCalendar } = require("./calendar");
  * protocol, tools) lives in code; the file holds only who the bot is.
  *
  * @param {string} text - The file's contents
- * @returns {{name: string, character: string, evaluator: string, reactions: string|null, schedule: Object|null, seeds: string[], news: string[], calendar: Array}}
+ * @returns {{name: string, character: string, evaluator: string, reactions: string|null, schedule: Object|null, seeds: string[], happenings: string[], news: string[], calendar: Array}}
  */
 function parsePersona(text) {
   const lines = String(text ?? "").replace(/\r\n/g, "\n").split("\n");
@@ -59,6 +62,7 @@ function parsePersona(text) {
     throw new Error(`Persona "${name}": ${err.message}`);
   }
   const seeds = parseList(sections.get("seeds"));
+  const happenings = parseList(sections.get("happenings"));
   const news = parseList(sections.get("news"));
   let calendar = [];
   try {
@@ -79,6 +83,8 @@ function parsePersona(text) {
     // Without these, unprompted turns draw only on the day, the screen and the notes.
     seeds,
     news,
+    // Without these, nothing happens to the bot; it has only its subjects.
+    happenings,
     // Without one, no date means anything in particular.
     calendar,
   };

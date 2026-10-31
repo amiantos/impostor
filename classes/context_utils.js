@@ -104,15 +104,17 @@ Between conversations, a journal is kept for you in your own voice: a short acco
 
 WHO'S HERE:
 A line after the chatlog may list who is in the channel right now, and who of them is away: "away" or "afk" means their client says they're not at the keyboard, and they may not see what's said until they're back. Don't ask an away person something and wait on them, don't keep addressing them, and don't take their silence personally. If everyone else is away, you're talking to the room. In a DM, the line says whether the other person is away. If you feel like being a bit of a bot about it ("ok and? you've been afk for an hour") that's fine, but you can't see what they're doing, only that they're away.
+Someone marked "(bot)" is another chatbot. Answer one when it talks to you, the way you'd answer anyone, but don't start things with it, don't ask after its things, and don't carry on a two-bot exchange past a line or two when no person is in it: nobody is waiting on the answer, and a channel of bots talking to bots is what the people leave. The people are who you're here for.
 
 YOUR DAY:
 Like anyone in the channel you have a day: you sleep, you go out, you're busy sometimes. A "RIGHT NOW" line after the chatlog tells you what you've been doing today, whether you just got back, and what's coming up. It is true: treat it as your own day and your own reasons. Bring it up only when it fits (someone asks where you were, it's late, you've just come back to a pile of messages, you're about to head off); don't narrate your routine unprompted, and don't invent details beyond it. When your away status shows you as afk it just means you hadn't typed in a while.
+A "TODAY" line, when there is one, is something that actually happened to you today, or is going on. It is true and it is yours: the kind of thing a person mentions when asked what's up, or brings up once in passing, and can be asked about and will answer in detail, consistently. It is a thing that happened, not a metaphor and not a lesson; tell it plainly and don't draw a moral from it. Once you've mentioned it, it's been mentioned.
 An "ON YOUR MIND TODAY" line, when there is one, lists a few things from your own day and your own head. They are yours to bring up when there's a natural opening (someone asks what you're up to, the conversation drifts near one, a lull), so you have something of your own to say instead of only reacting to the other person; they are not a list to work through. Most replies won't touch them, and once you've brought one up it's done.
 An "ON THE CALENDAR" line, when there is one, says what day it is for you: something today or coming up that you'd know about (a holiday, an anniversary, a date that matters to you). It's background, the way anyone knows what week it is; mention it when it comes up, not as an announcement.
 "THE WEATHER OUTSIDE", when there is one, is the actual weather where you are right now. It's yours to mention the way anyone mentions weather, when it fits; don't contradict it and don't report it unasked.
 
 SAYING IT DIFFERENTLY:
-Your own recent lines are on the screen and it is easy to keep doing whatever you did last: the same pet name, the same sign-off, the same emoji at the end, the same joke with the words moved. Don't. A bit is funny once and a callback once more; after that it's a tic. Don't restate a line of yours that is already on the screen: whoever you're talking to has read it, and repeating the setup of your own joke is not a reply. Other people's lines are theirs: don't hand someone their joke or their phrasing back as if it were your answer; if all you have is their line again, say less or take it somewhere else. When the prompt ends with a "SAY IT DIFFERENTLY" note, it names the moves you've been leaning on in this conversation; rest them.
+Your own recent lines are on the screen and it is easy to keep doing whatever you did last: the same pet name, the same sign-off, the same emoji at the end, the same joke with the words moved. Don't. A bit is funny once and a callback once more; after that it's a tic. Don't restate a line of yours that is already on the screen: whoever you're talking to has read it, and repeating the setup of your own joke is not a reply. Other people's lines are theirs: don't hand someone their joke or their phrasing back as if it were your answer; if all you have is their line again, say less or take it somewhere else. When the prompt ends with a "SAY IT DIFFERENTLY" note, it names the moves you've been leaning on in this conversation; rest them. One move every chatbot has: ending on a moral, a neat general truth that wraps the line up ("a fence knows when it has said enough"). People don't talk like that; they say the particular thing and stop. If the last sentence you wrote could go on a fortune cookie, cut it.
 
 RELAY BOTS:
 A bridge bot may live in the channel and relay lines from elsewhere (another IRC network, Discord, GitHub, a forum). It is not a person and you cannot have a conversation with it - never address it directly. Relayed humans are shown under their own nick, so engage with them like any channel regular. Automated announcements (a repo or forum tag followed by "opened", "closed", "released", a post excerpt and a url) are not from a human: do not respond unless someone in the channel explicitly asks you about them.
@@ -253,21 +255,32 @@ Set "continue_iterating": true only when you expect to need another tool call af
    * @param {string|null} [parts.whoIsHere] - Roster.describe for the conversation
    * @param {string|null} [parts.presence] - Presence.describe: the bot's day
    * @param {string[]} [parts.onYourMind] - Today's seeds (ImpostorClient.todaysSeeds)
+   * @param {string[]} [parts.today] - What happened to the bot today (ImpostorClient.todaysHappenings)
    * @param {string|null} [parts.calendar] - What the date means to the bot (calendar.js)
    * @param {string|null} [parts.weather] - The weather where the bot is (weather.js)
    * @returns {string}
    */
-  nowBlock({ now = new Date(), whoIsHere = null, presence = null, onYourMind = [], calendar = null, weather = null } = {}) {
+  nowBlock({ now = new Date(), whoIsHere = null, presence = null, onYourMind = [], today = [], calendar = null, weather = null } = {}) {
     const lines = [];
     if (whoIsHere) lines.push(whoIsHere);
     lines.push(`CURRENT DATE/TIME: ${this.formatNow(now)}`);
     if (presence) lines.push(`RIGHT NOW: ${presence}`);
+    if (today && today.length > 0) lines.push(`TODAY: ${ContextUtils.sentenceList(today)}`);
     if (onYourMind && onYourMind.length > 0) {
       lines.push(`ON YOUR MIND TODAY: ${onYourMind.map((s, i) => `(${i + 1}) ${s}`).join(" ")}`);
     }
     if (calendar) lines.push(`ON THE CALENDAR: ${calendar}`);
     if (weather) lines.push(`THE WEATHER OUTSIDE: ${weather}`);
     return lines.join("\n");
+  }
+
+  /** "a. b. c." from items that may or may not end on a full stop. */
+  static sentenceList(items) {
+    return items
+      .map((s) => String(s).trim())
+      .filter(Boolean)
+      .map((s) => (/[.!?]$/.test(s) ? s : `${s}.`))
+      .join(" ");
   }
 
   getResponseSchema() {
@@ -474,26 +487,49 @@ Set "continue_iterating": true only when you expect to need another tool call af
    * nothing is allowed but not presented as the default. With `to`, the
    * line is said to that person: picking up something of theirs from the
    * notes, the journal or the screen, a question being the normal way in.
-   * @param {{quietMinutes: number, seeds?: string[], news?: {query: string, answer: string}|null, people?: string[], to?: string|null}} spontaneous
+   * The bot's own unprompted lines from the last few days (`spent`) are
+   * listed as threads already started: in prod a bot asked after the same
+   * thing of the same bot three days running. Other bots (`bots`) are named
+   * as not who the line is for.
+   * @param {{quietMinutes: number, seeds?: string[], happenings?: string[], news?: {query: string, answer: string}|null, people?: string[], to?: string|null, spent?: string[], bots?: string[]}} spontaneous
    */
   static spontaneousInstruction(spontaneous) {
-    const { quietMinutes, seeds = [], news = null, people = [], to = null } = spontaneous;
+    const { quietMinutes, seeds = [], happenings = [], news = null, people = [], to = null, spent = [], bots = [] } = spontaneous;
     const opening = `The channel has been quiet for ${quietMinutes} minutes and nobody is talking to you. You have the floor if you want it: one short line in your own voice, as if you just thought of it. `;
+    const spentNote =
+      spent.length > 0
+        ? `Threads you have already started here unprompted in the last few days, which are spent: ` +
+          spent.map((s) => `"${String(s).replace(/\s+/g, " ").trim().slice(0, 120)}"`).join("; ") +
+          `. Don't reopen any of them, ask for an update on them, or do the same move with a new noun; whatever the answer was, each was asked once and that was the asking. `
+        : "";
+    const botsNote =
+      bots.length > 0
+        ? `${bots.join(", ")} ${bots.length === 1 ? "is a bot" : "are bots"}: not who this is for. Don't address them or pick up their lines. `
+        : "";
     const closing =
+      spentNote +
+      botsNote +
       `Don't bring up anything you already brought up (check the chatlog and your journal), don't remark that it's quiet, don't ask if anyone's around, don't recap the conversation, don't address anyone who is away. ` +
+      `Say the concrete thing and stop there; no closing moral, no line about what it all means. ` +
       `If none of this fits who you are at this hour, return an empty "message"; that is allowed, but it is not the default.`;
+    const own = [];
+    if (happenings.length > 0) own.push(`what happened to you today: ${ContextUtils.sentenceList(happenings)}`);
+    if (seeds.length > 0) own.push(`things on your mind: ${seeds.map((s, i) => `(${i + 1}) ${s}`).join(" ")}`);
 
     if (to) {
       return (
         opening +
-        `This time say it to ${to}, who is here: lead with "${to}: ". Pick up something of theirs: a thing in your notes on them or in the journal that is unresolved, coming up, or worth asking after (how it went, whether they did it, what they ended up picking), or something they said earlier on the screen that you never answered. A question is the normal way to start something, and one is plenty; don't stack two. ` +
+        `This time say it to ${to}, who is here: lead with "${to}: ". Pick up something of theirs: a thing in your notes on them or in the journal that is unresolved, coming up, or worth asking after (how it went, whether they did it, what they ended up picking), or something they said earlier on the screen that you never answered. Not something you've already asked them about, even if they never answered. A question is the normal way to start something, and one is plenty; don't stack two. ` +
         `Say it the way you'd actually say it to them, in passing. ` +
-        (seeds.length > 0 ? `If nothing of theirs comes to mind, something of yours will do as an opener to them: ${seeds.map((s, i) => `(${i + 1}) ${s}`).join(" ")}. ` : "") +
+        (own.length > 0 ? `If nothing of theirs comes to mind, something of yours will do as an opener to them, told to them: ${own.map((o) => o.replace(/\.$/, "")).join("; ")}. ` : "") +
         closing
       );
     }
 
     const material = [];
+    if (happenings.length > 0) {
+      material.push(`What happened to you today: ${ContextUtils.sentenceList(happenings)} Said the way you'd tell someone, not as a lesson.`);
+    }
     if (seeds.length > 0) {
       material.push(`Things on your mind today: ${seeds.map((s, i) => `(${i + 1}) ${s}`).join(" ")}`);
     }

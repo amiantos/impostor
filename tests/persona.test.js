@@ -89,3 +89,13 @@ test("Seeds and News sections are bullet lists; none means empty", () => {
     assert.ok(p.news.length >= 5, `${name} has news queries`);
   }
 });
+
+test("a Happenings section is a list of things that happen to the bot; absent, it is empty", () => {
+  const persona = parsePersona("# Bob\n\nYou are Bob.\n\n## Happenings\n\n# small things\n- the farrier came\n- it rained on the fence\n");
+  assert.deepEqual(persona.happenings, ["the farrier came", "it rained on the fence"]);
+  assert.deepEqual(parsePersona("# Bob\n\nYou are Bob.\n").happenings, []);
+  for (const name of ["isaac", "nightmare", "layla"]) {
+    const p = loadPersona(path.join(__dirname, "..", "conf", "personas", `${name}.md`));
+    assert.ok(p.happenings.length >= 15, `${name} has happenings`);
+  }
+});

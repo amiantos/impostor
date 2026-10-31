@@ -72,6 +72,12 @@ for (const bot of bots) {
   logger.info(`Bot "${client.id}" is ${persona.name} as ${bot.nick} in ${(bot.channels || []).join(", ") || "no channels"}`);
 }
 
+// Every bot knows the others are bots, whatever the server says about them:
+// an unprompted line goes to a person, and the prompts mark the bots.
+for (const client of clients.values()) {
+  for (const bot of bots) if (bot.nick !== client.botNick) client.roster.markBot(bot.nick);
+}
+
 let webServer = null;
 if (config.web?.enabled) {
   webServer = new WebServer(logger, config, clients);

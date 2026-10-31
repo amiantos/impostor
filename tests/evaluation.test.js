@@ -86,3 +86,11 @@ test("nothing new since the bot spoke means the evaluator isn't asked", async ()
   await bot.evaluateAutonomousResponse("#c");
   assert.equal(asked.length, 0);
 });
+
+test("the evaluator is told another bot's line into the room is not an opening", () => {
+  const ResponseEvaluator = require("../classes/response_evaluator");
+  const evaluator = new ResponseEvaluator(silent, { timezone: "UTC" }, null, null, { name: "Mabel", evaluator: "Mabel is a bot." }, null);
+  const prompt = evaluator.buildDecisionPrompt();
+  assert.match(prompt, /OTHER BOTS: the same line marks other chatbots "\(bot\)"\. A bot's line addressed to Mabel by name gets the normal treatment\./);
+  assert.match(prompt, /two bots answering each other's dispatches is what empties a channel of people/);
+});

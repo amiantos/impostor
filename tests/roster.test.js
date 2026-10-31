@@ -95,3 +95,27 @@ test("typing: who is mid-line right now", () => {
   r.noteTyping("#c", "amiantos", "done");
   assert.equal(r.someoneTyping("#c"), "bob", "someone else's done doesn't clear bob");
 });
+
+test("knows which nicks are bots: from the config, from WHO's bot flag, or marked; they are not humans and are labelled", () => {
+  const r = new Roster({ selfNick: "layla", botNicks: ["Isaac"], clock: () => now });
+  r.setUserlist("#c", ["amiantos", "isaac", "Ayeka", "nightmare", "layla"]);
+  r.setWho([{ nick: "Ayeka", away: false, bot: true }, { nick: "amiantos", away: false, bot: false }]);
+  r.markBot("nightmare");
+  assert.equal(r.isBot("ISAAC"), true);
+  assert.equal(r.isBot("ayeka"), true);
+  assert.equal(r.isBot("amiantos"), false);
+  assert.deepEqual(r.reachable("#c"), ["amiantos", "isaac", "Ayeka", "nightmare"]);
+  assert.deepEqual(r.humans("#c"), ["amiantos"]);
+  assert.equal(r.describe("#c"), "In #c right now: amiantos, isaac (bot), Ayeka (bot), nightmare (bot).");
+  r.setAway("nightmare", "grazing");
+  assert.equal(r.describe("#c"), "In #c right now: amiantos, isaac (bot), Ayeka (bot), nightmare (bot, away: grazing).");
+  r.rename("isaac", "isaac2");
+  assert.equal(r.isBot("isaac2"), true);
+  r.quit("isaac2");
+  r.join("isaac2", "#c");
+  assert.equal(r.isBot("isaac2"), true, "a bot is a bot after it reconnects");
+  r.setAway("amiantos", "afk since 2026-10-28 01:07:00-0500");
+  assert.deepEqual(r.humans("#c"), ["amiantos"], "auto-afk people are still someone to talk to");
+  r.setAway("amiantos", "zzz");
+  assert.deepEqual(r.humans("#c"), [], "bots alone are nobody to talk to");
+});

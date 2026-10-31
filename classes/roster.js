@@ -3,7 +3,10 @@
  * NAMES on join, join/part/kick/quit/nick after that, away-notify for away
  * and back (with the message), and a WHO on join for the away flag of
  * people who were already there (WHO carries no message). Also the last
- * +typing seen per channel, so a bot can hold off while someone is mid-line.
+ * +typing seen per channel, so a bot can hold off while someone is mid-line,
+ * and which nicks are other chatbots (WHO's bot flag, the config, the
+ * sibling bots), so an unprompted line goes to a person and the prompts can
+ * mark the bots.
  *
  * Pure bookkeeping: no IRC client in here, the ImpostorClient feeds it.
  */
@@ -14,7 +17,7 @@ class Roster {
    * @param {string|null} [options.bridgeNick] - The relay bot, also left out
    * @param {() => Date} [options.clock]
    */
-  constructor({ selfNick, bridgeNick = null, clock = () => new Date(), recentJoinMinutes = 10 }) {
+  constructor({ selfNick, bridgeNick = null, botNicks = [], clock = () => new Date(), recentJoinMinutes = 10 }) {
     this.selfNick = selfNick;
     this.bridgeNick = bridgeNick;
     this.clock = clock;
@@ -23,6 +26,11 @@ class Roster {
     this.away = new Map(); // nick lower -> { message: string|null, since: Date }
     this.typing = new Map(); // channel (lower) -> { nick, at: Date }
     this.joined = new Map(); // "channel|nick" (lower) -> Date someone arrived, after the bot was already there
+    // Other chatbots: the sibling bots in this process and `irc.bot_nicks`
+    // from the config, plus anyone WHO shows with the server's bot flag
+    // (Ergo's +B). Kept across parts and quits; a bot is a bot tomorrow too.
+    this.bots = new Set();
+    for (const nick of botNicks || []) if (nick) this.bots.add(Roster.key(nick));
   }
 
   static key(s) {
@@ -97,7 +105,20 @@ class Roster {
       this.away.set(to, this.away.get(from));
       this.away.delete(from);
     }
+    if (this.bots.has(from)) {
+      this.bots.delete(from);
+      this.bots.add(to);
+    }
     if (Roster.key(this.selfNick) === from) this.selfNick = newNick;
+  }
+
+  /** This nick is a chatbot (learned from config, a sibling, or WHO's bot flag). */
+  markBot(nick) {
+    if (nick) this.bots.add(Roster.key(nick));
+  }
+
+  isBot(nick) {
+    return this.bots.has(Roster.key(nick));
   }
 
   isAnywhere(nick) {
@@ -128,6 +149,7 @@ class Roster {
     for (const u of users || []) {
       if (!u?.nick) continue;
       const key = Roster.key(u.nick);
+      if (u.bot) this.bots.add(key);
       if (u.away) {
         if (!this.away.has(key)) this.away.set(key, { message: null, since: at });
       } else {
@@ -183,6 +205,15 @@ class Roster {
     });
   }
 
+  /**
+   * The people, as opposed to the bots, who could read a line now: what an
+   * unprompted line is for, and what the silence director counts. Three
+   * bots alone in a channel at 4am are not company for each other.
+   */
+  humans(channel) {
+    return this.reachable(channel).filter((nick) => !this.isBot(nick));
+  }
+
   static isAutoAfk(entry) {
     return Boolean(entry && entry.message && /^afk since \d{4}-\d{2}-\d{2} /.test(entry.message));
   }
@@ -225,6 +256,7 @@ class Roster {
     if (others.length === 0) return null;
     const parts = others.map((nick) => {
       const labels = [];
+      if (this.isBot(nick)) labels.push("bot");
       const away = Roster.awayLabel(this.awayOf(nick), now);
       if (away) labels.push(away);
       const ago = this.joinedAgo(nick, conversationId, now);

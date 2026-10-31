@@ -63,6 +63,9 @@ before(() => {
   // The constructor ticked once with the real clock; start over on ours.
   bot.presence.stop();
   now = at(22, 50);
+  // The nudge after an away block is stamped by this clock too; on the real
+  // clock it would sit "pending" forever against the test's fixed dates.
+  bot.spontaneity.clock = () => now;
   Object.assign(bot.presence, { clock: () => now, lastSentAt: now, gone: false, current: null, afk: false, applied: null, initial: false });
   // A stand-in for the IRC connection: records what goes out.
   bot.ircClient = {
@@ -164,7 +167,7 @@ test("after a quiet stretch the director offers the bot the floor, once, and the
   // Above news_chance and address_chance: a plain line into the room, no lookup.
   bot.spontaneity.random = () => 0.99;
   const picks = bot.checkSilences(now);
-  assert.equal(picks.get("#c").picked, "mabel");
+  assert.equal(picks.get("#c").picked, "mabel", picks.get("#c").reason);
   await new Promise((r) => setTimeout(r, 50));
   assert.equal(calls.replies.length, replies + 1);
   assert.match(calls.replies.at(-1).user, /The channel has been quiet for \d+ minutes and nobody is talking to you\. You have the floor if you want it/);
@@ -172,6 +175,9 @@ test("after a quiet stretch the director offers the bot the floor, once, and the
   assert.match(calls.replies.at(-1).user, /In #c right now: amiantos, bob \(afk for \d+ minutes\)\./);
   assert.deepEqual(said.at(-1), ["#c", "class was so pointless today"]);
   assert.equal(bot.db.db.prepare("SELECT response_type FROM responses ORDER BY rowid DESC LIMIT 1").get().response_type, "spontaneous");
+  // The line is now a spent thread for the next unprompted turn here.
+  assert.deepEqual(bot.db.getRecentSpontaneousLines("#c", 3, new Date()), ["class was so pointless today"]);
+  assert.deepEqual(bot.db.getRecentSpontaneousLines("#c", 0, new Date()), []);
   assert.match(bot.db.db.prepare("SELECT reason FROM decision_log ORDER BY rowid DESC LIMIT 1").get().reason, /^\[spontaneous\] spoke after \d+ quiet minutes/);
   assert.equal(bot.spontaneity.spoken.length, 1);
   assert.equal(bot.describe().spontaneous.spoken_today, 1);

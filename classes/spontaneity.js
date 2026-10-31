@@ -40,7 +40,9 @@ class Spontaneity {
     this.clock = clock;
     this.random = random;
     this.enabled = config.enabled !== false;
-    this.maxPerDay = config.max_per_day ?? 5;
+    // Two a day. At five, three bots in one channel filled their quota every
+    // day and answered each other's, and the channel read as mostly bot.
+    this.maxPerDay = config.max_per_day ?? 2;
     this.minGapMinutes = config.min_gap_minutes ?? 60;
     this.weight = Math.max(0, Number(config.weight ?? 1)) || 0;
     this.returnDelayMin = config.return_delay_min_minutes ?? 1;
@@ -52,6 +54,10 @@ class Spontaneity {
     // into the room: a line to a person invites a reply; a dispatch does not.
     this.addressChance = Math.min(1, Math.max(0, Number(config.address_chance ?? 0.5)));
     this.seedsPerDay = Math.max(0, config.seeds_per_day ?? 3);
+    // How many of the persona's happenings are true today (the TODAY line).
+    this.happeningsPerDay = Math.max(0, config.happenings_per_day ?? 1);
+    // How far back the bot's own unprompted lines count as spent threads.
+    this.spentDays = Math.max(0, config.spent_days ?? 3);
     this.nudges = new Map(); // channel (lower) -> { at: Date, quietMinutes }
     this.spoken = []; // Dates the bot spoke unprompted (any channel)
   }
@@ -353,6 +359,36 @@ function seedsForDay(seeds, key, n, offset = 0) {
   return out;
 }
 
+/**
+ * What happened to the bot today: `n` of its happenings, the same all day
+ * and different tomorrow. Unlike seeds, these rotate rather than draw: the
+ * list is shuffled once per cycle (seeded by bot and cycle number) and
+ * walked `n` a day, so every happening is used once before any comes
+ * round again, in a different order each time round.
+ * @param {string[]} happenings
+ * @param {string} botId
+ * @param {number} dayIndex - Whole days since the epoch, in the bot's zone
+ * @param {number} n
+ */
+function happeningsForDay(happenings, botId, dayIndex, n) {
+  if (!happenings || happenings.length === 0 || n <= 0) return [];
+  const len = happenings.length;
+  const permutation = (cycle) =>
+    happenings
+      .map((h, i) => ({ h, u: hash01(`${botId}|happenings|${cycle}|${i}|${h}`) }))
+      .sort((a, b) => a.u - b.u)
+      .map((r) => r.h);
+  const out = [];
+  const perms = new Map();
+  for (let i = 0; i < Math.min(n, len); i++) {
+    const idx = dayIndex * n + i;
+    const cycle = Math.floor(idx / len);
+    if (!perms.has(cycle)) perms.set(cycle, permutation(cycle));
+    out.push(perms.get(cycle)[idx % len]);
+  }
+  return out;
+}
+
 class NewsDesk {
   /**
    * @param {Object} options
@@ -409,4 +445,4 @@ class NewsDesk {
   }
 }
 
-module.exports = { Spontaneity, SilenceDirector, NewsDesk, seedsForDay };
+module.exports = { Spontaneity, SilenceDirector, NewsDesk, seedsForDay, happeningsForDay };
