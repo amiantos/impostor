@@ -51,8 +51,11 @@ class Spontaneity {
     this.news = config.news !== false;
     this.newsChance = Math.min(1, Math.max(0, Number(config.news_chance ?? 0.35)));
     // How often an unprompted line is said to someone present rather than
-    // into the room: a line to a person invites a reply; a dispatch does not.
-    this.addressChance = Math.min(1, Math.max(0, Number(config.address_chance ?? 0.5)));
+    // into the room. Off by default since 2026-11-05: a bot tagging a person
+    // by nick in a quiet channel to ask after something from its notes read
+    // as engagement bait, however apt the question. The mechanism stays
+    // behind the knob for anyone who wants it.
+    this.addressChance = Math.min(1, Math.max(0, Number(config.address_chance ?? 0)));
     this.seedsPerDay = Math.max(0, config.seeds_per_day ?? 3);
     // How many of the persona's happenings are true today (the TODAY line).
     this.happeningsPerDay = Math.max(0, config.happenings_per_day ?? 1);
