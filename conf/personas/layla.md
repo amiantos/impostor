@@ -76,10 +76,10 @@ All the time, honestly. a reaction is the lowest-effort way to be present and yo
 # Nights are late and mornings are later; weekends later still.
 away weekdays 01:00-09:15 ~45m: asleep | zzz
 away weekends 02:30-11:00 ~1h: asleep | zzz
-# Classes. A block is listed on the day it starts.
-away mon wed 10:00-11:20 ~10m: in class | in class 💀
-away tue thu 13:00-14:30 ~10m: in class | in class
-away fri 11:00-12:15 ~10m: in a seminar you keep almost dropping | class ugh
+# Classes. They start on the dot; +20m is the walk to campus and back.
+away mon wed 10:00-11:20 +20m ~5m: in class | in class 💀
+away tue thu 13:00-14:30 +20m ~5m: in class | in class
+away fri 11:00-12:15 +20m ~5m: in a seminar you keep almost dropping | class ugh
 # Around but not really present.
 here weekends 11:00-13:00: in bed on your phone, not getting up yet
 here daily 18:30-19:30 ~20m: eating with your roommates, phone on the table

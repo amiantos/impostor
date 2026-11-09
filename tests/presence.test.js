@@ -186,3 +186,34 @@ test("disabled presence never touches the away status", async () => {
   presence.start();
   assert.equal(presence.interval, null);
 });
+
+test("something that starts on the dot: the prompt gives its time and the leaving time, and lingering can't miss it", async () => {
+  const { presence, calls, advanceTo, clock } = build({ schedule: "away 10:00-11:00 +20m: in class", start: at(9, 20) });
+  await advanceTo(at(9, 20));
+  assert.match(
+    presence.describe(),
+    /Next up: in class\. It starts at 10:00 AM on the dot \(in 40 minutes\)\. You'll leave your keyboard for it around 9:40 AM \(in 20 minutes\); until then you're still here\./
+  );
+
+  // Mid-conversation at leaving time: lingers, but only through half the travel.
+  for (let m = 38; m < 50; m++) {
+    presence.noteAddressed(at(9, m));
+    await advanceTo(at(9, m));
+  }
+  assert.equal(presence.gone, false);
+  assert.match(presence.describe(), /You should have left by now: in class, which starts at 10:00 AM \(in 11 minutes\)/);
+  presence.noteAddressed(at(9, 50));
+  await advanceTo(at(9, 50));
+  assert.equal(presence.gone, true, "ten minutes of a twenty minute walk left: gone");
+  assert.deepEqual(calls.left, ["in class"]);
+
+  await advanceTo(at(11, 19));
+  assert.equal(presence.gone, true, "class is over but they're on the way back");
+  await advanceTo(at(11, 20));
+  assert.equal(presence.gone, false);
+  assert.match(presence.describe(), /you were in class until 11:00 AM and back at your keyboard by 11:20 AM/);
+
+  const occurrence = presence.scheduled(at(10, 30)).current;
+  assert.match(presence.describe(at(9, 40), { leaving: occurrence }), /^You're leaving now: in class\. It starts at 10:00 AM \(in 20 minutes\) and you have to get there; you'll be back about 11:20 AM/);
+  void clock;
+});

@@ -5,9 +5,10 @@
  *
  *   away 00:30-08:30 ~45m: asleep | zzz
  *   away mon wed fri 10:00-11:20 ~10m: in class | in class, back after
+ *   away weekdays 08:30-12:30 +15m ~5m: in class | in class
  *   here daily 03:30-04:30 ~20m: mid-backup, sluggish
  *
- *   <kind> [days] <start>-<end> [~jitter]: <activity> [| <away message>]
+ *   <kind> [days] <start>-<end> [+travel] [~jitter]: <activity> [| <away message>]
  *
  * - kind: "away" (gone: the bot sets itself away, doesn't read or answer
  *   anything, and catches up when it comes back) or "here" (still around and
@@ -20,6 +21,12 @@
  *   every day but the same all day (seeded by the bot id and the date), so
  *   bedtime is "around half past midnight", not on the dot, and a restart
  *   doesn't move it.
+ * - travel: "+15m" says the times belong to something that doesn't wait for
+ *   the bot (a class, a training session): it starts and ends on the dot, the
+ *   bot leaves that long before it to get there and is back that long after
+ *   it ends, and the jitter moves only the leaving and the getting back,
+ *   never past the thing itself. Without it the times are the bot's own
+ *   (bedtime, a run) and the jitter moves them. "+0m" = fixed, next door.
  * - activity: how the bot would describe what it's doing, as a phrase that
  *   follows "you're" / "you were": "asleep", "in class", "out grazing".
  * - away message: what the IRC away status says; the activity when absent.
@@ -69,7 +76,7 @@ function parseDays(text) {
   return [...days].sort((a, b) => a - b);
 }
 
-const LINE = /^(away|here)\b\s*([a-z ,-]*?)\s*(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})\s*(?:~\s*(\d+)\s*(m|min|mins|h|hr|hrs)?)?\s*:\s*(.+)$/i;
+const LINE = /^(away|here)\b\s*([a-z ,-]*?)\s*(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})\s*(?:\+\s*(\d+)\s*(m|min|mins|h|hr|hrs)?)?\s*(?:~\s*(\d+)\s*(m|min|mins|h|hr|hrs)?)?\s*:\s*(.+)$/i;
 
 /**
  * @param {string} text - The Schedule section
@@ -83,9 +90,9 @@ function parseSchedule(text) {
     if (!line || line.startsWith("#")) return;
     const m = line.match(LINE);
     if (!m) {
-      throw new Error(`Schedule line ${i + 1} is not "<away|here> [days] HH:MM-HH:MM [~Nm]: activity [| away message]": ${line}`);
+      throw new Error(`Schedule line ${i + 1} is not "<away|here> [days] HH:MM-HH:MM [+Nm] [~Nm]: activity [| away message]": ${line}`);
     }
-    const [, kind, dayText, sh, sm, eh, em, jitterNum, jitterUnit, rest] = m;
+    const [, kind, dayText, sh, sm, eh, em, travelNum, travelUnit, jitterNum, jitterUnit, rest] = m;
     const start = Number(sh) * 60 + Number(sm);
     const end = Number(eh) * 60 + Number(em);
     for (const [h, mm] of [[sh, sm], [eh, em]]) {
@@ -94,6 +101,9 @@ function parseSchedule(text) {
     if (start === end) throw new Error(`Schedule line ${i + 1}: a block can't start and end at the same time`);
     let jitter = jitterNum ? Number(jitterNum) : 0;
     if (jitterUnit && /^h/.test(jitterUnit.toLowerCase())) jitter *= 60;
+    const fixed = travelNum !== undefined;
+    let travel = fixed ? Number(travelNum) : 0;
+    if (travelUnit && /^h/.test(travelUnit.toLowerCase())) travel *= 60;
     let days;
     try {
       days = parseDays(dayText);
@@ -108,6 +118,8 @@ function parseSchedule(text) {
       start,
       end,
       jitter,
+      fixed,
+      travel,
       activity: activityText,
       awayMessage: awayText || activityText,
     });
@@ -235,11 +247,22 @@ function occurrencesOnDay(schedule, now, { timezone, seed }, dayOffset) {
     if (!block.days.includes(weekday)) return;
     const startShift = jitterMinutes(seed, dateKey, index, "start", block.jitter);
     const endShift = jitterMinutes(seed, dateKey, index, "end", block.jitter);
-    const start = new Date(zonedDate(timezone, year, month, day, 0, 0).getTime() + (block.start + startShift) * 60000);
+    const midnight = zonedDate(timezone, year, month, day, 0, 0).getTime();
     const endBase = block.end > block.start ? 0 : DAY_MS;
-    let end = new Date(zonedDate(timezone, year, month, day, 0, 0).getTime() + endBase + (block.end + endShift) * 60000);
+    if (block.fixed) {
+      // The thing itself is on the dot; only the leaving and the getting
+      // back move, and never to after it starts or before it ends.
+      const eventStart = new Date(midnight + block.start * 60000);
+      const eventEnd = new Date(midnight + endBase + block.end * 60000);
+      const start = new Date(eventStart.getTime() + Math.min(0, startShift - block.travel) * 60000);
+      const end = new Date(eventEnd.getTime() + Math.max(0, endShift + block.travel) * 60000);
+      result.push({ block, index, start, end, eventStart, eventEnd, dateKey });
+      return;
+    }
+    const start = new Date(midnight + (block.start + startShift) * 60000);
+    let end = new Date(midnight + endBase + (block.end + endShift) * 60000);
     if (end <= start) end = new Date(start.getTime() + 60000);
-    result.push({ block, index, start, end, dateKey });
+    result.push({ block, index, start, end, eventStart: start, eventEnd: end, dateKey });
   });
   return result;
 }
@@ -260,8 +283,11 @@ function occurrencesAround(schedule, now, options) {
  * @param {Date} now
  * @param {{timezone: string, seed: string}} options
  * @returns {{state: "away"|"here", current: Object|null, previous: Object|null, next: Object|null}}
- *   current/previous/next are occurrences ({block, start, end}); previous is
- *   the most recently ended, next the soonest to start.
+ *   current/previous/next are occurrences ({block, start, end, eventStart,
+ *   eventEnd}); start/end are when the bot is gone from and back at, and
+ *   eventStart/eventEnd when the thing itself runs (the same, unless the
+ *   block has travel time). previous is the most recently ended, next the
+ *   soonest to start.
  */
 function presenceAt(schedule, now, options) {
   if (!schedule || schedule.blocks.length === 0) {

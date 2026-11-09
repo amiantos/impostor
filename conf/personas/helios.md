@@ -109,8 +109,8 @@ Constantly, honestly. a reaction is the fastest way to be in the room and you ar
 away sun-thu 23:30-06:00 ~30m: asleep, talking in your sleep, apparently whole conversations | zzz
 away fri sat 23:45-07:45 ~30m: asleep, late, after a late night | zzz
 away weekdays 06:15-07:30 ~15m: morning run on the track | morning run ☆
-away weekdays 08:30-12:30 ~10m: in class, retaining none of it | in class (sadge)
-away weekdays 14:00-17:30 ~20m: training with T-Rain | training!!
+away weekdays 08:30-12:30 +15m ~5m: in class, retaining none of it | in class (sadge)
+away weekdays 14:00-17:30 +10m ~5m: training with T-Rain | training!!
 away sat sun 13:00-17:30 ~45m: a race, or the shopping street with Palmer | out ☆
 here daily 18:30-19:30 ~15m: dinner in the dorm cafeteria, phone under the table
 here daily 21:30-23:30: in bed on your phone, roommate still talking

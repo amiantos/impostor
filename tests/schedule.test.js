@@ -1,6 +1,6 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { parseSchedule, parseDays, presenceAt, zonedDate, formatStamp, formatClock, hash01 } = require("../classes/schedule");
+const { parseSchedule, parseDays, presenceAt, occurrencesAround, zonedDate, formatStamp, formatClock, hash01 } = require("../classes/schedule");
 
 const TZ = "America/Chicago";
 const opts = { timezone: TZ, seed: "layla" };
@@ -132,5 +132,36 @@ test("hash01 is stable and in [0, 1)", () => {
   for (const s of ["", "a", "layla|2026-11-01|0|start"]) {
     const h = hash01(s);
     assert.ok(h >= 0 && h < 1);
+  }
+});
+
+test("a block with travel time starts on the dot; only leaving and getting back move", () => {
+  const schedule = parseSchedule("away 08:30-12:30 +15m ~5m: in class");
+  const [block] = schedule.blocks;
+  assert.deepEqual([block.fixed, block.travel, block.jitter], [true, 15, 5]);
+  assert.equal(parseSchedule("away 08:30-12:30 ~5m: asleep").blocks[0].fixed, false);
+  assert.deepEqual([parseSchedule("away 08:30-12:30 +1h: far").blocks[0].travel, parseSchedule("away 08:30-12:30 +0m: next door").blocks[0].fixed], [60, true]);
+
+  const tz = "Asia/Tokyo";
+  const leaves = new Set();
+  for (let day = 1; day <= 20; day++) {
+    const noon = zonedDate(tz, 2026, 11, day, 12, 0);
+    const o = occurrencesAround(schedule, noon, { timezone: tz, seed: "helios" }).find((x) => x.start <= noon && noon < x.end);
+    assert.equal(o.eventStart.getTime(), zonedDate(tz, 2026, 11, day, 8, 30).getTime());
+    assert.equal(o.eventEnd.getTime(), zonedDate(tz, 2026, 11, day, 12, 30).getTime());
+    const lead = (o.eventStart - o.start) / 60000;
+    const lag = (o.end - o.eventEnd) / 60000;
+    assert.ok(lead >= 10 && lead <= 20, `leaves ${lead} minutes before`);
+    assert.ok(lag >= 10 && lag <= 20, `back ${lag} minutes after`);
+    leaves.add(lead);
+  }
+  assert.ok(leaves.size > 1, "the leaving time differs between days");
+
+  // Jitter bigger than the travel never puts the leaving after the start.
+  const tight = parseSchedule("away 08:30-12:30 +5m ~30m: in class");
+  for (let day = 1; day <= 20; day++) {
+    const noon = zonedDate(tz, 2026, 11, day, 12, 0);
+    const o = occurrencesAround(tight, noon, { timezone: tz, seed: "helios" }).find((x) => x.eventStart <= noon && noon < x.eventEnd);
+    assert.ok(o.start <= o.eventStart && o.end >= o.eventEnd);
   }
 });

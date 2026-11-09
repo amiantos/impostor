@@ -41,11 +41,11 @@ One block per line in the persona's `## Schedule`:
 
 ```
 away weekdays 01:00-09:15 ~45m: asleep | zzz
-away mon wed 10:00-11:20 ~10m: in class | in class 💀
+away mon wed 10:00-11:20 +20m ~5m: in class | in class 💀
 here daily 18:30-19:30 ~20m: eating with your roommates
 ```
 
-`<away|here> [days] HH:MM-HH:MM [~jitter]: activity [| away message]`. Days are `daily` (default), `weekdays`, `weekends`, names or ranges (`mon-fri`); a block belongs to the day it starts on. The jitter moves each edge by up to that much, differently each day but stable across restarts. Times are in the bot's `timezone`.
+`<away|here> [days] HH:MM-HH:MM [+travel] [~jitter]: activity [| away message]`. Days are `daily` (default), `weekdays`, `weekends`, names or ranges (`mon-fri`); a block belongs to the day it starts on. The jitter moves each edge by up to that much, differently each day but stable across restarts. A travel time (`+20m`) marks something that doesn't wait for the bot, like a class: it starts and ends on the dot, the bot leaves that long before and is back that long after, and the jitter only moves the leaving and the getting back. The prompt then says both ("starts at 10:00 AM on the dot (in 40 minutes). You'll leave your keyboard for it around 9:40 AM"), and a bot kept talking lingers through at most half the travel time. Times are in the bot's `timezone`.
 
 An `away` block makes the bot gone: away status set to the message, nothing read or answered (lines are still stored and journaled), and on return one look at every conversation that moved, with DMs answered. Before going, each channel with a recent human line gets an evaluator pass asking only whether vanishing silently would be odd; if so the bot says goodbye through the normal pipeline. A `here` block changes nothing mechanically; it tells the bot what it's doing (Isaac is docked and sluggish at 3:30 AM). Between blocks, `afk_minutes` after the bot's own last line its status becomes `afk since …`, cleared the moment it speaks.
 

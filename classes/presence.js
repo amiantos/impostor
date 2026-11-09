@@ -144,7 +144,7 @@ class Presence {
         this.gone = true;
         this.current = target;
         this.afk = false;
-      } else if (this.inConversation(now) && now - target.start < this.lingerMinutes * 60000) {
+      } else if (this.inConversation(now) && now - target.start < this.lingerMinutes * 60000 && this.canStillMakeIt(target, now)) {
         if (this.lingerLoggedFor !== target.start.getTime()) {
           this.lingerLoggedFor = target.start.getTime();
           this.logger.info(`Lingering before going (${target.block.activity}): mid-conversation`);
@@ -163,6 +163,15 @@ class Presence {
     }
     this.apply(this.desired());
     this.initial = false;
+  }
+
+  /**
+   * Lingering eats into the travel time of something that starts on the
+   * dot, and stops at half of it: late out the door, not absent at the bell.
+   */
+  canStillMakeIt(occurrence, now) {
+    if (!occurrence.block.fixed) return true;
+    return now.getTime() < (occurrence.start.getTime() + occurrence.eventStart.getTime()) / 2;
   }
 
   async leave(occurrence, now) {
@@ -244,26 +253,48 @@ class Presence {
     const parts = [];
     const { current, previous, next } = this.scheduled(now);
 
-    if (leaving) {
+    // What the bot was doing, for "you were …": a fixed thing ended on the
+    // dot and the bot got back some minutes after.
+    const was = (o) =>
+      o.block.fixed && o.end > o.eventEnd
+        ? `${o.block.activity} until ${clock(o.eventEnd)} and back at your keyboard by ${clock(o.end)}`
+        : `${o.block.activity} until ${clock(o.end)}`;
+
+    if (leaving && leaving.block.fixed) {
+      parts.push(
+        `You're leaving now: ${leaving.block.activity}. It starts at ${clock(leaving.eventStart)} (${until(leaving.eventStart)}) and you have to get there; you'll be back about ${clock(leaving.end)} (${until(leaving.end)}).`
+      );
+    } else if (leaving) {
       parts.push(`You're about to go: ${leaving.block.activity}, until about ${clock(leaving.end)} (${until(leaving.end)}).`);
     } else if (current && current.block.kind === "here") {
       parts.push(`You're ${current.block.activity} (since ${clock(current.start)}, until about ${clock(current.end)}, ${until(current.end)}).`);
     } else if (current && current.block.kind === "away" && !this.gone) {
       // Lingering past the start of an away block.
-      parts.push(`You're meant to be ${current.block.activity} already; you'll head off shortly.`);
+      if (current.block.fixed) {
+        parts.push(
+          `You should have left by now: ${current.block.activity}, which starts at ${clock(current.eventStart)} (${until(current.eventStart)}) and won't wait for you. You're still at your keyboard and about to run for it.`
+        );
+      } else {
+        parts.push(`You're meant to be ${current.block.activity} already; you'll head off shortly.`);
+      }
     }
 
     const back = this.returnedFrom && this.returnedAt && now - this.returnedAt < 30 * 60000 ? this.returnedFrom : null;
     if (back) {
       parts.push(
-        `You just got back (${ago(this.returnedAt)}): you were ${back.block.activity} until ${clock(back.end)}, so anything after your last line happened while you were away.`
+        `You just got back (${ago(this.returnedAt)}): you were ${was(back)}, so anything after your last line happened while you were away.`
       );
     } else if (previous && now - previous.end < 4 * 60 * 60000 && previous !== current) {
-      parts.push(`Earlier: you were ${previous.block.activity} until ${clock(previous.end)} (${ago(previous.end)}).`);
+      parts.push(`Earlier: you were ${was(previous)} (${ago(previous.end)}).`);
     }
 
     if (!leaving && next && next.start - now < 6 * 60 * 60000) {
-      parts.push(`Next up: ${next.block.activity}, from about ${clock(next.start)} (${until(next.start)}).`);
+      if (next.block.fixed) {
+        const leave = next.start < next.eventStart ? ` You'll leave your keyboard for it around ${clock(next.start)} (${until(next.start)}); until then you're still here.` : "";
+        parts.push(`Next up: ${next.block.activity}. It starts at ${clock(next.eventStart)} on the dot (${until(next.eventStart)}).${leave}`);
+      } else {
+        parts.push(`Next up: ${next.block.activity}, from about ${clock(next.start)} (${until(next.start)}).`);
+      }
     }
 
     if (this.afk && !this.gone) {
