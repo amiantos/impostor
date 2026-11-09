@@ -40,11 +40,16 @@ class ResponseEvaluator {
    */
   buildDecisionPrompt() {
     const name = this.botName;
+    const nick = this.config?.irc?.nick;
+    const nickNote =
+      nick && nick.toLowerCase() !== name.toLowerCase()
+        ? `\nOn IRC ${name} goes by the nick "${nick}". A line that says "${nick}" is talking to ${name}, exactly as one that says "${name}" is; the chatlog marks ${name}'s own lines "${nick} (${name})".\n`
+        : "";
     return `You are evaluating what ${name} should do with this conversation.
 
 WHO ${name.toUpperCase()} IS:
 ${this.persona.evaluator}
-
+${nickNote}
 You must pick exactly one action: "respond", "react", or "ignore".
 
 RESPOND - ${name} should generate a full message. Pick this when:

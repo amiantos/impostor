@@ -94,3 +94,12 @@ test("the evaluator is told another bot's line into the room is not an opening",
   assert.match(prompt, /OTHER BOTS: the same line marks other chatbots "\(bot\)"\. A bot's line addressed to Mabel by name gets the normal treatment\./);
   assert.match(prompt, /two bots answering each other's dispatches is what empties a channel of people/);
 });
+
+test("the evaluator is told the bot's nick when it differs from the name", () => {
+  const ResponseEvaluator = require("../classes/response_evaluator");
+  const persona = { name: "Layla", evaluator: "Layla is a bot." };
+  const withNick = new ResponseEvaluator(silent, { timezone: "UTC", irc: { nick: "notlayla" } }, null, null, persona, null);
+  assert.match(withNick.buildDecisionPrompt(), /goes by the nick "notlayla"/);
+  const sameNick = new ResponseEvaluator(silent, { timezone: "UTC", irc: { nick: "layla" } }, null, null, persona, null);
+  assert.doesNotMatch(sameNick.buildDecisionPrompt(), /goes by the nick/);
+});
