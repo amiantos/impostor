@@ -112,13 +112,14 @@
         },
         {
             "id": "layla",
-            "nick": "layla",
+            "nick": "notlayla",
+            "watchword": "Layla",
             "realname": "Layla",
             "display_name": "Layla",
             "avatar_url": "https://example.com/layla.png",
             "persona": "conf/personas/layla.md",
             "account": {
-                "name": "layla",
+                "name": "notlayla",
                 "password": "<NickServ password for this bot's account>"
             },
             "channels": ["#lobby", "#bots", "#amiantos"],
@@ -148,13 +149,14 @@
         },
         {
             "id": "helios",
-            "nick": "helios",
+            "nick": "heliboss",
+            "watchword": "Helios",
             "realname": "Daitaku Helios",
             "display_name": "Helios",
             "avatar_url": "https://example.com/helios.png",
             "persona": "conf/personas/helios.md",
             "account": {
-                "name": "helios",
+                "name": "heliboss",
                 "password": "<NickServ password for this bot's account>"
             },
             "channels": ["#lobby", "#bots", "#amiantos"],
