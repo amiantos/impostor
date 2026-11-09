@@ -75,9 +75,14 @@ class Presence {
     this.interval = null;
   }
 
-  /** The connection was (re)made: the server has no away status for us. */
+  /**
+   * The connection was (re)made. What the server has for us is unknown: a
+   * fresh connection has nothing, but on a server with always-on clients
+   * (lurker) the status from before a restart is still there. So the
+   * desired status is sent whatever it is, including a bare clear.
+   */
   reconnected() {
-    this.applied = null;
+    this.applied = undefined;
     if (this.enabled) this.apply(this.desired());
   }
 

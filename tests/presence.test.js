@@ -170,6 +170,14 @@ test("reconnecting puts the current status back", async () => {
   assert.deepEqual(calls.away, ["in class", "in class"]);
 });
 
+test("reconnecting while here clears whatever status the server kept from before a restart", async () => {
+  const { presence, calls, advanceTo } = build({ schedule: "away 10:00-11:00: in class", start: at(11, 54) });
+  await advanceTo(at(11, 54));
+  assert.deepEqual(calls.away, [], "here from the start: nothing sent yet");
+  presence.reconnected();
+  assert.deepEqual(calls.away, [null], "the server may still show the old block's message");
+});
+
 test("disabled presence never touches the away status", async () => {
   const { presence, calls, advanceTo } = build({ schedule: "away 10:00-11:00: in class", start: at(10, 30), config: { enabled: false } });
   await advanceTo(at(10, 30));
