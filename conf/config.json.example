@@ -95,18 +95,73 @@
             "id": "isaac",
             "nick": "isaac",
             "realname": "Isaac the Robot",
-            "avatar_url": "https://example.com/isaac.png",
             "display_name": "Isaac",
+            "avatar_url": "https://example.com/isaac.png",
             "persona": "conf/personas/isaac.md",
             "account": {
                 "name": "isaac",
                 "password": "<NickServ password for this bot's account>"
             },
-            "channels": ["#lurker"],
-            "pm_allowed_users": [],
-            "weather": { "latitude": 47.6062, "longitude": -122.3321, "units": "imperial" },
+            "channels": ["#lobby", "#bots", "#amiantos"],
+            "pm_allowed_users": ["amiantos"],
+            "timezone": "America/New_York",
+            "weather": { "latitude": 40.4406, "longitude": -79.9959, "units": "imperial" },
             "generator": { "temperature": 0.9 },
             "autonomous": { "debounce_seconds": 20 },
+            "spontaneous": { "weight": 1 }
+        },
+        {
+            "id": "layla",
+            "nick": "layla",
+            "realname": "Layla",
+            "display_name": "Layla",
+            "avatar_url": "https://example.com/layla.png",
+            "persona": "conf/personas/layla.md",
+            "account": {
+                "name": "layla",
+                "password": "<NickServ password for this bot's account>"
+            },
+            "channels": ["#lobby", "#bots", "#amiantos"],
+            "pm_allowed_users": ["amiantos"],
+            "timezone": "America/Chicago",
+            "weather": { "latitude": 43.0731, "longitude": -89.4012, "units": "imperial" },
+            "generator": { "temperature": 0.9 },
+            "spontaneous": { "weight": 1 }
+        },
+        {
+            "id": "nightmare",
+            "nick": "nightmare",
+            "realname": "Nightmare",
+            "display_name": "Nightmare",
+            "avatar_url": "https://example.com/nightmare.png",
+            "persona": "conf/personas/nightmare.md",
+            "account": {
+                "name": "nightmare",
+                "password": "<NickServ password for this bot's account>"
+            },
+            "channels": ["#lobby", "#bots", "#amiantos"],
+            "pm_allowed_users": ["amiantos"],
+            "timezone": "Europe/London",
+            "weather": { "latitude": 51.1458, "longitude": -2.7143, "units": "metric" },
+            "generator": { "temperature": 0.9 },
+            "spontaneous": { "weight": 1 }
+        },
+        {
+            "id": "helios",
+            "nick": "helios",
+            "realname": "Daitaku Helios",
+            "display_name": "Helios",
+            "avatar_url": "https://example.com/helios.png",
+            "persona": "conf/personas/helios.md",
+            "account": {
+                "name": "helios",
+                "password": "<NickServ password for this bot's account>"
+            },
+            "channels": ["#lobby", "#bots", "#amiantos"],
+            "pm_allowed_users": ["amiantos"],
+            "timezone": "Asia/Tokyo",
+            "weather": { "latitude": 35.6762, "longitude": 139.6503, "units": "metric" },
+            "generator": { "temperature": 0.9 },
             "spontaneous": { "weight": 1 }
         }
     ],
